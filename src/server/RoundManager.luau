@@ -22,12 +22,14 @@ local REQUEST_COOLDOWN_SECONDS = 0.5
 
 local stateRemote = Remotes.RoundStateUpdated
 local requestRemote = Remotes.RequestRoundSnapshot
+local pauseRemote = Remotes.DevSetPaused
 
 local scheduleToken = 0
 local revision = 0
 local roundId = 0
 local inRound = false
 local announcedWaiting = false
+local paused = GameConfig.devHoldsLobby()
 local currentState: RoundState = "WaitingForPlayers"
 local endsAt: number? = nil
 local currentDuration: number? = nil
@@ -68,6 +70,7 @@ function machine.broadcast(target: Player?)
 		minPlayers = GameConfig.getMinPlayers(),
 		maxPlayers = GameConfig.getMaxPlayers(),
 		devMode = GameConfig.DevMode,
+		paused = paused,
 		showTheme = showTheme,
 		themeId = themeId,
 		themeName = themeName,
@@ -124,14 +127,14 @@ function machine.transitionTo(state: RoundState)
 	scheduleToken += 1
 	local token = scheduleToken
 	currentState = state
-	if state == "ThemeReveal" then
+	if state == "ThemeReveal" and activeTheme == nil then
 		activeTheme = Themes.pickRandom()
 	end
 	currentDuration = stateDuration
 	endsAt = Workspace:GetServerTimeNow() + stateDuration
 
 	task.delay(stateDuration, function()
-		if token ~= scheduleToken or currentState ~= state or not inRound then
+		if token ~= scheduleToken or currentState ~= state or not inRound or paused then
 			return
 		end
 		machine.advance()
@@ -142,7 +145,7 @@ function machine.transitionTo(state: RoundState)
 end
 
 function machine.beginRound()
-	if inRound then
+	if paused or inRound then
 		return
 	end
 	if countPlayers() < GameConfig.getMinPlayers() then
@@ -166,7 +169,7 @@ function machine.completeRound()
 end
 
 function machine.advance()
-	if not inRound then
+	if paused or not inRound then
 		return
 	end
 
@@ -191,6 +194,14 @@ function machine.refresh()
 		machine.publishWaiting()
 		return
 	end
+	if paused then
+		if inRound then
+			machine.broadcast(nil)
+		else
+			machine.publishWaiting()
+		end
+		return
+	end
 	if inRound then
 		machine.broadcast(nil)
 		return
@@ -200,6 +211,34 @@ function machine.refresh()
 		return
 	end
 	machine.publishWaiting()
+end
+
+function machine.setPaused(want: boolean)
+	if not GameConfig.DevMode or paused == want then
+		return
+	end
+
+	paused = want
+	scheduleToken += 1
+	if paused then
+		endsAt = nil
+		currentDuration = nil
+		machine.broadcast(nil)
+		print(`{PREFIX} Dev pause on | lobby held`)
+		return
+	end
+
+	print(`{PREFIX} Dev pause off | round running`)
+	if not inRound or currentState == "WaitingForPlayers" then
+		if countPlayers() >= GameConfig.getMinPlayers() then
+			machine.beginRound()
+		else
+			machine.publishWaiting()
+		end
+		return
+	end
+
+	machine.transitionTo(currentState)
 end
 
 function machine.onPlayerAdded(player: Player)
@@ -255,7 +294,8 @@ function RoundManager.start()
 	Themes.validate()
 
 	local mode = if GameConfig.DevMode then "development" else "live"
-	print(`{PREFIX} Server ready | {mode} timings | minimum {GameConfig.getMinPlayers()} players`)
+	local holdNote = if paused then " | lobby paused until Resume" else ""
+	print(`{PREFIX} Server ready | {mode} timings | minimum {GameConfig.getMinPlayers()} players{holdNote}`)
 
 	Players.PlayerAdded:Connect(function(player: Player)
 		machine.onPlayerAdded(player)
@@ -265,6 +305,12 @@ function RoundManager.start()
 	end)
 	requestRemote.OnServerEvent:Connect(function(player: Player)
 		machine.onRequest(player)
+	end)
+	pauseRemote.OnServerEvent:Connect(function(_player: Player, want: any)
+		if typeof(want) ~= "boolean" then
+			return
+		end
+		machine.setPaused(want)
 	end)
 
 	for _, player in Players:GetPlayers() do

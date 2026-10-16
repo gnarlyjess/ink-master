@@ -43,9 +43,16 @@ local MIN_ELEMENT_SCALE = 0.015
 local MAX_ELEMENT_SCALE = 0.7
 local DESIGN_REGION = "LeftForearm"
 
+-- DevHoldLobby keeps Play in the shop until Resume. It only applies while DevMode is on.
+local DEV_HOLD_LOBBY = true
+
 local GameConfig = {
 	DevMode = true,
 }
+
+function GameConfig.devHoldsLobby(): boolean
+	return GameConfig.DevMode and DEV_HOLD_LOBBY
+end
 
 function GameConfig.getMinPlayers(): number
 	if GameConfig.DevMode then

@@ -605,6 +605,12 @@ function TattooEditor.start()
 		end
 		lastRevision = snapshot.revision
 
+		if snapshot.paused then
+			screenGui.Enabled = false
+			TattooCanvas.setVisible(false)
+			return
+		end
+
 		local leftCreation = editing and snapshot.state ~= "TattooCreation"
 		local enteredCreation = snapshot.state == "TattooCreation" and (not editing or snapshot.roundId ~= roundId)
 		if leftCreation then
@@ -619,6 +625,9 @@ function TattooEditor.start()
 		end
 		if enteredCreation then
 			beginEditing(snapshot)
+		elseif editing and snapshot.state == "TattooCreation" then
+			screenGui.Enabled = true
+			TattooCanvas.setVisible(true)
 		end
 		roundId = snapshot.roundId
 	end)

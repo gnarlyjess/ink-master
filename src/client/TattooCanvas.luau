@@ -573,6 +573,15 @@ function TattooCanvas.show(character: Model, design: TattooDesign, selectedIndex
 	end
 end
 
+function TattooCanvas.setVisible(visible: boolean)
+	if photoGui ~= nil then
+		photoGui.Enabled = visible
+	end
+	if inkGui ~= nil then
+		inkGui.Enabled = visible
+	end
+end
+
 function TattooCanvas.clear()
 	shownDesign = nil
 	shownSelection = nil

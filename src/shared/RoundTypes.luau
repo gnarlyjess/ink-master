@@ -21,6 +21,7 @@ export type RoundSnapshot = {
 	minPlayers: number,
 	maxPlayers: number,
 	devMode: boolean,
+	paused: boolean,
 	showTheme: boolean,
 	themeId: string?,
 	themeName: string?,
@@ -121,7 +122,11 @@ function RoundTypes.readSnapshot(payload: any): RoundSnapshot?
 	if revision < 1 or roundId < 0 or playerCount < 0 or minPlayers < 1 or maxPlayers < 1 then
 		return nil
 	end
-	if typeof(payload.devMode) ~= "boolean" or typeof(payload.showTheme) ~= "boolean" then
+	if
+		typeof(payload.devMode) ~= "boolean"
+		or typeof(payload.paused) ~= "boolean"
+		or typeof(payload.showTheme) ~= "boolean"
+	then
 		return nil
 	end
 
@@ -150,6 +155,7 @@ function RoundTypes.readSnapshot(payload: any): RoundSnapshot?
 	end
 
 	local devMode: boolean = payload.devMode
+	local paused: boolean = payload.paused
 	local showTheme: boolean = payload.showTheme
 	local snapshot: RoundSnapshot = {
 		revision = revision,
@@ -161,6 +167,7 @@ function RoundTypes.readSnapshot(payload: any): RoundSnapshot?
 		minPlayers = minPlayers,
 		maxPlayers = maxPlayers,
 		devMode = devMode,
+		paused = paused,
 		showTheme = showTheme,
 		themeId = themeId,
 		themeName = themeName,

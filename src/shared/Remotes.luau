@@ -25,6 +25,7 @@ local Remotes = {
 	RequestRoundSnapshot = remoteEvent(remotesFolder, "RequestRoundSnapshot"),
 	SubmitDesign = remoteEvent(remotesFolder, "SubmitDesign"),
 	DesignResult = remoteEvent(remotesFolder, "DesignResult"),
+	DevSetPaused = remoteEvent(remotesFolder, "DevSetPaused"),
 }
 
 return Remotes

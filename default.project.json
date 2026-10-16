@@ -20,6 +20,9 @@
         },
         "DesignResult": {
           "$className": "RemoteEvent"
+        },
+        "DevSetPaused": {
+          "$className": "RemoteEvent"
         }
       }
     },

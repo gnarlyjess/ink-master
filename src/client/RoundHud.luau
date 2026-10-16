@@ -5,6 +5,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
@@ -41,6 +42,7 @@ type HudRefs = {
 	bannerState: TextLabel,
 	bannerTime: TextLabel,
 	bannerTheme: TextLabel,
+	pauseButton: TextButton,
 }
 
 local PREFIX = "[InkMasters]"
@@ -231,15 +233,33 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 
 	local hasTimer = snapshot.endsAt ~= nil and snapshot.duration ~= nil
 	local designing = snapshot.state == "TattooCreation"
-	refs.track.Visible = hasTimer and not designing
+	local inLobby = snapshot.state == "WaitingForPlayers" or snapshot.state == "Intermission"
+	refs.track.Visible = hasTimer and not designing and not inLobby and not snapshot.paused
 	refs.artistsValue.Text = `{formatCount(snapshot.playerCount)} / {formatCount(snapshot.maxPlayers)}`
 	refs.themeValue.Text = snapshot.themeName or "Incoming"
-	refs.themeChip.Visible = snapshot.state ~= "ThemeReveal" and not designing
-	refs.card.Visible = not designing
-	refs.banner.Visible = designing
-	refs.bannerState.Text = RoundTypes.getLabel(snapshot.state)
-	refs.bannerTheme.Text = snapshot.themeName or "Theme"
+	refs.themeChip.Visible = snapshot.state ~= "ThemeReveal" and not designing and not inLobby and not snapshot.paused
+	refs.card.Visible = not designing and not inLobby and not snapshot.paused
+	refs.banner.Visible = designing or inLobby or snapshot.paused or snapshot.devMode
+	refs.pauseButton.Visible = snapshot.devMode
+	refs.pauseButton.Text = if snapshot.paused then "Resume" else "Pause"
 	refs.bannerTime.TextColor3 = accent
+	if snapshot.paused then
+		refs.bannerState.Text = "Paused"
+		refs.bannerTime.Text = "Lobby"
+		refs.bannerTheme.Text = "Walk around"
+		return
+	end
+	if snapshot.state == "WaitingForPlayers" then
+		refs.bannerState.Text = "Lobby"
+		refs.bannerTime.Text = `{formatCount(snapshot.playerCount)}/{formatCount(snapshot.minPlayers)}`
+		refs.bannerTheme.Text = "Shop open"
+	elseif inLobby then
+		refs.bannerState.Text = "Lobby"
+		refs.bannerTheme.Text = "Next theme soon"
+	else
+		refs.bannerState.Text = RoundTypes.getLabel(snapshot.state)
+		refs.bannerTheme.Text = snapshot.themeName or "Theme"
+	end
 	renderClock(refs, snapshot)
 end
 
@@ -262,6 +282,7 @@ local function buildHud(parent: Instance): HudRefs
 	holder.Position = UDim2.new(0.5, 0, 0, 68)
 	holder.Size = UDim2.fromOffset(CARD_WIDTH, 0)
 	holder.AutomaticSize = Enum.AutomaticSize.Y
+	holder.Visible = false
 	holder.Parent = screenGui
 
 	local shadow = newFrame("Shadow")
@@ -428,7 +449,7 @@ local function buildHud(parent: Instance): HudRefs
 	banner.AutomaticSize = Enum.AutomaticSize.XY
 	banner.BackgroundColor3 = UiTheme.color.panel
 	banner.BackgroundTransparency = 0.12
-	banner.Visible = false
+	banner.Visible = true
 	banner.ZIndex = 6
 	banner.Parent = screenGui
 	addCorner(banner, 999)
@@ -437,14 +458,30 @@ local function buildHud(parent: Instance): HudRefs
 	addList(banner, Enum.FillDirection.Horizontal, 14)
 
 	local bannerState = createLabel("BannerState", 14, UiTheme.font.bold, UiTheme.color.aqua, true)
-	bannerState.Text = "Design phase"
+	bannerState.Text = "Lobby"
 	bannerState.Parent = banner
 	local bannerTime = createLabel("BannerTime", 16, UiTheme.font.heavy, UiTheme.color.text, true)
-	bannerTime.Text = "0:00"
+	bannerTime.Text = "…"
 	bannerTime.Parent = banner
 	local bannerTheme = createLabel("BannerTheme", 14, UiTheme.font.medium, UiTheme.color.text, true)
-	bannerTheme.Text = "Theme"
+	bannerTheme.Text = "Joining"
 	bannerTheme.Parent = banner
+
+	local pauseButton = Instance.new("TextButton")
+	pauseButton.Name = "Pause"
+	pauseButton.BackgroundColor3 = UiTheme.color.gold
+	pauseButton.BackgroundTransparency = 0.1
+	pauseButton.BorderSizePixel = 0
+	pauseButton.FontFace = UiTheme.font.bold
+	pauseButton.TextSize = 14
+	pauseButton.TextColor3 = UiTheme.color.ink
+	pauseButton.Text = "Pause"
+	pauseButton.AutomaticSize = Enum.AutomaticSize.XY
+	pauseButton.Size = UDim2.fromOffset(0, 0)
+	pauseButton.Visible = false
+	pauseButton.Parent = banner
+	addCorner(pauseButton, 999)
+	addPadding(pauseButton, 4, 12, 4, 12)
 
 	return {
 		badge = badge,
@@ -469,6 +506,7 @@ local function buildHud(parent: Instance): HudRefs
 		bannerState = bannerState,
 		bannerTime = bannerTime,
 		bannerTheme = bannerTheme,
+		pauseButton = pauseButton,
 	}
 end
 
@@ -518,6 +556,25 @@ function RoundHud.start()
 		if currentSnapshot ~= nil then
 			renderClock(refs, currentSnapshot)
 		end
+	end)
+
+	local function sendPause(wantPause: boolean)
+		if currentSnapshot == nil or not currentSnapshot.devMode then
+			return
+		end
+		Remotes.DevSetPaused:FireServer(wantPause)
+	end
+
+	refs.pauseButton.MouseButton1Click:Connect(function()
+		local wantPause = if currentSnapshot ~= nil then not currentSnapshot.paused else true
+		sendPause(wantPause)
+	end)
+	UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)
+		if processed or input.KeyCode ~= Enum.KeyCode.P then
+			return
+		end
+		local wantPause = if currentSnapshot ~= nil then not currentSnapshot.paused else true
+		sendPause(wantPause)
 	end)
 
 	print(`{PREFIX} HUD ready | waiting for the server snapshot`)
