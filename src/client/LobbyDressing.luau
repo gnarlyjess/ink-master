@@ -9,7 +9,8 @@ local Workspace = game:GetService("Workspace")
 local InkColors = require(ReplicatedStorage.Shared.InkColors)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local RoundTypes = require(ReplicatedStorage.Shared.RoundTypes)
-local StencilView = require(script.Parent.StencilView)
+local FlashSheet = require(script.Parent.FlashSheet)
+local WallPrint = require(script.Parent.WallPrint)
 local UiTheme = require(script.Parent.UiTheme)
 
 type RoundSnapshot = RoundTypes.RoundSnapshot
@@ -57,18 +58,18 @@ local function mountThemeBoard(board: BasePart)
 	gui.Face = Enum.NormalId.Front
 	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
 	gui.PixelsPerStud = 42
-	gui.LightInfluence = 0
+	gui.LightInfluence = 1
 	gui.Parent = board
 
 	local root = Instance.new("Frame")
 	root.Name = "Root"
 	root.Size = UDim2.fromScale(1, 1)
-	root.BackgroundColor3 = UiTheme.color.panel
+	root.BackgroundColor3 = Color3.fromRGB(236, 226, 204)
 	root.BorderSizePixel = 0
 	root.Parent = gui
 
 	local stroke = Instance.new("UIStroke")
-	stroke.Color = UiTheme.color.gold
+	stroke.Color = Color3.fromRGB(24, 22, 20)
 	stroke.Thickness = 2
 	stroke.Parent = root
 
@@ -102,9 +103,9 @@ local function mountThemeBoard(board: BasePart)
 		return label
 	end
 
-	eyebrowLabel = line("Eyebrow", UiTheme.font.bold, UiTheme.color.gold, 0.16, 1)
-	titleLabel = line("Title", UiTheme.font.heavy, UiTheme.color.text, 0.42, 2)
-	subtitleLabel = line("Subtitle", UiTheme.font.medium, UiTheme.color.muted, 0.22, 3)
+	eyebrowLabel = line("Eyebrow", UiTheme.font.bold, Color3.fromRGB(24, 22, 20), 0.16, 1)
+	titleLabel = line("Title", UiTheme.font.heavy, Color3.fromRGB(24, 22, 20), 0.42, 2)
+	subtitleLabel = line("Subtitle", UiTheme.font.medium, Color3.fromRGB(72, 64, 58), 0.22, 3)
 	renderBoard()
 end
 
@@ -114,9 +115,10 @@ local function paintCard(part: BasePart)
 		return
 	end
 
-	local shape = part:GetAttribute("FlashShape")
+	local design = part:GetAttribute("FlashDesign")
 	local inkId = part:GetAttribute("FlashInk")
-	if typeof(shape) ~= "string" then
+	local tone = part:GetAttribute("FlashTone")
+	if typeof(design) ~= "string" then
 		return
 	end
 	painted[part] = true
@@ -129,27 +131,69 @@ local function paintCard(part: BasePart)
 		end
 	end
 
+	local papers = {
+		Color3.fromRGB(236, 226, 204),
+		Color3.fromRGB(224, 210, 182),
+		Color3.fromRGB(244, 232, 214),
+	}
+	local paperColor = papers[1]
+	if typeof(tone) == "number" then
+		paperColor = papers[(tone % 3) + 1]
+	end
+
 	local gui = Instance.new("SurfaceGui")
 	gui.Name = "FlashArt"
 	gui.Face = Enum.NormalId.Front
 	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
 	gui.PixelsPerStud = 48
-	gui.LightInfluence = 0
+	gui.LightInfluence = 1
 	gui.Parent = part
 
 	local paper = Instance.new("Frame")
 	paper.Name = "Paper"
 	paper.Size = UDim2.fromScale(1, 1)
-	paper.BackgroundColor3 = Color3.fromRGB(236, 226, 204)
+	paper.BackgroundColor3 = paperColor
 	paper.BorderSizePixel = 0
 	paper.Parent = gui
 
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = Color3.fromRGB(28, 18, 18)
-	stroke.Thickness = 2
-	stroke.Parent = paper
+	local art = Instance.new("Frame")
+	art.Name = "Art"
+	art.BackgroundTransparency = 1
+	art.AnchorPoint = Vector2.new(0.5, 0.5)
+	art.Position = UDim2.fromScale(0.5, 0.5)
+	art.Size = UDim2.fromScale(0.84, 0.84)
+	art.Parent = paper
 
-	StencilView.draw(paper, shape, ink)
+	FlashSheet.draw(art, design, ink)
+end
+
+local function paintPrint(part: BasePart)
+	if painted[part] or part:FindFirstChild("PrintArt") ~= nil then
+		painted[part] = true
+		return
+	end
+	local kind = part:GetAttribute("WallPrint")
+	if typeof(kind) ~= "string" then
+		return
+	end
+	painted[part] = true
+
+	local gui = Instance.new("SurfaceGui")
+	gui.Name = "PrintArt"
+	gui.Face = Enum.NormalId.Front
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 42
+	gui.LightInfluence = 1
+	gui.Parent = part
+
+	local art = Instance.new("Frame")
+	art.Name = "Art"
+	art.BackgroundTransparency = 1
+	art.Size = UDim2.fromScale(1, 1)
+	art.BorderSizePixel = 0
+	art.Parent = gui
+
+	WallPrint.draw(art, kind)
 end
 
 local function consider(instance: Instance)
@@ -159,7 +203,10 @@ local function consider(instance: Instance)
 	if instance.Name == "ThemeBoard" then
 		mountThemeBoard(instance)
 	end
-	if instance:GetAttribute("FlashShape") ~= nil then
+	if instance:GetAttribute("WallPrint") ~= nil then
+		paintPrint(instance)
+	end
+	if instance:GetAttribute("FlashDesign") ~= nil then
 		paintCard(instance)
 	end
 end
