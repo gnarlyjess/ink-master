@@ -20,6 +20,8 @@ type Presentation = {
 
 type HudRefs = {
 	badge: TextLabel,
+	eyebrow: TextLabel,
+	wordmark: Frame,
 	roundLabel: TextLabel,
 	pill: Frame,
 	pillLabel: TextLabel,
@@ -30,9 +32,15 @@ type HudRefs = {
 	subtitle: TextLabel,
 	track: Frame,
 	fill: Frame,
+	artistsChip: Frame,
 	artistsValue: TextLabel,
 	themeChip: Frame,
 	themeValue: TextLabel,
+	card: Frame,
+	banner: Frame,
+	bannerState: TextLabel,
+	bannerTime: TextLabel,
+	bannerTheme: TextLabel,
 }
 
 local PREFIX = "[InkMasters]"
@@ -174,6 +182,7 @@ local function renderClock(refs: HudRefs, snapshot: RoundSnapshot)
 	else
 		refs.heroValue.Text = clock
 	end
+	refs.bannerTime.Text = clock
 	refs.fill.Size = UDim2.fromScale(math.clamp(remaining / stateDuration, 0, 1), 1)
 end
 
@@ -221,10 +230,16 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 	end
 
 	local hasTimer = snapshot.endsAt ~= nil and snapshot.duration ~= nil
-	refs.track.Visible = hasTimer
+	local designing = snapshot.state == "TattooCreation"
+	refs.track.Visible = hasTimer and not designing
 	refs.artistsValue.Text = `{formatCount(snapshot.playerCount)} / {formatCount(snapshot.maxPlayers)}`
 	refs.themeValue.Text = snapshot.themeName or "Incoming"
-	refs.themeChip.Visible = snapshot.state ~= "ThemeReveal"
+	refs.themeChip.Visible = snapshot.state ~= "ThemeReveal" and not designing
+	refs.card.Visible = not designing
+	refs.banner.Visible = designing
+	refs.bannerState.Text = RoundTypes.getLabel(snapshot.state)
+	refs.bannerTheme.Text = snapshot.themeName or "Theme"
+	refs.bannerTime.TextColor3 = accent
 	renderClock(refs, snapshot)
 end
 
@@ -238,7 +253,7 @@ local function buildHud(parent: Instance): HudRefs
 	screenGui.Name = "InkMastersHud"
 	screenGui.ResetOnSpawn = false
 	screenGui.IgnoreGuiInset = true
-	screenGui.DisplayOrder = 10
+	screenGui.DisplayOrder = 30
 	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	screenGui.Parent = parent
 
@@ -404,11 +419,37 @@ local function buildHud(parent: Instance): HudRefs
 		return chip, valueLabel
 	end
 
-	local _, artistsValue = createChip("Artists", "ARTISTS")
+	local artistsChip, artistsValue = createChip("Artists", "ARTISTS")
 	local themeChip, themeValue = createChip("Theme", "THEME")
+
+	local banner = newFrame("Banner")
+	banner.AnchorPoint = Vector2.new(0.5, 0)
+	banner.Position = UDim2.new(0.5, 0, 0, 12)
+	banner.AutomaticSize = Enum.AutomaticSize.XY
+	banner.BackgroundColor3 = UiTheme.color.panel
+	banner.BackgroundTransparency = 0.12
+	banner.Visible = false
+	banner.ZIndex = 6
+	banner.Parent = screenGui
+	addCorner(banner, 999)
+	addStroke(banner, UiTheme.color.stroke, 1, 0.35)
+	addPadding(banner, 8, 16, 8, 16)
+	addList(banner, Enum.FillDirection.Horizontal, 14)
+
+	local bannerState = createLabel("BannerState", 14, UiTheme.font.bold, UiTheme.color.aqua, true)
+	bannerState.Text = "Design phase"
+	bannerState.Parent = banner
+	local bannerTime = createLabel("BannerTime", 16, UiTheme.font.heavy, UiTheme.color.text, true)
+	bannerTime.Text = "0:00"
+	bannerTime.Parent = banner
+	local bannerTheme = createLabel("BannerTheme", 14, UiTheme.font.medium, UiTheme.color.text, true)
+	bannerTheme.Text = "Theme"
+	bannerTheme.Parent = banner
 
 	return {
 		badge = badge,
+		eyebrow = eyebrow,
+		wordmark = titleRow,
 		roundLabel = roundLabel,
 		pill = pill,
 		pillLabel = pillLabel,
@@ -419,9 +460,15 @@ local function buildHud(parent: Instance): HudRefs
 		subtitle = subtitle,
 		track = track,
 		fill = fill,
+		artistsChip = artistsChip,
 		artistsValue = artistsValue,
 		themeChip = themeChip,
 		themeValue = themeValue,
+		card = holder,
+		banner = banner,
+		bannerState = bannerState,
+		bannerTime = bannerTime,
+		bannerTheme = bannerTheme,
 	}
 end
 

@@ -47,7 +47,11 @@ function DesignDocument.sanitize(payload: any, roundId: number): TattooDesign?
 	if typeof(payload) ~= "table" then
 		return nil
 	end
-	if payload.roundId ~= roundId or payload.region ~= GameConfig.getDesignRegion() then
+	local region = payload.region
+	if payload.roundId ~= roundId then
+		return nil
+	end
+	if typeof(region) ~= "string" or not GameConfig.isDesignRegion(region) then
 		return nil
 	end
 	if typeof(payload.elements) ~= "table" then
@@ -111,7 +115,7 @@ function DesignDocument.sanitize(payload: any, roundId: number): TattooDesign?
 
 	return {
 		version = 1,
-		region = GameConfig.getDesignRegion(),
+		region = region,
 		elements = elements,
 	}
 end

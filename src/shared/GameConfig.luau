@@ -5,6 +5,7 @@
 -- false: the live lobby needs 5 players and uses the Live timers.
 -- Both timer tables stay in this file. Durations are seconds.
 
+local BodyRegions = require(script.Parent.BodyRegions)
 local RoundTypes = require(script.Parent.RoundTypes)
 
 local LIVE_MIN_PLAYERS = 5
@@ -38,7 +39,7 @@ local DEV_TIMERS: { [string]: number } = {
 
 -- The forearm panel is a placement prototype. These limits are what the server enforces.
 local MAX_ELEMENTS = 20
-local MIN_ELEMENT_SCALE = 0.08
+local MIN_ELEMENT_SCALE = 0.015
 local MAX_ELEMENT_SCALE = 0.7
 local DESIGN_REGION = "LeftForearm"
 
@@ -73,6 +74,10 @@ function GameConfig.getDesignRegion(): string
 	return DESIGN_REGION
 end
 
+function GameConfig.isDesignRegion(region: string): boolean
+	return BodyRegions.get(region) ~= nil
+end
+
 function GameConfig.getDuration(state: string): number?
 	local timers = if GameConfig.DevMode then DEV_TIMERS else LIVE_TIMERS
 	return timers[state]
@@ -88,8 +93,8 @@ function GameConfig.validate()
 	if MAX_ELEMENTS < 1 or MIN_ELEMENT_SCALE <= 0 or MAX_ELEMENT_SCALE <= MIN_ELEMENT_SCALE then
 		error("[InkMasters] Design limits are invalid")
 	end
-	if DESIGN_REGION == "" then
-		error("[InkMasters] Design region is empty")
+	if not GameConfig.isDesignRegion(DESIGN_REGION) then
+		error("[InkMasters] Default design region is not a known body part")
 	end
 
 	local profiles: { [string]: { [string]: number } } = {

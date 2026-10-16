@@ -7,6 +7,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
+local BodyRegions = require(ReplicatedStorage.Shared.BodyRegions)
 local DesignDocument = require(ReplicatedStorage.Shared.DesignDocument)
 local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
 local InkColors = require(ReplicatedStorage.Shared.InkColors)
@@ -21,7 +22,6 @@ type TattooDesign = DesignDocument.TattooDesign
 type RoundSnapshot = RoundTypes.RoundSnapshot
 
 local PREFIX = "[InkMasters]"
-local PLACE_SCALE = 0.22
 
 local TattooEditor = {}
 local started = false
@@ -41,23 +41,6 @@ local function stroke(parent: Instance, color: Color3): UIStroke
 	return uiStroke
 end
 
-local function label(parent: Instance, text: string, size: number, color: Color3): TextLabel
-	local textLabel = Instance.new("TextLabel")
-	textLabel.BackgroundTransparency = 1
-	textLabel.BorderSizePixel = 0
-	textLabel.FontFace = UiTheme.font.bold
-	textLabel.TextSize = size
-	textLabel.TextColor3 = color
-	textLabel.Text = text
-	textLabel.TextWrapped = true
-	textLabel.TextXAlignment = Enum.TextXAlignment.Center
-	textLabel.AutoLocalize = false
-	textLabel.Size = UDim2.fromScale(1, 0)
-	textLabel.AutomaticSize = Enum.AutomaticSize.Y
-	textLabel.Parent = parent
-	return textLabel
-end
-
 function TattooEditor.start()
 	if started then
 		return
@@ -73,16 +56,17 @@ function TattooEditor.start()
 	local selectedIndex: number? = nil
 	local selectedStencilId = "disc"
 	local selectedColorId = "black"
+	local selectedRegion = "LeftForearm"
 	local editing = false
 	local roundId = 0
 	local lastRevision = 0
-	local draggingIndex: number? = nil
 	local clearArmed = false
 	local clearToken = 0
 	local statusOverride: string? = nil
 
 	local stencilStrokes: { [string]: UIStroke } = {}
 	local colorStrokes: { [string]: UIStroke } = {}
+	local regionStrokes: { [string]: UIStroke } = {}
 
 	local playerGui = player:WaitForChild("PlayerGui")
 	local existing = playerGui:FindFirstChild("InkMastersEditor")
@@ -100,46 +84,121 @@ function TattooEditor.start()
 	screenGui.Parent = playerGui
 
 	local holder = Instance.new("Frame")
-	holder.Name = "Tools"
-	holder.AnchorPoint = Vector2.new(0.5, 1)
-	holder.Position = UDim2.new(0.5, 0, 1, -18)
-	holder.Size = UDim2.fromOffset(740, 0)
-	holder.AutomaticSize = Enum.AutomaticSize.Y
+	holder.Name = "ShapeList"
+	holder.AnchorPoint = Vector2.new(1, 0)
+	holder.Position = UDim2.fromScale(0.985, 0.07)
+	holder.Size = UDim2.fromScale(0.24, 0.9)
 	holder.BackgroundColor3 = UiTheme.color.panel
-	holder.BackgroundTransparency = 0.06
+	holder.BackgroundTransparency = 0.08
 	holder.BorderSizePixel = 0
 	holder.Parent = screenGui
-	corner(holder, 18)
+	corner(holder, 16)
 	stroke(holder, UiTheme.color.stroke)
 
-	local gradient = Instance.new("UIGradient")
-	gradient.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, UiTheme.color.panelTop),
-		ColorSequenceKeypoint.new(1, UiTheme.color.panel),
-	})
-	gradient.Rotation = 90
-	gradient.Parent = holder
+	holder.ClipsDescendants = true
+	local panelPad = Instance.new("UIPadding")
+	panelPad.PaddingTop = UDim.new(0, 12)
+	panelPad.PaddingBottom = UDim.new(0, 12)
+	panelPad.PaddingLeft = UDim.new(0, 12)
+	panelPad.PaddingRight = UDim.new(0, 12)
+	panelPad.Parent = holder
+	local panelList = Instance.new("UIListLayout")
+	panelList.FillDirection = Enum.FillDirection.Vertical
+	panelList.Padding = UDim.new(0, 8)
+	panelList.SortOrder = Enum.SortOrder.LayoutOrder
+	panelList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	panelList.Parent = holder
 
-	local content = Instance.new("Frame")
-	content.Name = "Content"
-	content.BackgroundTransparency = 1
-	content.Size = UDim2.fromScale(1, 0)
-	content.AutomaticSize = Enum.AutomaticSize.Y
-	content.Parent = holder
-	local padding = Instance.new("UIPadding")
-	padding.PaddingTop = UDim.new(0, 12)
-	padding.PaddingBottom = UDim.new(0, 12)
-	padding.PaddingLeft = UDim.new(0, 14)
-	padding.PaddingRight = UDim.new(0, 14)
-	padding.Parent = content
-	local list = Instance.new("UIListLayout")
-	list.Padding = UDim.new(0, 8)
-	list.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	list.SortOrder = Enum.SortOrder.LayoutOrder
-	list.Parent = content
+	local function sectionLabel(name: string, text: string, order: number): TextLabel
+		local heading = Instance.new("TextLabel")
+		heading.Name = name
+		heading.BackgroundTransparency = 1
+		heading.LayoutOrder = order
+		heading.FontFace = UiTheme.font.bold
+		heading.TextSize = 12
+		heading.TextColor3 = UiTheme.color.magenta
+		heading.TextXAlignment = Enum.TextXAlignment.Left
+		heading.Text = text
+		heading.Size = UDim2.new(1, 0, 0, 16)
+		heading.Parent = holder
+		return heading
+	end
 
-	label(content, "FOREARM PANEL  ·  PROTOTYPE", 11, UiTheme.color.magenta)
-	local status = label(content, "Click the panel on your left arm.", 15, UiTheme.color.text)
+	sectionLabel("LimbHeading", "LIMB", 1)
+
+	local limbScroll = Instance.new("ScrollingFrame")
+	limbScroll.Name = "Limbs"
+	limbScroll.LayoutOrder = 2
+	limbScroll.BackgroundTransparency = 1
+	limbScroll.BorderSizePixel = 0
+	limbScroll.ClipsDescendants = true
+	limbScroll.ScrollBarThickness = 4
+	limbScroll.ScrollingDirection = Enum.ScrollingDirection.X
+	limbScroll.AutomaticCanvasSize = Enum.AutomaticSize.X
+	limbScroll.CanvasSize = UDim2.fromOffset(0, 0)
+	limbScroll.Size = UDim2.new(1, 0, 0, 40)
+	limbScroll.Parent = holder
+	local limbLayout = Instance.new("UIListLayout")
+	limbLayout.FillDirection = Enum.FillDirection.Horizontal
+	limbLayout.Padding = UDim.new(0, 6)
+	limbLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	limbLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	limbLayout.Parent = limbScroll
+
+	sectionLabel("ShapeHeading", "SHAPES", 3)
+
+	local shapeScroll = Instance.new("ScrollingFrame")
+	shapeScroll.Name = "Shapes"
+	shapeScroll.LayoutOrder = 4
+	shapeScroll.BackgroundTransparency = 1
+	shapeScroll.BorderSizePixel = 0
+	shapeScroll.ClipsDescendants = true
+	shapeScroll.ScrollBarThickness = 6
+	shapeScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+	shapeScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	shapeScroll.CanvasSize = UDim2.fromOffset(0, 0)
+	shapeScroll.Size = UDim2.fromScale(1, 0)
+	shapeScroll.Parent = holder
+	local shapeFlex = Instance.new("UIFlexItem")
+	shapeFlex.FlexMode = Enum.UIFlexMode.Fill
+	shapeFlex.Parent = shapeScroll
+	local shapeLayout = Instance.new("UIListLayout")
+	shapeLayout.FillDirection = Enum.FillDirection.Vertical
+	shapeLayout.Padding = UDim.new(0, 6)
+	shapeLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	shapeLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	shapeLayout.Parent = shapeScroll
+	local shapePad = Instance.new("UIPadding")
+	shapePad.PaddingRight = UDim.new(0, 4)
+	shapePad.Parent = shapeScroll
+
+	local dock = Instance.new("Frame")
+	dock.Name = "Dock"
+	dock.LayoutOrder = 5
+	dock.BackgroundTransparency = 1
+	dock.Size = UDim2.fromScale(1, 0)
+	dock.AutomaticSize = Enum.AutomaticSize.Y
+	dock.Parent = holder
+	local dockList = Instance.new("UIListLayout")
+	dockList.FillDirection = Enum.FillDirection.Vertical
+	dockList.Padding = UDim.new(0, 10)
+	dockList.SortOrder = Enum.SortOrder.LayoutOrder
+	dockList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	dockList.Parent = dock
+
+	local status = Instance.new("TextLabel")
+	status.Name = "Status"
+	status.LayoutOrder = 6
+	status.BackgroundTransparency = 1
+	status.FontFace = UiTheme.font.medium
+	status.TextSize = 13
+	status.TextColor3 = UiTheme.color.muted
+	status.TextWrapped = true
+	status.TextXAlignment = Enum.TextXAlignment.Left
+	status.TextYAlignment = Enum.TextYAlignment.Top
+	status.Text = "Press a shape to add it."
+	status.Size = UDim2.new(1, 0, 0, 32)
+	status.Parent = holder
 
 	local function swatchColor(): { r: number, g: number, b: number }
 		local swatch = InkColors.get(selectedColorId)
@@ -160,6 +219,11 @@ function TattooEditor.start()
 			uiStroke.Color = if selected then UiTheme.color.gold else UiTheme.color.ink
 			uiStroke.Thickness = if selected then 2.5 else 1
 		end
+		for id, uiStroke in regionStrokes do
+			local selected = id == selectedRegion
+			uiStroke.Color = if selected then UiTheme.color.gold else UiTheme.color.stroke
+			uiStroke.Transparency = if selected then 0 else 0.45
+		end
 	end
 
 	local function updateStatus()
@@ -173,11 +237,7 @@ function TattooEditor.start()
 		local inkName = if ink ~= nil then ink.name else "Ink"
 		local count = #design.elements
 		local maxCount = GameConfig.getMaxElements()
-		if selectedIndex ~= nil then
-			status.Text = `{markName} · {inkName} · {count}/{maxCount} · drag a mark, Q/E rotates`
-		else
-			status.Text = `{markName} · {inkName} · {count}/{maxCount} · click the forearm panel`
-		end
+		status.Text = `{markName} · {inkName} · {count}/{maxCount}`
 	end
 
 	local function refresh()
@@ -209,7 +269,7 @@ function TattooEditor.start()
 			x = math.clamp(x, 0.06, 0.94),
 			y = math.clamp(y, 0.06, 0.94),
 			rotation = 0,
-			scale = PLACE_SCALE,
+			scale = TattooCanvas.placeScale(),
 			color = { r = color.r, g = color.g, b = color.b },
 		})
 		selectedIndex = #design.elements
@@ -218,18 +278,50 @@ function TattooEditor.start()
 		refresh()
 	end
 
+	local function placeFromMenu(stencilId: string)
+		selectedStencilId = stencilId
+		local slot = #design.elements
+		local column = slot % 5
+		local line = math.floor(slot / 5) % 4
+		placeAt(0.38 + column * 0.06, 0.4 + line * 0.07)
+	end
+
 	local function grab(index: number)
 		if design.elements[index] == nil then
 			return
 		end
 		selectedIndex = index
-		draggingIndex = index
 		statusOverride = nil
 		TattooCanvas.render(design, selectedIndex)
 		updateStatus()
 	end
 
-	TattooCanvas.setHandlers(placeAt, grab)
+	local function deselect()
+		if selectedIndex == nil then
+			return
+		end
+		selectedIndex = nil
+		refresh()
+	end
+
+	TattooCanvas.setHandlers(grab, deselect)
+	TattooCanvas.setMoveHandler(function(index: number, x: number, y: number)
+		local element = design.elements[index]
+		if element == nil then
+			return
+		end
+		element.x = x
+		element.y = y
+	end)
+	TattooCanvas.setTransformHandlers(function(index: number, rotation: number, scale: number)
+		local element = design.elements[index]
+		if element == nil then
+			return
+		end
+		element.rotation = rotation
+		element.scale = scale
+	end)
+	TattooCanvas.setAdjustStarted(function() end)
 
 	local function selectedElement(): DesignDocument.DesignElement?
 		if selectedIndex == nil then
@@ -321,23 +413,55 @@ function TattooEditor.start()
 		})
 	end
 
-	local function row(): Frame
+	local function row(parent: Instance): Frame
 		local frame = Instance.new("Frame")
 		frame.BackgroundTransparency = 1
 		frame.Size = UDim2.fromScale(1, 0)
 		frame.AutomaticSize = Enum.AutomaticSize.Y
-		frame.Parent = content
+		frame.Parent = parent
 		local layout = Instance.new("UIListLayout")
 		layout.FillDirection = Enum.FillDirection.Horizontal
 		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 		layout.VerticalAlignment = Enum.VerticalAlignment.Center
-		layout.Padding = UDim.new(0, 8)
+		layout.Padding = UDim.new(0, 6)
 		layout.Wraps = true
 		layout.Parent = frame
 		return frame
 	end
 
-	local stencilRow = row()
+	local function selectRegion(regionId: string)
+		selectedRegion = regionId
+		design.region = regionId
+		statusOverride = nil
+		updateChrome()
+		refresh()
+	end
+
+	for _, region in BodyRegions.all do
+		local limbButton = Instance.new("TextButton")
+		limbButton.Name = region.id
+		limbButton.AutoButtonColor = true
+		limbButton.Text = region.label
+		limbButton.FontFace = UiTheme.font.bold
+		limbButton.TextSize = 13
+		limbButton.TextColor3 = UiTheme.color.text
+		limbButton.BackgroundColor3 = UiTheme.color.chip
+		limbButton.BorderSizePixel = 0
+		limbButton.AutomaticSize = Enum.AutomaticSize.X
+		limbButton.Size = UDim2.fromOffset(0, 34)
+		limbButton.Parent = limbScroll
+		corner(limbButton, 10)
+		regionStrokes[region.id] = stroke(limbButton, UiTheme.color.stroke)
+		local limbPad = Instance.new("UIPadding")
+		limbPad.PaddingLeft = UDim.new(0, 10)
+		limbPad.PaddingRight = UDim.new(0, 10)
+		limbPad.Parent = limbButton
+		local regionId = region.id
+		limbButton.MouseButton1Click:Connect(function()
+			selectRegion(regionId)
+		end)
+	end
+
 	for _, stencil in StencilDefinitions.all do
 		local button = Instance.new("TextButton")
 		button.Name = stencil.id
@@ -345,35 +469,38 @@ function TattooEditor.start()
 		button.Text = ""
 		button.BackgroundColor3 = UiTheme.color.chip
 		button.BorderSizePixel = 0
-		button.Size = UDim2.fromOffset(72, 84)
-		button.Parent = stencilRow
+		button.Size = UDim2.new(1, -8, 0, 48)
+		button.Parent = shapeScroll
 		corner(button, 12)
 		stencilStrokes[stencil.id] = stroke(button, UiTheme.color.stroke)
 
 		local preview = Instance.new("Frame")
 		preview.BackgroundTransparency = 1
-		preview.AnchorPoint = Vector2.new(0.5, 0)
-		preview.Position = UDim2.new(0.5, 0, 0, 8)
-		preview.Size = UDim2.fromOffset(36, 36)
+		preview.AnchorPoint = Vector2.new(0, 0.5)
+		preview.Position = UDim2.new(0, 12, 0.5, 0)
+		preview.Size = UDim2.fromOffset(34, 34)
 		preview.Parent = button
 		StencilView.draw(preview, stencil.shape, UiTheme.color.text)
 
-		local name = label(button, stencil.name, 12, UiTheme.color.text)
-		name.AnchorPoint = Vector2.new(0.5, 1)
-		name.Position = UDim2.new(0.5, 0, 1, -6)
-		name.Size = UDim2.new(1, -8, 0, 16)
-		name.AutomaticSize = Enum.AutomaticSize.None
+		local name = Instance.new("TextLabel")
+		name.BackgroundTransparency = 1
+		name.FontFace = UiTheme.font.bold
+		name.TextSize = 16
+		name.TextColor3 = UiTheme.color.text
+		name.TextXAlignment = Enum.TextXAlignment.Left
+		name.Text = stencil.name
+		name.Position = UDim2.fromOffset(56, 0)
+		name.Size = UDim2.new(1, -64, 1, 0)
+		name.Parent = button
 
 		local stencilId = stencil.id
 		button.MouseButton1Click:Connect(function()
-			selectedStencilId = stencilId
-			statusOverride = nil
-			updateChrome()
-			updateStatus()
+			placeFromMenu(stencilId)
 		end)
 	end
 
-	local colorRow = row()
+	local colorRow = row(dock)
+	colorRow.LayoutOrder = 1
 	for _, ink in InkColors.all do
 		local button = Instance.new("TextButton")
 		button.Name = ink.id
@@ -381,7 +508,7 @@ function TattooEditor.start()
 		button.AutoButtonColor = false
 		button.BackgroundColor3 = InkColors.toColor3(ink)
 		button.BorderSizePixel = 0
-		button.Size = UDim2.fromOffset(32, 32)
+		button.Size = UDim2.fromOffset(26, 26)
 		button.Parent = colorRow
 		corner(button, 16)
 		colorStrokes[ink.id] = stroke(button, UiTheme.color.ink)
@@ -398,11 +525,11 @@ function TattooEditor.start()
 		button.BackgroundColor3 = UiTheme.color.chip
 		button.BorderSizePixel = 0
 		button.FontFace = UiTheme.font.bold
-		button.TextSize = 14
+		button.TextSize = 13
 		button.TextColor3 = UiTheme.color.text
 		button.Text = text
 		button.AutoLocalize = false
-		button.Size = UDim2.fromOffset(0, 36)
+		button.Size = UDim2.fromOffset(0, 32)
 		button.AutomaticSize = Enum.AutomaticSize.X
 		button.Parent = parent
 		corner(button, 10)
@@ -413,19 +540,8 @@ function TattooEditor.start()
 		button.MouseButton1Click:Connect(callback)
 	end
 
-	local toolRow = row()
-	tool("Rotate left", toolRow, function()
-		rotateBy(-15)
-	end)
-	tool("Rotate right", toolRow, function()
-		rotateBy(15)
-	end)
-	tool("Smaller", toolRow, function()
-		scaleBy(1 / 1.12)
-	end)
-	tool("Larger", toolRow, function()
-		scaleBy(1.12)
-	end)
+	local toolRow = row(dock)
+	toolRow.LayoutOrder = 2
 	tool("Delete", toolRow, function()
 		removeSelected()
 	end)
@@ -440,12 +556,12 @@ function TattooEditor.start()
 		editing = true
 		roundId = snapshot.roundId
 		design = DesignDocument.createEmpty()
+		design.region = selectedRegion
 		selectedIndex = nil
-		draggingIndex = nil
 		clearArmed = false
 		statusOverride = nil
 		screenGui.Enabled = true
-		TattooCanvas.setCameraLocked(true)
+		TattooCanvas.setCameraLocked(false)
 		refresh()
 		print(`{PREFIX} Editor open | round {snapshot.roundId}`)
 	end
@@ -455,9 +571,9 @@ function TattooEditor.start()
 			return
 		end
 		editing = false
-		draggingIndex = nil
 		submit()
 		screenGui.Enabled = false
+		TattooCanvas.clear()
 		TattooCanvas.setCameraLocked(false)
 	end
 
@@ -505,38 +621,6 @@ function TattooEditor.start()
 			beginEditing(snapshot)
 		end
 		roundId = snapshot.roundId
-	end)
-
-	UserInputService.InputChanged:Connect(function(input: InputObject)
-		if draggingIndex == nil then
-			return
-		end
-		if
-			input.UserInputType ~= Enum.UserInputType.MouseMovement
-			and input.UserInputType ~= Enum.UserInputType.Touch
-		then
-			return
-		end
-		local element = design.elements[draggingIndex]
-		if element == nil then
-			return
-		end
-		local x, y = TattooCanvas.screenToUv(Vector2.new(input.Position.X, input.Position.Y))
-		if x == nil or y == nil then
-			return
-		end
-		element.x = math.clamp(x, 0.06, 0.94)
-		element.y = math.clamp(y, 0.06, 0.94)
-		TattooCanvas.nudge(draggingIndex, element.x, element.y)
-	end)
-
-	UserInputService.InputEnded:Connect(function(input: InputObject)
-		if
-			input.UserInputType == Enum.UserInputType.MouseButton1
-			or input.UserInputType == Enum.UserInputType.Touch
-		then
-			draggingIndex = nil
-		end
 	end)
 
 	UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)
