@@ -17,6 +17,7 @@ local StencilDefinitions = require(ReplicatedStorage.Shared.StencilDefinitions)
 local StencilView = require(script.Parent.StencilView)
 local TattooCanvas = require(script.Parent.TattooCanvas)
 local UiTheme = require(script.Parent.UiTheme)
+local MarkInspector = require(script.Parent.MarkInspector)
 
 type TattooDesign = DesignDocument.TattooDesign
 type RoundSnapshot = RoundTypes.RoundSnapshot
@@ -54,19 +55,24 @@ function TattooEditor.start()
 
 	local design = DesignDocument.createEmpty()
 	local selectedIndex: number? = nil
-	local selectedStencilId = "disc"
+	local selectedStencilId = "circle"
 	local selectedColorId = "black"
 	local selectedRegion = "LeftForearm"
+	local selectedSkinId = "yours"
 	local editing = false
 	local roundId = 0
 	local lastRevision = 0
 	local clearArmed = false
 	local clearToken = 0
 	local statusOverride: string? = nil
+	local markPanel: {
+		show: (MarkInspector.MarkState) -> (),
+		hide: () -> (),
+	}? = nil
 
 	local stencilStrokes: { [string]: UIStroke } = {}
-	local colorStrokes: { [string]: UIStroke } = {}
 	local regionStrokes: { [string]: UIStroke } = {}
+	local skinStrokes: { [string]: UIStroke } = {}
 
 	local playerGui = player:WaitForChild("PlayerGui")
 	local existing = playerGui:FindFirstChild("InkMastersEditor")
@@ -145,11 +151,32 @@ function TattooEditor.start()
 	limbLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	limbLayout.Parent = limbScroll
 
-	sectionLabel("ShapeHeading", "SHAPES", 3)
+	sectionLabel("SkinHeading", "SKIN", 3)
+
+	local skinScroll = Instance.new("ScrollingFrame")
+	skinScroll.Name = "Skin"
+	skinScroll.LayoutOrder = 4
+	skinScroll.BackgroundTransparency = 1
+	skinScroll.BorderSizePixel = 0
+	skinScroll.ClipsDescendants = true
+	skinScroll.ScrollBarThickness = 4
+	skinScroll.ScrollingDirection = Enum.ScrollingDirection.X
+	skinScroll.AutomaticCanvasSize = Enum.AutomaticSize.X
+	skinScroll.CanvasSize = UDim2.fromOffset(0, 0)
+	skinScroll.Size = UDim2.new(1, 0, 0, 36)
+	skinScroll.Parent = holder
+	local skinLayout = Instance.new("UIListLayout")
+	skinLayout.FillDirection = Enum.FillDirection.Horizontal
+	skinLayout.Padding = UDim.new(0, 6)
+	skinLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	skinLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	skinLayout.Parent = skinScroll
+
+	sectionLabel("ShapeHeading", "SHAPES", 5)
 
 	local shapeScroll = Instance.new("ScrollingFrame")
 	shapeScroll.Name = "Shapes"
-	shapeScroll.LayoutOrder = 4
+	shapeScroll.LayoutOrder = 6
 	shapeScroll.BackgroundTransparency = 1
 	shapeScroll.BorderSizePixel = 0
 	shapeScroll.ClipsDescendants = true
@@ -162,19 +189,20 @@ function TattooEditor.start()
 	local shapeFlex = Instance.new("UIFlexItem")
 	shapeFlex.FlexMode = Enum.UIFlexMode.Fill
 	shapeFlex.Parent = shapeScroll
-	local shapeLayout = Instance.new("UIListLayout")
-	shapeLayout.FillDirection = Enum.FillDirection.Vertical
-	shapeLayout.Padding = UDim.new(0, 6)
-	shapeLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	shapeLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	shapeLayout.Parent = shapeScroll
+	local shapeGrid = Instance.new("UIGridLayout")
+	shapeGrid.CellPadding = UDim2.fromOffset(6, 6)
+	shapeGrid.CellSize = UDim2.new(0.333, -6, 0, 78)
+	shapeGrid.FillDirection = Enum.FillDirection.Horizontal
+	shapeGrid.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	shapeGrid.SortOrder = Enum.SortOrder.LayoutOrder
+	shapeGrid.Parent = shapeScroll
 	local shapePad = Instance.new("UIPadding")
 	shapePad.PaddingRight = UDim.new(0, 4)
 	shapePad.Parent = shapeScroll
 
 	local dock = Instance.new("Frame")
 	dock.Name = "Dock"
-	dock.LayoutOrder = 5
+	dock.LayoutOrder = 7
 	dock.BackgroundTransparency = 1
 	dock.Size = UDim2.fromScale(1, 0)
 	dock.AutomaticSize = Enum.AutomaticSize.Y
@@ -188,7 +216,7 @@ function TattooEditor.start()
 
 	local status = Instance.new("TextLabel")
 	status.Name = "Status"
-	status.LayoutOrder = 6
+	status.LayoutOrder = 8
 	status.BackgroundTransparency = 1
 	status.FontFace = UiTheme.font.medium
 	status.TextSize = 13
@@ -214,16 +242,43 @@ function TattooEditor.start()
 			uiStroke.Color = if selected then UiTheme.color.gold else UiTheme.color.stroke
 			uiStroke.Transparency = if selected then 0 else 0.45
 		end
-		for id, uiStroke in colorStrokes do
-			local selected = id == selectedColorId
-			uiStroke.Color = if selected then UiTheme.color.gold else UiTheme.color.ink
-			uiStroke.Thickness = if selected then 2.5 else 1
-		end
 		for id, uiStroke in regionStrokes do
 			local selected = id == selectedRegion
 			uiStroke.Color = if selected then UiTheme.color.gold else UiTheme.color.stroke
 			uiStroke.Transparency = if selected then 0 else 0.45
 		end
+		for id, uiStroke in skinStrokes do
+			local selected = id == selectedSkinId
+			uiStroke.Color = if selected then UiTheme.color.gold else Color3.fromRGB(28, 24, 22)
+			uiStroke.Thickness = if selected then 2.5 else 1
+		end
+	end
+
+	local function syncInspector()
+		local panel = markPanel
+		if panel == nil then
+			return
+		end
+		if selectedIndex == nil then
+			panel.hide()
+			return
+		end
+		local element = design.elements[selectedIndex]
+		if element == nil then
+			panel.hide()
+			return
+		end
+		local stencil = StencilDefinitions.get(element.stencilId)
+		panel.show({
+			name = if stencil ~= nil then stencil.name else "Shape",
+			fill = element.fill,
+			outline = element.outline,
+			thickness = element.thickness,
+			opacity = element.opacity,
+			flip = element.flip,
+			color = element.color,
+			line = element.line,
+		})
 	end
 
 	local function updateStatus()
@@ -248,6 +303,7 @@ function TattooEditor.start()
 		TattooCanvas.render(design, selectedIndex)
 		updateStatus()
 		updateChrome()
+		syncInspector()
 	end
 
 	local function clampScale(scale: number): number
@@ -271,6 +327,12 @@ function TattooEditor.start()
 			rotation = 0,
 			scale = TattooCanvas.placeScale(),
 			color = { r = color.r, g = color.g, b = color.b },
+			line = { r = color.r, g = color.g, b = color.b },
+			fill = false,
+			outline = true,
+			thickness = 1,
+			opacity = 1,
+			flip = false,
 		})
 		selectedIndex = #design.elements
 		statusOverride = nil
@@ -294,6 +356,7 @@ function TattooEditor.start()
 		statusOverride = nil
 		TattooCanvas.render(design, selectedIndex)
 		updateStatus()
+		syncInspector()
 	end
 
 	local function deselect()
@@ -361,20 +424,134 @@ function TattooEditor.start()
 			return
 		end
 		table.remove(design.elements, selectedIndex)
-		selectedIndex = if #design.elements > 0 then math.min(selectedIndex, #design.elements) else nil
+		selectedIndex = nil
 		statusOverride = nil
 		refresh()
 	end
 
-	local function applyColor()
-		local color = swatchColor()
+	local function editSelected(mutate: (DesignDocument.DesignElement) -> ())
 		local element = selectedElement()
-		if element ~= nil then
-			element.color = { r = color.r, g = color.g, b = color.b }
+		if element == nil then
+			return
 		end
+		mutate(element)
 		statusOverride = nil
 		refresh()
 	end
+
+	local function copyElement(element: DesignDocument.DesignElement): DesignDocument.DesignElement
+		return {
+			stencilId = element.stencilId,
+			x = math.clamp(element.x + 0.05, 0.06, 0.94),
+			y = math.clamp(element.y + 0.05, 0.06, 0.94),
+			rotation = element.rotation,
+			scale = element.scale,
+			color = { r = element.color.r, g = element.color.g, b = element.color.b },
+			line = { r = element.line.r, g = element.line.g, b = element.line.b },
+			fill = element.fill,
+			outline = element.outline,
+			thickness = element.thickness,
+			opacity = element.opacity,
+			flip = element.flip,
+		}
+	end
+
+	markPanel = MarkInspector.mount(screenGui, {
+		onClose = function()
+			deselect()
+		end,
+		onDelete = function()
+			removeSelected()
+		end,
+		onFill = function(enabled: boolean)
+			editSelected(function(element)
+				element.fill = enabled
+				if not enabled and not element.outline then
+					element.outline = true
+				end
+			end)
+		end,
+		onOutline = function(enabled: boolean)
+			editSelected(function(element)
+				element.outline = enabled
+				if not enabled and not element.fill then
+					element.fill = true
+				end
+			end)
+		end,
+		onThickness = function(delta: number)
+			editSelected(function(element)
+				element.thickness = DesignDocument.clampThickness(element.thickness + delta)
+			end)
+		end,
+		onOpacity = function(delta: number)
+			editSelected(function(element)
+				local stepped = math.floor((element.opacity + delta) * 10 + 0.5) / 10
+				element.opacity = DesignDocument.clampOpacity(stepped)
+			end)
+		end,
+		onScale = function(direction: number)
+			scaleBy(if direction < 0 then 0.85 else 1.18)
+		end,
+		onRotate = function(degrees: number)
+			rotateBy(degrees)
+		end,
+		onFlip = function(enabled: boolean)
+			editSelected(function(element)
+				element.flip = enabled
+			end)
+		end,
+		onColor = function(color: MarkInspector.Rgb)
+			for _, ink in InkColors.all do
+				local same = math.abs(ink.r - color.r) < 0.03
+					and math.abs(ink.g - color.g) < 0.03
+					and math.abs(ink.b - color.b) < 0.03
+				if same then
+					selectedColorId = ink.id
+				end
+			end
+			editSelected(function(element)
+				element.color = { r = color.r, g = color.g, b = color.b }
+				element.line = { r = color.r, g = color.g, b = color.b }
+			end)
+		end,
+		onLine = function(color: MarkInspector.Rgb)
+			editSelected(function(element)
+				element.line = { r = color.r, g = color.g, b = color.b }
+				element.outline = true
+			end)
+		end,
+		onDuplicate = function()
+			local element = selectedElement()
+			if element == nil then
+				return
+			end
+			if #design.elements >= GameConfig.getMaxElements() then
+				statusOverride = "This design is full."
+				updateStatus()
+				return
+			end
+			table.insert(design.elements, copyElement(element))
+			selectedIndex = #design.elements
+			statusOverride = nil
+			refresh()
+		end,
+		onOrder = function(direction: number)
+			if selectedIndex == nil then
+				return
+			end
+			local nextIndex = selectedIndex + direction
+			local current = design.elements[selectedIndex]
+			local neighbor = design.elements[nextIndex]
+			if current == nil or neighbor == nil then
+				return
+			end
+			design.elements[selectedIndex] = neighbor
+			design.elements[nextIndex] = current
+			selectedIndex = nextIndex
+			refresh()
+		end,
+	})
 
 	local function requestClear()
 		if not clearArmed then
@@ -462,60 +639,72 @@ function TattooEditor.start()
 		end)
 	end
 
-	for _, stencil in StencilDefinitions.all do
+	local function yoursTone(): Color3
+		local character = player.Character
+		if character == nil then
+			return Color3.fromRGB(232, 184, 150)
+		end
+		return TattooCanvas.avatarTone(character)
+	end
+
+	for index, tone in TattooCanvas.skinChoices() do
+		local toneButton = Instance.new("TextButton")
+		toneButton.Name = tone.id
+		toneButton.LayoutOrder = index
+		toneButton.AutoButtonColor = false
+		toneButton.Text = ""
+		toneButton.BackgroundColor3 = if tone.color ~= nil then tone.color else yoursTone()
+		toneButton.BorderSizePixel = 0
+		toneButton.Size = UDim2.fromOffset(28, 28)
+		toneButton.Parent = skinScroll
+		corner(toneButton, 14)
+		skinStrokes[tone.id] = stroke(toneButton, Color3.fromRGB(28, 24, 22))
+		local toneId = tone.id
+		toneButton.MouseButton1Click:Connect(function()
+			selectedSkinId = toneId
+			TattooCanvas.setSkin(toneId)
+			statusOverride = nil
+			refresh()
+		end)
+	end
+
+	for index, stencil in StencilDefinitions.all do
 		local button = Instance.new("TextButton")
 		button.Name = stencil.id
+		button.LayoutOrder = index
 		button.AutoButtonColor = true
 		button.Text = ""
 		button.BackgroundColor3 = UiTheme.color.chip
 		button.BorderSizePixel = 0
-		button.Size = UDim2.new(1, -8, 0, 48)
+		button.Size = UDim2.fromScale(1, 1)
 		button.Parent = shapeScroll
 		corner(button, 12)
 		stencilStrokes[stencil.id] = stroke(button, UiTheme.color.stroke)
 
 		local preview = Instance.new("Frame")
 		preview.BackgroundTransparency = 1
-		preview.AnchorPoint = Vector2.new(0, 0.5)
-		preview.Position = UDim2.new(0, 12, 0.5, 0)
-		preview.Size = UDim2.fromOffset(34, 34)
+		preview.AnchorPoint = Vector2.new(0.5, 0)
+		preview.Position = UDim2.new(0.5, 0, 0, 6)
+		preview.Size = UDim2.fromOffset(40, 40)
 		preview.Parent = button
 		StencilView.draw(preview, stencil.shape, UiTheme.color.text)
 
 		local name = Instance.new("TextLabel")
 		name.BackgroundTransparency = 1
 		name.FontFace = UiTheme.font.bold
-		name.TextSize = 16
+		name.TextSize = 12
 		name.TextColor3 = UiTheme.color.text
-		name.TextXAlignment = Enum.TextXAlignment.Left
+		name.TextXAlignment = Enum.TextXAlignment.Center
+		name.TextTruncate = Enum.TextTruncate.AtEnd
 		name.Text = stencil.name
-		name.Position = UDim2.fromOffset(56, 0)
-		name.Size = UDim2.new(1, -64, 1, 0)
+		name.AnchorPoint = Vector2.new(0.5, 1)
+		name.Position = UDim2.new(0.5, 0, 1, -4)
+		name.Size = UDim2.new(1, -8, 0, 16)
 		name.Parent = button
 
 		local stencilId = stencil.id
 		button.MouseButton1Click:Connect(function()
 			placeFromMenu(stencilId)
-		end)
-	end
-
-	local colorRow = row(dock)
-	colorRow.LayoutOrder = 1
-	for _, ink in InkColors.all do
-		local button = Instance.new("TextButton")
-		button.Name = ink.id
-		button.Text = ""
-		button.AutoButtonColor = false
-		button.BackgroundColor3 = InkColors.toColor3(ink)
-		button.BorderSizePixel = 0
-		button.Size = UDim2.fromOffset(26, 26)
-		button.Parent = colorRow
-		corner(button, 16)
-		colorStrokes[ink.id] = stroke(button, UiTheme.color.ink)
-		local colorId = ink.id
-		button.MouseButton1Click:Connect(function()
-			selectedColorId = colorId
-			applyColor()
 		end)
 	end
 

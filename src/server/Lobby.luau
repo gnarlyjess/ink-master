@@ -107,9 +107,9 @@ end
 local function addSpot(parent: Instance, color: Color3)
 	local spot = Instance.new("SpotLight")
 	spot.Face = Enum.NormalId.Bottom
-	spot.Angle = 78
-	spot.Brightness = 1.4
-	spot.Range = 12
+	spot.Angle = 58
+	spot.Brightness = 2.1
+	spot.Range = 11
 	spot.Color = color
 	spot.Shadows = false
 	spot.Parent = parent
@@ -180,17 +180,20 @@ local function clearDefaultPlace()
 end
 
 local function dressLighting()
-	Lighting.ClockTime = 13.2
-	Lighting.Brightness = 2
-	Lighting.Ambient = Color3.fromRGB(150, 146, 140)
-	Lighting.OutdoorAmbient = Color3.fromRGB(156, 154, 148)
+	-- Fill is high enough to see the room the moment you join.
+	-- The lamps add warm pools on top. They must not be the only light,
+	-- or the shop stays black until those parts replicate.
+	Lighting.ClockTime = 16.4
+	Lighting.Brightness = 1.8
+	Lighting.Ambient = Color3.fromRGB(150, 132, 118)
+	Lighting.OutdoorAmbient = Color3.fromRGB(156, 140, 126)
 	Lighting.GlobalShadows = true
-	Lighting.EnvironmentDiffuseScale = 1
-	Lighting.EnvironmentSpecularScale = 0.12
-	Lighting.ExposureCompensation = 0
+	Lighting.EnvironmentDiffuseScale = 0.85
+	Lighting.EnvironmentSpecularScale = 0.08
+	Lighting.ExposureCompensation = 0.12
 	Lighting.FogStart = 0
 	Lighting.FogEnd = 100000
-	Lighting.FogColor = Color3.fromRGB(210, 206, 198)
+	Lighting.FogColor = Color3.fromRGB(150, 132, 118)
 
 	for _, child in Lighting:GetChildren() do
 		if child:IsA("BloomEffect") then
@@ -219,10 +222,10 @@ local function dressLighting()
 
 	local grade = effect("ColorCorrectionEffect", "InkMastersGrade")
 	if grade:IsA("ColorCorrectionEffect") then
-		grade.Brightness = 0
-		grade.Contrast = 0.04
-		grade.Saturation = 0.04
-		grade.TintColor = Color3.fromRGB(255, 255, 255)
+		grade.Brightness = 0.04
+		grade.Contrast = 0.06
+		grade.Saturation = 0.02
+		grade.TintColor = Color3.fromRGB(255, 236, 214)
 	end
 end
 
@@ -511,13 +514,13 @@ local function buildShell(lobby: Model)
 			name = `ShopLight{index}`,
 			size = Vector3.new(14, 0.18, 2.4),
 			cframe = CFrame.new(0, CEILING_Y - 0.28, lightZ),
-			color = Color3.fromRGB(255, 250, 242),
+			color = Color3.fromRGB(214, 196, 168),
 			material = Enum.Material.SmoothPlastic,
 			parent = shell,
 			collide = false,
 			castShadow = false,
 		})
-		addLight(lamp, Color3.fromRGB(255, 248, 236), 1.15, 26)
+		addLight(lamp, Color3.fromRGB(255, 214, 170), 0.22, 18)
 	end
 end
 
@@ -642,7 +645,7 @@ local function buildStation(parent: Instance, index: number, origin: Vector3, ya
 		castShadow = false,
 		shape = Enum.PartType.Ball,
 	})
-	addSpot(bulb, Color3.fromRGB(255, 236, 210))
+	addSpot(bulb, Color3.fromRGB(255, 196, 140))
 
 	makePart({
 		name = "Tray",
@@ -723,9 +726,8 @@ local function buildGallery(lobby: Model)
 	hang(Vector3.new(-20.2, 7.4, backZ), back, 2.5, 3.2, "flash")
 	hang(Vector3.new(-24.2, 11.1, backZ), back, 2.4, 3.0, "flash")
 	hang(Vector3.new(-20, 11.4, backZ), back, 2.4, 3.0, "flash")
-	hang(Vector3.new(-6.6, 9.2, backZ), back, 3.6, 4.6, "print")
-	hang(Vector3.new(0, 8.5, backZ), back, 6.1, 7.0, "flash")
-	hang(Vector3.new(6.8, 9.1, backZ), back, 3.4, 4.4, "print")
+	hang(Vector3.new(-8.6, 9.2, backZ), back, 3.6, 4.6, "print")
+	hang(Vector3.new(8.8, 9.1, backZ), back, 3.4, 4.4, "print")
 	hang(Vector3.new(14.2, 7.1, backZ), back, 3.2, 4.2, "print")
 	hang(Vector3.new(18.6, 6.7, backZ), back, 2.6, 3.4, "print")
 	hang(Vector3.new(14.6, 11.8, backZ), back, 3.4, 2.6, "print")
@@ -885,8 +887,9 @@ local function buildEntrance(lobby: Model)
 	buildWordmark(entrance, Vector3.new(0, 13.4, -HALF_D + 3.4), intoRoom, 11, 1.8, "INK MASTERS")
 	buildWordmark(entrance, Vector3.new(-9.5, 7.4, -HALF_D - 0.7), towardStreet, 3.2, 1.35, "OPEN")
 
-	-- Foreground board. Spawn faces +Z, so the readable face points back at them.
-	local boardCf = faceToward(Vector3.new(-9, 6.4, -1.5), Vector3.new(0, 0, -1))
+	-- Centered on the back wall, facing the people who walk in.
+	local backFace = HALF_D - WALL / 2
+	local boardCf = faceToward(Vector3.new(0, 8, backFace - 0.36), Vector3.new(0, 0, -1))
 	makePart({
 		name = "ThemeFrame",
 		size = Vector3.new(10.2, 6, 0.16),
@@ -905,15 +908,6 @@ local function buildEntrance(lobby: Model)
 		material = Enum.Material.SmoothPlastic,
 		parent = entrance,
 	})
-	makePart({
-		name = "ThemePost",
-		size = Vector3.new(0.28, 6.2, 0.28),
-		cframe = CFrame.new(-9, FLOOR_TOP + 3.1, -1.5),
-		color = PALETTE.brass,
-		material = Enum.Material.Metal,
-		parent = entrance,
-	})
-
 	local couchCf = faceToward(Vector3.new(-29.2, FLOOR_TOP, -17.5), Vector3.new(1, 0, 0))
 	local function couchAt(offset: Vector3): CFrame
 		return couchCf * CFrame.new(offset)
@@ -1226,7 +1220,7 @@ local function buildGreenery(lobby: Model)
 	pot(Vector3.new(13.4, FLOOR_TOP, 10.2), 1.48, true, false)
 	pot(Vector3.new(-12.2, FLOOR_TOP, 22.2), 1.72, true, false)
 	pot(Vector3.new(12.2, FLOOR_TOP, 22.4), 1.58, false, false)
-	pot(Vector3.new(0, FLOOR_TOP, 23.6), 1.25, true, false)
+	pot(Vector3.new(6.5, FLOOR_TOP, 23.2), 1.25, true, false)
 
 	-- Beside each bed, on the aisle side of the foot.
 	local stations: { { origin: Vector3, yaw: number } } = {
@@ -1327,6 +1321,114 @@ local function placeExistingCharacters(pads: { SpawnLocation })
 	end
 end
 
+local LAMP = Color3.fromRGB(255, 188, 132)
+local BULB = Color3.fromRGB(255, 220, 186)
+local SHADE = Color3.fromRGB(64, 42, 36)
+
+local function buildFloorLamp(parent: Instance, position: Vector3, height: number)
+	makePart({
+		name = "LampBase",
+		size = Vector3.new(0.12, 1.15, 1.15),
+		cframe = upright(CFrame.new(position + Vector3.new(0, 0.06, 0))),
+		color = PALETTE.ink,
+		material = Enum.Material.Metal,
+		parent = parent,
+		shape = Enum.PartType.Cylinder,
+	})
+	makePart({
+		name = "LampPole",
+		size = Vector3.new(0.1, height - 0.7, 0.1),
+		cframe = CFrame.new(position + Vector3.new(0, height / 2, 0)),
+		color = PALETTE.ink,
+		material = Enum.Material.Metal,
+		parent = parent,
+	})
+	local shadeY = position.Y + height - 0.28
+	makePart({
+		name = "LampShade",
+		size = Vector3.new(0.62, 1.45, 1.45),
+		cframe = upright(CFrame.new(position.X, shadeY, position.Z)),
+		color = SHADE,
+		material = Enum.Material.Fabric,
+		parent = parent,
+		collide = false,
+		shape = Enum.PartType.Cylinder,
+	})
+	local bulb = makePart({
+		name = "LampBulb",
+		size = Vector3.new(0.34, 0.34, 0.34),
+		cframe = CFrame.new(position.X, shadeY - 0.05, position.Z),
+		color = BULB,
+		material = Enum.Material.SmoothPlastic,
+		parent = parent,
+		collide = false,
+		castShadow = false,
+		shape = Enum.PartType.Ball,
+	})
+	addLight(bulb, LAMP, if height < 3 then 0.9 else 1.25, if height < 3 then 9 else 15)
+end
+
+local function buildSconce(parent: Instance, position: Vector3, into: Vector3)
+	local cf = CFrame.lookAt(position, position + into)
+	makePart({
+		name = "SconcePlate",
+		size = Vector3.new(0.55, 0.7, 0.08),
+		cframe = cf,
+		color = PALETTE.ink,
+		material = Enum.Material.Metal,
+		parent = parent,
+		collide = false,
+	})
+	makePart({
+		name = "SconceShade",
+		size = Vector3.new(0.7, 0.22, 0.42),
+		cframe = cf * CFrame.new(0, -0.12, -0.28),
+		color = SHADE,
+		material = Enum.Material.Fabric,
+		parent = parent,
+		collide = false,
+	})
+	local bulb = makePart({
+		name = "SconceBulb",
+		size = Vector3.new(0.16, 0.16, 0.16),
+		cframe = cf * CFrame.new(0, -0.18, -0.36),
+		color = BULB,
+		material = Enum.Material.SmoothPlastic,
+		parent = parent,
+		collide = false,
+		castShadow = false,
+		shape = Enum.PartType.Ball,
+	})
+	addLight(bulb, LAMP, 0.75, 11)
+end
+
+local function buildLamps(lobby: Model)
+	local lamps = makeFolder(lobby, "Lamps")
+	local function floorLamp(x: number, z: number, height: number)
+		buildFloorLamp(lamps, Vector3.new(x, FLOOR_TOP, z), height)
+	end
+
+	floorLamp(-24.5, -10.5, 5.3)
+	floorLamp(23.5, -9, 5.1)
+	floorLamp(-9, 16.5, 5.4)
+	floorLamp(9.5, 15.5, 5.2)
+	floorLamp(-20, 24.2, 4.8)
+	floorLamp(20.5, 24, 4.9)
+	-- Coffee table and desk.
+	buildFloorLamp(lamps, Vector3.new(-24.2, FLOOR_TOP + 1.22, -17.55), 1.35)
+	buildFloorLamp(lamps, Vector3.new(20.6, FLOOR_TOP + 3.32, -18.7), 1.15)
+
+	local left = Vector3.new(1, 0, 0)
+	local right = Vector3.new(-1, 0, 0)
+	local into = Vector3.new(0, 0, 1)
+	buildSconce(lamps, Vector3.new(-HALF_W + WALL / 2 + 0.16, 6.7, -11.5), left)
+	buildSconce(lamps, Vector3.new(-HALF_W + WALL / 2 + 0.16, 6.7, 8.2), left)
+	buildSconce(lamps, Vector3.new(HALF_W - WALL / 2 - 0.16, 6.7, -9.5), right)
+	buildSconce(lamps, Vector3.new(HALF_W - WALL / 2 - 0.16, 6.7, 10.5), right)
+	buildSconce(lamps, Vector3.new(-12, 6.9, -HALF_D + WALL / 2 + 0.16), into)
+	buildSconce(lamps, Vector3.new(12, 6.9, -HALF_D + WALL / 2 + 0.16), into)
+end
+
 local Lobby = {}
 
 function Lobby.build()
@@ -1334,6 +1436,9 @@ function Lobby.build()
 		return
 	end
 	built = true
+
+	-- Set the fill before the shop exists, so joining is not a black wait for the lamps.
+	pcall(dressLighting)
 
 	local lobby = Instance.new("Model")
 	lobby.Name = "Lobby"
@@ -1344,6 +1449,7 @@ function Lobby.build()
 	buildGallery(lobby)
 	buildEntrance(lobby)
 	buildGreenery(lobby)
+	buildLamps(lobby)
 	local pads = buildSpawns(lobby)
 
 	lobby.Parent = Workspace

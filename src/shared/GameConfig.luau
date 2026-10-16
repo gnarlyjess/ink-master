@@ -28,8 +28,8 @@ local LIVE_TIMERS: { [string]: number } = {
 local DEV_TIMERS: { [string]: number } = {
 	Intermission = 5,
 	ThemeReveal = 5,
-	-- Long enough to place a few marks. The other dev timers stay short.
-	TattooCreation = 90,
+	-- Same three minutes as live, so a test round can actually be designed.
+	TattooCreation = 180,
 	Submission = 2,
 	Showcase = 4,
 	Voting = 5,

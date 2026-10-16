@@ -14,42 +14,17 @@ export type BodyRegion = {
 }
 
 local catalogue: { BodyRegion } = {
-	{ id = "LeftForearm", label = "Left forearm", r15 = "LeftLowerArm", r6 = "Left Arm", side = "left", torso = false },
-	{
-		id = "RightForearm",
-		label = "Right forearm",
-		r15 = "RightLowerArm",
-		r6 = "Right Arm",
-		side = "right",
-		torso = false,
-	},
+	{ id = "LeftForearm", label = "Forearm", r15 = "LeftLowerArm", r6 = "Left Arm", side = "left", torso = false },
 	{
 		id = "LeftUpperArm",
-		label = "Left upper arm",
+		label = "Upper arm",
 		r15 = "LeftUpperArm",
 		r6 = "Left Arm",
 		side = "left",
 		torso = false,
 	},
-	{
-		id = "RightUpperArm",
-		label = "Right upper arm",
-		r15 = "RightUpperArm",
-		r6 = "Right Arm",
-		side = "right",
-		torso = false,
-	},
-	{ id = "LeftThigh", label = "Left thigh", r15 = "LeftUpperLeg", r6 = "Left Leg", side = "left", torso = false },
-	{
-		id = "RightThigh",
-		label = "Right thigh",
-		r15 = "RightUpperLeg",
-		r6 = "Right Leg",
-		side = "right",
-		torso = false,
-	},
-	{ id = "LeftCalf", label = "Left calf", r15 = "LeftLowerLeg", r6 = "Left Leg", side = "left", torso = false },
-	{ id = "RightCalf", label = "Right calf", r15 = "RightLowerLeg", r6 = "Right Leg", side = "right", torso = false },
+	{ id = "LeftThigh", label = "Thigh", r15 = "LeftUpperLeg", r6 = "Left Leg", side = "left", torso = false },
+	{ id = "LeftCalf", label = "Calf", r15 = "LeftLowerLeg", r6 = "Left Leg", side = "left", torso = false },
 	{ id = "Chest", label = "Chest", r15 = "UpperTorso", r6 = "Torso", side = "front", torso = true },
 	{ id = "Back", label = "Back", r15 = "UpperTorso", r6 = "Torso", side = "back", torso = true },
 }
