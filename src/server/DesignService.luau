@@ -16,13 +16,103 @@ type StoredDesign = {
 	design: TattooDesign,
 }
 
+export type LockedDesign = {
+	userId: number,
+	name: string,
+	design: TattooDesign,
+}
+
+type Person = {
+	userId: number,
+	name: string,
+}
+
 local PREFIX = "[InkMasters]"
 local SUBMIT_COOLDOWN_SECONDS = 0.25
 
 local stored: { [Player]: StoredDesign } = {}
 local lastSubmitAt: { [Player]: number } = {}
+local people: { Person } = {}
+local locked: { LockedDesign } = {}
+local capturedRound = 0
+local lockedRound = 0
 
 local DesignService = {}
+
+local function shortName(name: string): string
+	if #name > 24 then
+		return string.sub(name, 1, 24)
+	end
+	return name
+end
+
+local function designFor(userId: number, roundId: number): TattooDesign?
+	local found: TattooDesign? = nil
+	for player, entry in stored do
+		if player.UserId == userId and entry.roundId == roundId then
+			found = entry.design
+			if player.Parent == Players then
+				return entry.design
+			end
+		end
+	end
+	return found
+end
+
+function DesignService.capture(roundId: number, players: { Player })
+	if capturedRound == roundId then
+		return
+	end
+	capturedRound = roundId
+	table.clear(people)
+	local seen: { [number]: boolean } = {}
+	for _, player in players do
+		seen[player.UserId] = true
+		table.insert(people, {
+			userId = player.UserId,
+			name = shortName(player.Name),
+		})
+	end
+	for player, entry in stored do
+		if entry.roundId == roundId and seen[player.UserId] ~= true then
+			seen[player.UserId] = true
+			table.insert(people, {
+				userId = player.UserId,
+				name = shortName(player.Name),
+			})
+		end
+	end
+end
+
+function DesignService.lock(roundId: number)
+	if lockedRound == roundId then
+		return
+	end
+	lockedRound = roundId
+	table.clear(locked)
+	for _, person in people do
+		local saved = designFor(person.userId, roundId)
+		local design = if saved ~= nil then saved else DesignDocument.createEmpty()
+		table.insert(locked, {
+			userId = person.userId,
+			name = person.name,
+			design = design,
+		})
+	end
+	print(`{PREFIX} Display case locked | {#locked} tattoos`)
+end
+
+function DesignService.getLocked(): { LockedDesign }
+	return locked
+end
+
+function DesignService.clearRound()
+	table.clear(stored)
+	table.clear(people)
+	table.clear(locked)
+	capturedRound = 0
+	lockedRound = 0
+end
 
 function DesignService.getDesign(player: Player): TattooDesign?
 	local entry = stored[player]
@@ -74,7 +164,6 @@ end
 function DesignService.start()
 	Remotes.SubmitDesign.OnServerEvent:Connect(onSubmit)
 	Players.PlayerRemoving:Connect(function(player: Player)
-		stored[player] = nil
 		lastSubmitAt[player] = nil
 	end)
 end

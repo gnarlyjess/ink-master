@@ -36,6 +36,7 @@ local currentDuration: number? = nil
 local activeTheme: ThemeDefinition? = nil
 local joinedPlayers: { [Player]: boolean } = {}
 local lastRequestAt: { [Player]: number } = {}
+local prepareState: ((RoundState) -> number?)? = nil
 
 local machine = {}
 
@@ -109,6 +110,9 @@ function machine.publishWaiting()
 	currentDuration = nil
 	activeTheme = nil
 	announcedWaiting = true
+	if prepareState ~= nil then
+		prepareState("WaitingForPlayers")
+	end
 	machine.broadcast(nil)
 	if not alreadyWaiting then
 		print(`{PREFIX} Waiting for players | {countPlayers()}/{GameConfig.getMinPlayers()} to start`)
@@ -117,6 +121,12 @@ end
 
 function machine.transitionTo(state: RoundState)
 	local stateDuration = GameConfig.getDuration(state)
+	if prepareState ~= nil then
+		local override = prepareState(state)
+		if override ~= nil and override > 0 then
+			stateDuration = override
+		end
+	end
 	if stateDuration == nil or stateDuration <= 0 then
 		warn(`{PREFIX} No positive timer for {state}. Returning to the lobby.`)
 		inRound = false
@@ -284,9 +294,26 @@ function RoundManager.getRoundId(): number
 	return roundId
 end
 
--- Creation, plus a short grace period so a late submit still counts.
+-- Creation, plus the Time's up beat so a late save still reaches the display case.
 function RoundManager.isDesignWindowOpen(): boolean
-	return currentState == "TattooCreation" or currentState == "Submission" or currentState == "Showcase"
+	return currentState == "TattooCreation" or currentState == "Submission"
+end
+
+function RoundManager.getContestants(): { Player }
+	local list: { Player } = {}
+	for player in joinedPlayers do
+		if player.Parent == Players then
+			table.insert(list, player)
+		end
+	end
+	table.sort(list, function(a: Player, b: Player)
+		return a.UserId < b.UserId
+	end)
+	return list
+end
+
+function RoundManager.setPrepare(callback: (RoundState) -> number?)
+	prepareState = callback
 end
 
 function RoundManager.start()

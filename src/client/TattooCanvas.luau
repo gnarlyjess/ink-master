@@ -48,6 +48,7 @@ local shownSelection: number? = nil
 local photoCharacter: Model? = nil
 local photoRegionId: string? = nil
 local skinToneId = "yours"
+local acceptsInput = true
 local viewZoom = 1
 local viewPan = Vector2.zero
 
@@ -1210,6 +1211,14 @@ function TattooCanvas.setSkin(id: string)
 	photoRegionId = nil
 end
 
+function TattooCanvas.setInteractive(enabled: boolean)
+	acceptsInput = enabled
+	if not enabled then
+		panDrag = nil
+		gesture = nil
+	end
+end
+
 function TattooCanvas.setVisible(visible: boolean)
 	if photoGui ~= nil then
 		photoGui.Enabled = visible
@@ -1240,6 +1249,9 @@ function TattooCanvas.setCameraLocked(_locked: boolean)
 end
 
 UserInputService.InputBegan:Connect(function(input: InputObject)
+	if not acceptsInput then
+		return
+	end
 	if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
 		return
 	end
@@ -1308,6 +1320,9 @@ local function pointerHitsEditor(screen: Vector2): boolean
 end
 
 UserInputService.InputChanged:Connect(function(input: InputObject)
+	if not acceptsInput then
+		return
+	end
 	if input.UserInputType == Enum.UserInputType.MouseWheel then
 		if viewWindow == nil then
 			return

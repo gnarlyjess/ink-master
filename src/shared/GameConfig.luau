@@ -12,28 +12,30 @@ local LIVE_MIN_PLAYERS = 5
 local DEV_MIN_PLAYERS = 1
 local MAX_PLAYERS = 10
 
--- Showcase is one fixed beat in this phase. Per-design showcase timing
--- arrives when submissions exist.
+-- Dev design is 10 seconds for now, so the display case and vote are easy to reach.
+-- Live design stays at 3 minutes.
+local LIVE_SHOWCASE_SLICE = 8
+local DEV_SHOWCASE_SLICE = 10
+
 local LIVE_TIMERS: { [string]: number } = {
 	Intermission = 15,
 	ThemeReveal = 10,
 	TattooCreation = 180,
 	Submission = 5,
-	Showcase = 10,
+	Showcase = LIVE_SHOWCASE_SLICE,
 	Voting = 25,
-	Results = 15,
+	Results = 18,
 	Cleanup = 4,
 }
 
 local DEV_TIMERS: { [string]: number } = {
 	Intermission = 5,
 	ThemeReveal = 5,
-	-- Same three minutes as live, so a test round can actually be designed.
-	TattooCreation = 180,
-	Submission = 2,
-	Showcase = 4,
-	Voting = 5,
-	Results = 5,
+	TattooCreation = 10,
+	Submission = 10,
+	Showcase = DEV_SHOWCASE_SLICE,
+	Voting = 10,
+	Results = 10,
 	Cleanup = 2,
 }
 
@@ -83,6 +85,24 @@ end
 
 function GameConfig.isDesignRegion(region: string): boolean
 	return BodyRegions.get(region) ~= nil
+end
+
+function GameConfig.getShowcaseSlice(): number
+	if GameConfig.DevMode then
+		return DEV_SHOWCASE_SLICE
+	end
+	return LIVE_SHOWCASE_SLICE
+end
+
+function GameConfig.getPlacePoints(place: number): number
+	if place == 1 then
+		return 100
+	elseif place == 2 then
+		return 50
+	elseif place == 3 then
+		return 25
+	end
+	return 0
 end
 
 function GameConfig.getDuration(state: string): number?

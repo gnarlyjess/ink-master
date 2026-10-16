@@ -26,6 +26,8 @@ local Remotes = {
 	SubmitDesign = remoteEvent(remotesFolder, "SubmitDesign"),
 	DesignResult = remoteEvent(remotesFolder, "DesignResult"),
 	DevSetPaused = remoteEvent(remotesFolder, "DevSetPaused"),
+	CeremonyUpdated = remoteEvent(remotesFolder, "CeremonyUpdated"),
+	CastVote = remoteEvent(remotesFolder, "CastVote"),
 }
 
 return Remotes

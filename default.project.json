@@ -23,6 +23,12 @@
         },
         "DevSetPaused": {
           "$className": "RemoteEvent"
+        },
+        "CeremonyUpdated": {
+          "$className": "RemoteEvent"
+        },
+        "CastVote": {
+          "$className": "RemoteEvent"
         }
       }
     },

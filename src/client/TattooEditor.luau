@@ -750,6 +750,7 @@ function TattooEditor.start()
 		clearArmed = false
 		statusOverride = nil
 		screenGui.Enabled = true
+		TattooCanvas.setInteractive(true)
 		TattooCanvas.setCameraLocked(false)
 		refresh()
 		print(`{PREFIX} Editor open | round {snapshot.roundId}`)
@@ -762,6 +763,7 @@ function TattooEditor.start()
 		editing = false
 		submit()
 		screenGui.Enabled = false
+		TattooCanvas.setInteractive(false)
 		TattooCanvas.clear()
 		TattooCanvas.setCameraLocked(false)
 	end
@@ -797,6 +799,7 @@ function TattooEditor.start()
 		if snapshot.paused then
 			screenGui.Enabled = false
 			TattooCanvas.setVisible(false)
+			TattooCanvas.setInteractive(false)
 			return
 		end
 

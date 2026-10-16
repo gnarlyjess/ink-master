@@ -44,10 +44,10 @@ local LABELS: { [string]: string } = {
 	Intermission = "Intermission",
 	ThemeReveal = "Theme reveal",
 	TattooCreation = "Design phase",
-	Submission = "Submission",
-	Showcase = "Showcase",
+	Submission = "Time's up",
+	Showcase = "Display case",
 	Voting = "Voting",
-	Results = "Results",
+	Results = "Party",
 	Cleanup = "Clearing up",
 }
 

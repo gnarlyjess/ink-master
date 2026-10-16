@@ -67,19 +67,19 @@ local PRESENTATION: { [string]: Presentation } = {
 		accent = UiTheme.color.aqua,
 	},
 	Submission = {
-		subtitle = "Designs will lock in here.",
+		subtitle = "Designs lock in after this.",
 		accent = UiTheme.color.gold,
 	},
 	Showcase = {
-		subtitle = "Every tattoo will be presented here.",
+		subtitle = "Every tattoo gets a turn in the display case.",
 		accent = UiTheme.color.violet,
 	},
 	Voting = {
-		subtitle = "One vote each, counted on the server.",
+		subtitle = "Vote for the best tattoo. You can't vote for yourself.",
 		accent = UiTheme.color.magenta,
 	},
 	Results = {
-		subtitle = "The top three will take the podium here.",
+		subtitle = "The top three take the party and the points.",
 		accent = UiTheme.color.gold,
 	},
 	Cleanup = {
@@ -179,7 +179,7 @@ local function renderClock(refs: HudRefs, snapshot: RoundSnapshot)
 
 	local remaining = math.max(0, stateEndsAt - Workspace:GetServerTimeNow())
 	local clock = formatClock(remaining)
-	if snapshot.state == "ThemeReveal" then
+	if snapshot.state == "ThemeReveal" or snapshot.state == "Submission" then
 		refs.secondaryTime.Text = `{clock} left`
 	else
 		refs.heroValue.Text = clock
@@ -225,6 +225,11 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 		refs.heroValue.TextSize = 36
 		refs.heroValue.Text = snapshot.themeName or "Theme"
 		refs.secondaryTime.Visible = true
+	elseif snapshot.state == "Submission" then
+		refs.heroCaption.Text = "PENCILS DOWN"
+		refs.heroValue.TextSize = 48
+		refs.heroValue.Text = "Time's up!"
+		refs.secondaryTime.Visible = true
 	else
 		refs.heroCaption.Text = "TIME LEFT"
 		refs.heroValue.TextSize = 60
@@ -238,7 +243,11 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 	refs.artistsValue.Text = `{formatCount(snapshot.playerCount)} / {formatCount(snapshot.maxPlayers)}`
 	refs.themeValue.Text = snapshot.themeName or "Incoming"
 	refs.themeChip.Visible = snapshot.state ~= "ThemeReveal" and not designing and not inLobby and not snapshot.paused
-	refs.card.Visible = not designing and not inLobby and not snapshot.paused
+	local ceremony = snapshot.state == "Submission"
+		or snapshot.state == "Showcase"
+		or snapshot.state == "Voting"
+		or snapshot.state == "Results"
+	refs.card.Visible = not designing and not inLobby and not snapshot.paused and not ceremony
 	refs.banner.Visible = designing or inLobby or snapshot.paused or snapshot.devMode
 	refs.pauseButton.Visible = snapshot.devMode
 	refs.pauseButton.Text = if snapshot.paused then "Resume" else "Pause"
