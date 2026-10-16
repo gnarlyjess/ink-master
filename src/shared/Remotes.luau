@@ -23,6 +23,8 @@ end
 local Remotes = {
 	RoundStateUpdated = remoteEvent(remotesFolder, "RoundStateUpdated"),
 	RequestRoundSnapshot = remoteEvent(remotesFolder, "RequestRoundSnapshot"),
+	SubmitDesign = remoteEvent(remotesFolder, "SubmitDesign"),
+	DesignResult = remoteEvent(remotesFolder, "DesignResult"),
 }
 
 return Remotes

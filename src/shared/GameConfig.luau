@@ -27,13 +27,20 @@ local LIVE_TIMERS: { [string]: number } = {
 local DEV_TIMERS: { [string]: number } = {
 	Intermission = 5,
 	ThemeReveal = 5,
-	TattooCreation = 12,
+	-- Long enough to place a few marks. The other dev timers stay short.
+	TattooCreation = 90,
 	Submission = 2,
 	Showcase = 4,
 	Voting = 5,
 	Results = 5,
 	Cleanup = 2,
 }
+
+-- The forearm panel is a placement prototype. These limits are what the server enforces.
+local MAX_ELEMENTS = 20
+local MIN_ELEMENT_SCALE = 0.08
+local MAX_ELEMENT_SCALE = 0.7
+local DESIGN_REGION = "LeftForearm"
 
 local GameConfig = {
 	DevMode = true,
@@ -50,6 +57,22 @@ function GameConfig.getMaxPlayers(): number
 	return MAX_PLAYERS
 end
 
+function GameConfig.getMaxElements(): number
+	return MAX_ELEMENTS
+end
+
+function GameConfig.getMinElementScale(): number
+	return MIN_ELEMENT_SCALE
+end
+
+function GameConfig.getMaxElementScale(): number
+	return MAX_ELEMENT_SCALE
+end
+
+function GameConfig.getDesignRegion(): string
+	return DESIGN_REGION
+end
+
 function GameConfig.getDuration(state: string): number?
 	local timers = if GameConfig.DevMode then DEV_TIMERS else LIVE_TIMERS
 	return timers[state]
@@ -61,6 +84,12 @@ function GameConfig.validate()
 	end
 	if MAX_PLAYERS < LIVE_MIN_PLAYERS or MAX_PLAYERS < DEV_MIN_PLAYERS then
 		error("[InkMasters] MaxPlayers must be at least the live and dev minimums")
+	end
+	if MAX_ELEMENTS < 1 or MIN_ELEMENT_SCALE <= 0 or MAX_ELEMENT_SCALE <= MIN_ELEMENT_SCALE then
+		error("[InkMasters] Design limits are invalid")
+	end
+	if DESIGN_REGION == "" then
+		error("[InkMasters] Design region is empty")
 	end
 
 	local profiles: { [string]: { [string]: number } } = {

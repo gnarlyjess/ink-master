@@ -241,6 +241,15 @@ end
 
 local RoundManager = {}
 
+function RoundManager.getRoundId(): number
+	return roundId
+end
+
+-- Creation, plus a short grace period so a late submit still counts.
+function RoundManager.isDesignWindowOpen(): boolean
+	return currentState == "TattooCreation" or currentState == "Submission" or currentState == "Showcase"
+end
+
 function RoundManager.start()
 	GameConfig.validate()
 	Themes.validate()

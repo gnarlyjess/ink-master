@@ -1,0 +1,562 @@
+--!strict
+
+-- Desktop-first editor for the forearm prototype. Drags stay on this client.
+-- The server receives the finished design once, then checks it.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+
+local DesignDocument = require(ReplicatedStorage.Shared.DesignDocument)
+local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
+local InkColors = require(ReplicatedStorage.Shared.InkColors)
+local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local RoundTypes = require(ReplicatedStorage.Shared.RoundTypes)
+local StencilDefinitions = require(ReplicatedStorage.Shared.StencilDefinitions)
+local StencilView = require(script.Parent.StencilView)
+local TattooCanvas = require(script.Parent.TattooCanvas)
+local UiTheme = require(script.Parent.UiTheme)
+
+type TattooDesign = DesignDocument.TattooDesign
+type RoundSnapshot = RoundTypes.RoundSnapshot
+
+local PREFIX = "[InkMasters]"
+local PLACE_SCALE = 0.22
+
+local TattooEditor = {}
+local started = false
+
+local function corner(parent: Instance, radius: number)
+	local uiCorner = Instance.new("UICorner")
+	uiCorner.CornerRadius = UDim.new(0, radius)
+	uiCorner.Parent = parent
+end
+
+local function stroke(parent: Instance, color: Color3): UIStroke
+	local uiStroke = Instance.new("UIStroke")
+	uiStroke.Color = color
+	uiStroke.Thickness = 1.5
+	uiStroke.Transparency = 0.35
+	uiStroke.Parent = parent
+	return uiStroke
+end
+
+local function label(parent: Instance, text: string, size: number, color: Color3): TextLabel
+	local textLabel = Instance.new("TextLabel")
+	textLabel.BackgroundTransparency = 1
+	textLabel.BorderSizePixel = 0
+	textLabel.FontFace = UiTheme.font.bold
+	textLabel.TextSize = size
+	textLabel.TextColor3 = color
+	textLabel.Text = text
+	textLabel.TextWrapped = true
+	textLabel.TextXAlignment = Enum.TextXAlignment.Center
+	textLabel.AutoLocalize = false
+	textLabel.Size = UDim2.fromScale(1, 0)
+	textLabel.AutomaticSize = Enum.AutomaticSize.Y
+	textLabel.Parent = parent
+	return textLabel
+end
+
+function TattooEditor.start()
+	if started then
+		return
+	end
+	started = true
+
+	local player = Players.LocalPlayer
+	if player == nil then
+		error("[InkMasters] The tattoo editor must run on the client")
+	end
+
+	local design = DesignDocument.createEmpty()
+	local selectedIndex: number? = nil
+	local selectedStencilId = "disc"
+	local selectedColorId = "black"
+	local editing = false
+	local roundId = 0
+	local lastRevision = 0
+	local draggingIndex: number? = nil
+	local clearArmed = false
+	local clearToken = 0
+	local statusOverride: string? = nil
+
+	local stencilStrokes: { [string]: UIStroke } = {}
+	local colorStrokes: { [string]: UIStroke } = {}
+
+	local playerGui = player:WaitForChild("PlayerGui")
+	local existing = playerGui:FindFirstChild("InkMastersEditor")
+	if existing ~= nil then
+		existing:Destroy()
+	end
+
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "InkMastersEditor"
+	screenGui.ResetOnSpawn = false
+	screenGui.IgnoreGuiInset = true
+	screenGui.DisplayOrder = 20
+	screenGui.Enabled = false
+	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	screenGui.Parent = playerGui
+
+	local holder = Instance.new("Frame")
+	holder.Name = "Tools"
+	holder.AnchorPoint = Vector2.new(0.5, 1)
+	holder.Position = UDim2.new(0.5, 0, 1, -18)
+	holder.Size = UDim2.fromOffset(740, 0)
+	holder.AutomaticSize = Enum.AutomaticSize.Y
+	holder.BackgroundColor3 = UiTheme.color.panel
+	holder.BackgroundTransparency = 0.06
+	holder.BorderSizePixel = 0
+	holder.Parent = screenGui
+	corner(holder, 18)
+	stroke(holder, UiTheme.color.stroke)
+
+	local gradient = Instance.new("UIGradient")
+	gradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, UiTheme.color.panelTop),
+		ColorSequenceKeypoint.new(1, UiTheme.color.panel),
+	})
+	gradient.Rotation = 90
+	gradient.Parent = holder
+
+	local content = Instance.new("Frame")
+	content.Name = "Content"
+	content.BackgroundTransparency = 1
+	content.Size = UDim2.fromScale(1, 0)
+	content.AutomaticSize = Enum.AutomaticSize.Y
+	content.Parent = holder
+	local padding = Instance.new("UIPadding")
+	padding.PaddingTop = UDim.new(0, 12)
+	padding.PaddingBottom = UDim.new(0, 12)
+	padding.PaddingLeft = UDim.new(0, 14)
+	padding.PaddingRight = UDim.new(0, 14)
+	padding.Parent = content
+	local list = Instance.new("UIListLayout")
+	list.Padding = UDim.new(0, 8)
+	list.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	list.SortOrder = Enum.SortOrder.LayoutOrder
+	list.Parent = content
+
+	label(content, "FOREARM PANEL  ·  PROTOTYPE", 11, UiTheme.color.magenta)
+	local status = label(content, "Click the panel on your left arm.", 15, UiTheme.color.text)
+
+	local function swatchColor(): { r: number, g: number, b: number }
+		local swatch = InkColors.get(selectedColorId)
+		if swatch == nil then
+			return { r = 0.07, g = 0.06, b = 0.08 }
+		end
+		return { r = swatch.r, g = swatch.g, b = swatch.b }
+	end
+
+	local function updateChrome()
+		for id, uiStroke in stencilStrokes do
+			local selected = id == selectedStencilId
+			uiStroke.Color = if selected then UiTheme.color.gold else UiTheme.color.stroke
+			uiStroke.Transparency = if selected then 0 else 0.45
+		end
+		for id, uiStroke in colorStrokes do
+			local selected = id == selectedColorId
+			uiStroke.Color = if selected then UiTheme.color.gold else UiTheme.color.ink
+			uiStroke.Thickness = if selected then 2.5 else 1
+		end
+	end
+
+	local function updateStatus()
+		if statusOverride ~= nil then
+			status.Text = statusOverride
+			return
+		end
+		local stencil = StencilDefinitions.get(selectedStencilId)
+		local ink = InkColors.get(selectedColorId)
+		local markName = if stencil ~= nil then stencil.name else "Mark"
+		local inkName = if ink ~= nil then ink.name else "Ink"
+		local count = #design.elements
+		local maxCount = GameConfig.getMaxElements()
+		if selectedIndex ~= nil then
+			status.Text = `{markName} · {inkName} · {count}/{maxCount} · drag a mark, Q/E rotates`
+		else
+			status.Text = `{markName} · {inkName} · {count}/{maxCount} · click the forearm panel`
+		end
+	end
+
+	local function refresh()
+		local character = player.Character
+		if character ~= nil then
+			TattooCanvas.show(character, design, selectedIndex)
+		end
+		TattooCanvas.render(design, selectedIndex)
+		updateStatus()
+		updateChrome()
+	end
+
+	local function clampScale(scale: number): number
+		return math.clamp(scale, GameConfig.getMinElementScale(), GameConfig.getMaxElementScale())
+	end
+
+	local function placeAt(x: number, y: number)
+		if not editing then
+			return
+		end
+		if #design.elements >= GameConfig.getMaxElements() then
+			statusOverride = "This design is full."
+			updateStatus()
+			return
+		end
+		local color = swatchColor()
+		table.insert(design.elements, {
+			stencilId = selectedStencilId,
+			x = math.clamp(x, 0.06, 0.94),
+			y = math.clamp(y, 0.06, 0.94),
+			rotation = 0,
+			scale = PLACE_SCALE,
+			color = { r = color.r, g = color.g, b = color.b },
+		})
+		selectedIndex = #design.elements
+		statusOverride = nil
+		clearArmed = false
+		refresh()
+	end
+
+	local function grab(index: number)
+		if design.elements[index] == nil then
+			return
+		end
+		selectedIndex = index
+		draggingIndex = index
+		statusOverride = nil
+		TattooCanvas.render(design, selectedIndex)
+		updateStatus()
+	end
+
+	TattooCanvas.setHandlers(placeAt, grab)
+
+	local function selectedElement(): DesignDocument.DesignElement?
+		if selectedIndex == nil then
+			return nil
+		end
+		return design.elements[selectedIndex]
+	end
+
+	local function rotateBy(degrees: number)
+		local element = selectedElement()
+		if element == nil then
+			statusOverride = "Select a mark first."
+			updateStatus()
+			return
+		end
+		element.rotation = (element.rotation + degrees) % 360
+		statusOverride = nil
+		refresh()
+	end
+
+	local function scaleBy(factor: number)
+		local element = selectedElement()
+		if element == nil then
+			statusOverride = "Select a mark first."
+			updateStatus()
+			return
+		end
+		element.scale = clampScale(element.scale * factor)
+		statusOverride = nil
+		refresh()
+	end
+
+	local function removeSelected()
+		if selectedIndex == nil then
+			statusOverride = "Select a mark first."
+			updateStatus()
+			return
+		end
+		table.remove(design.elements, selectedIndex)
+		selectedIndex = if #design.elements > 0 then math.min(selectedIndex, #design.elements) else nil
+		statusOverride = nil
+		refresh()
+	end
+
+	local function applyColor()
+		local color = swatchColor()
+		local element = selectedElement()
+		if element ~= nil then
+			element.color = { r = color.r, g = color.g, b = color.b }
+		end
+		statusOverride = nil
+		refresh()
+	end
+
+	local function requestClear()
+		if not clearArmed then
+			clearArmed = true
+			clearToken += 1
+			local token = clearToken
+			statusOverride = "Click Clear again to wipe the panel."
+			updateStatus()
+			task.delay(3, function()
+				if token ~= clearToken then
+					return
+				end
+				clearArmed = false
+				if statusOverride == "Click Clear again to wipe the panel." then
+					statusOverride = nil
+					updateStatus()
+				end
+			end)
+			return
+		end
+		clearArmed = false
+		design.elements = {}
+		selectedIndex = nil
+		statusOverride = nil
+		refresh()
+	end
+
+	local function submit()
+		if roundId <= 0 then
+			return
+		end
+		Remotes.SubmitDesign:FireServer({
+			roundId = roundId,
+			region = design.region,
+			elements = design.elements,
+		})
+	end
+
+	local function row(): Frame
+		local frame = Instance.new("Frame")
+		frame.BackgroundTransparency = 1
+		frame.Size = UDim2.fromScale(1, 0)
+		frame.AutomaticSize = Enum.AutomaticSize.Y
+		frame.Parent = content
+		local layout = Instance.new("UIListLayout")
+		layout.FillDirection = Enum.FillDirection.Horizontal
+		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		layout.VerticalAlignment = Enum.VerticalAlignment.Center
+		layout.Padding = UDim.new(0, 8)
+		layout.Wraps = true
+		layout.Parent = frame
+		return frame
+	end
+
+	local stencilRow = row()
+	for _, stencil in StencilDefinitions.all do
+		local button = Instance.new("TextButton")
+		button.Name = stencil.id
+		button.AutoButtonColor = true
+		button.Text = ""
+		button.BackgroundColor3 = UiTheme.color.chip
+		button.BorderSizePixel = 0
+		button.Size = UDim2.fromOffset(72, 84)
+		button.Parent = stencilRow
+		corner(button, 12)
+		stencilStrokes[stencil.id] = stroke(button, UiTheme.color.stroke)
+
+		local preview = Instance.new("Frame")
+		preview.BackgroundTransparency = 1
+		preview.AnchorPoint = Vector2.new(0.5, 0)
+		preview.Position = UDim2.new(0.5, 0, 0, 8)
+		preview.Size = UDim2.fromOffset(36, 36)
+		preview.Parent = button
+		StencilView.draw(preview, stencil.shape, UiTheme.color.text)
+
+		local name = label(button, stencil.name, 12, UiTheme.color.text)
+		name.AnchorPoint = Vector2.new(0.5, 1)
+		name.Position = UDim2.new(0.5, 0, 1, -6)
+		name.Size = UDim2.new(1, -8, 0, 16)
+		name.AutomaticSize = Enum.AutomaticSize.None
+
+		local stencilId = stencil.id
+		button.MouseButton1Click:Connect(function()
+			selectedStencilId = stencilId
+			statusOverride = nil
+			updateChrome()
+			updateStatus()
+		end)
+	end
+
+	local colorRow = row()
+	for _, ink in InkColors.all do
+		local button = Instance.new("TextButton")
+		button.Name = ink.id
+		button.Text = ""
+		button.AutoButtonColor = false
+		button.BackgroundColor3 = InkColors.toColor3(ink)
+		button.BorderSizePixel = 0
+		button.Size = UDim2.fromOffset(32, 32)
+		button.Parent = colorRow
+		corner(button, 16)
+		colorStrokes[ink.id] = stroke(button, UiTheme.color.ink)
+		local colorId = ink.id
+		button.MouseButton1Click:Connect(function()
+			selectedColorId = colorId
+			applyColor()
+		end)
+	end
+
+	local function tool(text: string, parent: Frame, callback: () -> ())
+		local button = Instance.new("TextButton")
+		button.AutoButtonColor = true
+		button.BackgroundColor3 = UiTheme.color.chip
+		button.BorderSizePixel = 0
+		button.FontFace = UiTheme.font.bold
+		button.TextSize = 14
+		button.TextColor3 = UiTheme.color.text
+		button.Text = text
+		button.AutoLocalize = false
+		button.Size = UDim2.fromOffset(0, 36)
+		button.AutomaticSize = Enum.AutomaticSize.X
+		button.Parent = parent
+		corner(button, 10)
+		local toolPadding = Instance.new("UIPadding")
+		toolPadding.PaddingLeft = UDim.new(0, 14)
+		toolPadding.PaddingRight = UDim.new(0, 14)
+		toolPadding.Parent = button
+		button.MouseButton1Click:Connect(callback)
+	end
+
+	local toolRow = row()
+	tool("Rotate left", toolRow, function()
+		rotateBy(-15)
+	end)
+	tool("Rotate right", toolRow, function()
+		rotateBy(15)
+	end)
+	tool("Smaller", toolRow, function()
+		scaleBy(1 / 1.12)
+	end)
+	tool("Larger", toolRow, function()
+		scaleBy(1.12)
+	end)
+	tool("Delete", toolRow, function()
+		removeSelected()
+	end)
+	tool("Clear", toolRow, requestClear)
+	tool("Save", toolRow, function()
+		submit()
+		statusOverride = "Saving..."
+		updateStatus()
+	end)
+
+	local function beginEditing(snapshot: RoundSnapshot)
+		editing = true
+		roundId = snapshot.roundId
+		design = DesignDocument.createEmpty()
+		selectedIndex = nil
+		draggingIndex = nil
+		clearArmed = false
+		statusOverride = nil
+		screenGui.Enabled = true
+		TattooCanvas.setCameraLocked(true)
+		refresh()
+		print(`{PREFIX} Editor open | round {snapshot.roundId}`)
+	end
+
+	local function endEditing()
+		if not editing then
+			return
+		end
+		editing = false
+		draggingIndex = nil
+		submit()
+		screenGui.Enabled = false
+		TattooCanvas.setCameraLocked(false)
+	end
+
+	Remotes.DesignResult.OnClientEvent:Connect(function(payload: any)
+		if typeof(payload) ~= "table" or typeof(payload.ok) ~= "boolean" then
+			return
+		end
+		if payload.ok == true then
+			local count = if typeof(payload.elementCount) == "number" then payload.elementCount else 0
+			print(`{PREFIX} Design saved | {count} marks on the forearm`)
+			if editing then
+				statusOverride = `Saved {count} marks.`
+				updateStatus()
+			end
+			return
+		end
+		local reason = if typeof(payload.reason) == "string" then payload.reason else "The studio rejected that design."
+		warn(`{PREFIX} Design rejected | {reason}`)
+		if editing then
+			statusOverride = reason
+			updateStatus()
+		end
+	end)
+
+	Remotes.RoundStateUpdated.OnClientEvent:Connect(function(payload: any)
+		local snapshot = RoundTypes.readSnapshot(payload)
+		if snapshot == nil or snapshot.revision <= lastRevision then
+			return
+		end
+		lastRevision = snapshot.revision
+
+		local leftCreation = editing and snapshot.state ~= "TattooCreation"
+		local enteredCreation = snapshot.state == "TattooCreation" and (not editing or snapshot.roundId ~= roundId)
+		if leftCreation then
+			endEditing()
+		end
+		if
+			snapshot.state == "WaitingForPlayers"
+			or snapshot.state == "Intermission"
+			or snapshot.state == "ThemeReveal"
+		then
+			TattooCanvas.clear()
+		end
+		if enteredCreation then
+			beginEditing(snapshot)
+		end
+		roundId = snapshot.roundId
+	end)
+
+	UserInputService.InputChanged:Connect(function(input: InputObject)
+		if draggingIndex == nil then
+			return
+		end
+		if
+			input.UserInputType ~= Enum.UserInputType.MouseMovement
+			and input.UserInputType ~= Enum.UserInputType.Touch
+		then
+			return
+		end
+		local element = design.elements[draggingIndex]
+		if element == nil then
+			return
+		end
+		local x, y = TattooCanvas.screenToUv(Vector2.new(input.Position.X, input.Position.Y))
+		if x == nil or y == nil then
+			return
+		end
+		element.x = math.clamp(x, 0.06, 0.94)
+		element.y = math.clamp(y, 0.06, 0.94)
+		TattooCanvas.nudge(draggingIndex, element.x, element.y)
+	end)
+
+	UserInputService.InputEnded:Connect(function(input: InputObject)
+		if
+			input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch
+		then
+			draggingIndex = nil
+		end
+	end)
+
+	UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)
+		if not editing or processed then
+			return
+		end
+		if input.KeyCode == Enum.KeyCode.Q then
+			rotateBy(-15)
+		elseif input.KeyCode == Enum.KeyCode.E then
+			rotateBy(15)
+		elseif input.KeyCode == Enum.KeyCode.Minus then
+			scaleBy(1 / 1.12)
+		elseif input.KeyCode == Enum.KeyCode.Equals then
+			scaleBy(1.12)
+		elseif input.KeyCode == Enum.KeyCode.Delete or input.KeyCode == Enum.KeyCode.Backspace then
+			removeSelected()
+		end
+	end)
+
+	updateChrome()
+end
+
+return TattooEditor

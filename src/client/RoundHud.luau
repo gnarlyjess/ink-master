@@ -53,7 +53,7 @@ local PRESENTATION: { [string]: Presentation } = {
 		accent = UiTheme.color.magenta,
 	},
 	TattooCreation = {
-		subtitle = "The editor is the next build. This clock is live.",
+		subtitle = "Place marks on the forearm panel.",
 		accent = UiTheme.color.aqua,
 	},
 	Submission = {
