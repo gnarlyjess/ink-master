@@ -1,0 +1,12 @@
+# This file lists tools managed by Rokit, a toolchain manager for Roblox projects.
+# For more information, see https://github.com/rojo-rbx/rokit
+
+# New tools can be added by running `rokit add <tool>` in a terminal.
+
+[tools]
+rojo = "rojo-rbx/rojo@7.6.1"
+# Wally's Rokit binary is Intel-only. This Mac uses the Homebrew arm64 build.
+selene = "Kampfkarren/selene@0.31.0"
+StyLua = "JohnnyMorganz/StyLua@2.5.2"
+luau-lsp = "JohnnyMorganz/luau-lsp@1.64.0"
+wally-package-types = "JohnnyMorganz/wally-package-types@1.6.2"

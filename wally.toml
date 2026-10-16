@@ -1,0 +1,10 @@
+[package]
+name = "ink/ink-master"
+version = "0.1.0"
+registry = "https://github.com/UpliftGames/wally-index"
+realm = "shared"
+private = true
+
+[dependencies]
+# After `wally install`, add this under ReplicatedStorage in default.project.json:
+# "Packages": { "$path": "Packages" }
