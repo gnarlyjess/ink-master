@@ -58,7 +58,7 @@ local function mountThemeBoard(board: BasePart)
 	gui.Face = Enum.NormalId.Front
 	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
 	gui.PixelsPerStud = 42
-	gui.LightInfluence = 1
+	gui.LightInfluence = 0.15
 	gui.Parent = board
 
 	local root = Instance.new("Frame")
@@ -103,9 +103,18 @@ local function mountThemeBoard(board: BasePart)
 		return label
 	end
 
-	eyebrowLabel = line("Eyebrow", UiTheme.font.bold, Color3.fromRGB(24, 22, 20), 0.16, 1)
-	titleLabel = line("Title", UiTheme.font.heavy, Color3.fromRGB(24, 22, 20), 0.42, 2)
-	subtitleLabel = line("Subtitle", UiTheme.font.medium, Color3.fromRGB(72, 64, 58), 0.22, 3)
+	eyebrowLabel = line("Eyebrow", UiTheme.font.bold, Color3.fromRGB(24, 22, 20), 0.14, 1)
+	titleLabel = line("Title", UiTheme.font.heavy, Color3.fromRGB(24, 22, 20), 0.36, 2)
+	subtitleLabel = line("Subtitle", UiTheme.font.medium, Color3.fromRGB(72, 64, 58), 0.18, 3)
+
+	local rule = Instance.new("Frame")
+	rule.Name = "Rule"
+	rule.BackgroundColor3 = Color3.fromRGB(176, 132, 72)
+	rule.BorderSizePixel = 0
+	rule.Size = UDim2.fromScale(0.22, 0.012)
+	rule.LayoutOrder = 4
+	rule.Parent = root
+
 	renderBoard()
 end
 
@@ -146,7 +155,7 @@ local function paintCard(part: BasePart)
 	gui.Face = Enum.NormalId.Front
 	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
 	gui.PixelsPerStud = 48
-	gui.LightInfluence = 1
+	gui.LightInfluence = 0.15
 	gui.Parent = part
 
 	local paper = Instance.new("Frame")
@@ -183,7 +192,7 @@ local function paintPrint(part: BasePart)
 	gui.Face = Enum.NormalId.Front
 	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
 	gui.PixelsPerStud = 42
-	gui.LightInfluence = 1
+	gui.LightInfluence = 0.15
 	gui.Parent = part
 
 	local art = Instance.new("Frame")

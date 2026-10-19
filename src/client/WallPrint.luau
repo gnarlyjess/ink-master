@@ -104,6 +104,59 @@ local function bloom(parent: Instance)
 	piece(parent, 0.5, 0.78, 0.03, 0.28, Color3.fromRGB(46, 92, 58), 0, true)
 end
 
+local function blackwork(parent: Instance)
+	wash(parent, Color3.fromRGB(28, 24, 22))
+	piece(parent, 0.5, 0.5, 0.62, 0.62, Color3.fromRGB(12, 10, 10), 0, true)
+	piece(parent, 0.5, 0.5, 0.34, 0.34, Color3.fromRGB(236, 228, 214), 0, true)
+	piece(parent, 0.5, 0.5, 0.12, 0.12, Color3.fromRGB(12, 10, 10), 0, true)
+	piece(parent, 0.5, 0.18, 0.08, 0.22, Color3.fromRGB(12, 10, 10), 0, true)
+	piece(parent, 0.5, 0.82, 0.08, 0.22, Color3.fromRGB(12, 10, 10), 0, true)
+end
+
+local function botanical(parent: Instance)
+	wash(parent, Color3.fromRGB(236, 228, 214))
+	piece(parent, 0.5, 0.62, 0.035, 0.55, Color3.fromRGB(28, 24, 22), 0, true)
+	piece(parent, 0.36, 0.48, 0.22, 0.07, Color3.fromRGB(36, 78, 52), -32, true)
+	piece(parent, 0.64, 0.42, 0.22, 0.07, Color3.fromRGB(28, 64, 46), 28, true)
+	piece(parent, 0.34, 0.66, 0.18, 0.06, Color3.fromRGB(46, 92, 58), 24, true)
+	piece(parent, 0.66, 0.7, 0.18, 0.06, Color3.fromRGB(32, 72, 48), -22, true)
+	piece(parent, 0.5, 0.24, 0.16, 0.16, Color3.fromRGB(138, 74, 62), 0, true)
+end
+
+local function geometric(parent: Instance)
+	wash(parent, Color3.fromRGB(232, 224, 210))
+	piece(parent, 0.5, 0.5, 0.55, 0.55, Color3.fromRGB(28, 24, 22), 0, false)
+	piece(parent, 0.5, 0.5, 0.38, 0.38, Color3.fromRGB(232, 224, 210), 45, false)
+	piece(parent, 0.5, 0.5, 0.16, 0.16, Color3.fromRGB(168, 132, 84), 0, true)
+end
+
+local function japanese(parent: Instance)
+	wash(parent, Color3.fromRGB(236, 226, 206))
+	piece(parent, 0.62, 0.32, 0.28, 0.28, Color3.fromRGB(168, 48, 42), 0, true)
+	piece(parent, 0.5, 0.62, 1, 0.08, Color3.fromRGB(28, 24, 22), 8, true)
+	piece(parent, 0.5, 0.74, 1, 0.06, Color3.fromRGB(28, 24, 22), -6, true)
+	piece(parent, 0.5, 0.86, 1, 0.05, Color3.fromRGB(28, 24, 22), 4, true)
+	piece(parent, 0.28, 0.48, 0.04, 0.42, Color3.fromRGB(28, 24, 22), 0, true)
+end
+
+local function fineline(parent: Instance)
+	wash(parent, Color3.fromRGB(244, 238, 228))
+	piece(parent, 0.48, 0.55, 0.02, 0.62, Color3.fromRGB(42, 36, 32), 8, true)
+	piece(parent, 0.4, 0.4, 0.16, 0.045, Color3.fromRGB(42, 36, 32), -40, true)
+	piece(parent, 0.58, 0.36, 0.14, 0.04, Color3.fromRGB(42, 36, 32), 36, true)
+	piece(parent, 0.36, 0.58, 0.12, 0.035, Color3.fromRGB(42, 36, 32), 30, true)
+	piece(parent, 0.6, 0.62, 0.12, 0.035, Color3.fromRGB(42, 36, 32), -28, true)
+	piece(parent, 0.5, 0.22, 0.08, 0.08, Color3.fromRGB(42, 36, 32), 0, true)
+end
+
+local function ornament(parent: Instance)
+	wash(parent, Color3.fromRGB(28, 26, 32))
+	piece(parent, 0.5, 0.48, 0.7, 0.7, Color3.fromRGB(186, 154, 104), 0, true)
+	piece(parent, 0.5, 0.48, 0.5, 0.5, Color3.fromRGB(28, 26, 32), 0, true)
+	piece(parent, 0.5, 0.48, 0.28, 0.28, Color3.fromRGB(186, 154, 104), 0, true)
+	piece(parent, 0.5, 0.48, 0.1, 0.1, Color3.fromRGB(28, 26, 32), 0, true)
+end
+
 local drawers: { [string]: (Instance) -> () } = {
 	garden = garden,
 	dusk = dusk,
@@ -111,6 +164,12 @@ local drawers: { [string]: (Instance) -> () } = {
 	moon = moon,
 	coast = coast,
 	bloom = bloom,
+	blackwork = blackwork,
+	botanical = botanical,
+	geometric = geometric,
+	japanese = japanese,
+	fineline = fineline,
+	ornament = ornament,
 }
 
 function WallPrint.draw(parent: Instance, kind: string)

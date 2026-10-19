@@ -94,17 +94,6 @@ function GameConfig.getShowcaseSlice(): number
 	return LIVE_SHOWCASE_SLICE
 end
 
-function GameConfig.getPlacePoints(place: number): number
-	if place == 1 then
-		return 100
-	elseif place == 2 then
-		return 50
-	elseif place == 3 then
-		return 25
-	end
-	return 0
-end
-
 function GameConfig.getDuration(state: string): number?
 	local timers = if GameConfig.DevMode then DEV_TIMERS else LIVE_TIMERS
 	return timers[state]

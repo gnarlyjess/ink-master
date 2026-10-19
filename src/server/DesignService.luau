@@ -5,7 +5,10 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Catalogue = require(ReplicatedStorage.Shared.Catalogue)
 local DesignDocument = require(ReplicatedStorage.Shared.DesignDocument)
+local InkColors = require(ReplicatedStorage.Shared.InkColors)
+local Profiles = require(script.Parent.Profiles)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local RoundManager = require(script.Parent.RoundManager)
 
@@ -133,6 +136,24 @@ local function sendResult(player: Player, ok: boolean, reason: string, elementCo
 	})
 end
 
+-- Premium shapes and inks only count when the player owns them.
+local function usesLockedContent(player: Player, design: TattooDesign): boolean
+	local data = Profiles.get(player)
+	local owned: { [string]: boolean } = if data ~= nil then data.owned else {}
+	for _, element in design.elements do
+		if not Catalogue.ownsStencil(owned, element.stencilId) then
+			return true
+		end
+		for _, color in { element.color, element.line } do
+			local inkId = InkColors.matchId(color)
+			if inkId == nil or not Catalogue.ownsInk(owned, inkId) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 local function onSubmit(player: Player, payload: any)
 	local now = os.clock()
 	local previous = lastSubmitAt[player]
@@ -150,6 +171,12 @@ local function onSubmit(player: Player, payload: any)
 	if design == nil then
 		warn(`{PREFIX} Rejected design from {player.Name}`)
 		sendResult(player, false, "That design didn't pass the studio check.", 0)
+		return
+	end
+
+	if usesLockedContent(player, design) then
+		warn(`{PREFIX} Rejected design from {player.Name}: locked content`)
+		sendResult(player, false, "That design uses a shape or ink you haven't unlocked.", 0)
 		return
 	end
 

@@ -22,8 +22,17 @@ type TattooDesign = DesignDocument.TattooDesign
 type DesignElement = DesignDocument.DesignElement
 type BodyRegion = BodyRegions.BodyRegion
 
-local CANVAS_POSITION = UDim2.fromScale(0.015, 0.07)
-local CANVAS_SIZE = UDim2.fromScale(0.73, 0.9)
+local leftExtra = 0
+local stage: Frame? = nil
+
+local function stageFrame(): (UDim2, UDim2)
+	local left = UiTheme.safe.side + leftExtra
+	local position = UDim2.fromOffset(left, UiTheme.safe.top)
+	local size =
+		UDim2.new(1, -(left + UiTheme.safe.side * 2 + UiTheme.safe.dock), 1, -(UiTheme.safe.top + UiTheme.safe.bottom))
+	return position, size
+end
+
 local THUMB_PIXELS = 34
 local ROTATE_LIFT = 18
 local HANDLE_HIT = 16
@@ -38,6 +47,24 @@ local TattooCanvas = {}
 local photoGui: ScreenGui? = nil
 local inkGui: ScreenGui? = nil
 local viewWindow: GuiObject? = nil
+
+local function applyStage()
+	local position, size = stageFrame()
+	if stage ~= nil then
+		stage.Position = position
+		stage.Size = size
+	end
+	if viewWindow ~= nil then
+		viewWindow.Position = position
+		viewWindow.Size = size
+	end
+end
+
+function TattooCanvas.setMargins(extra: number)
+	leftExtra = math.max(0, extra)
+	applyStage()
+end
+
 local photoLayer: GuiObject? = nil
 local surfacePad: GuiObject? = nil
 local captionLabel: TextLabel? = nil
@@ -150,6 +177,7 @@ local function destroyCanvas()
 	end
 	surfacePad = nil
 	viewWindow = nil
+	stage = nil
 	photoLayer = nil
 	captionLabel = nil
 	zoomReadout = nil
@@ -345,16 +373,19 @@ local function buildCanvas(character: Model, region: BodyRegion)
 
 	local board = Instance.new("Frame")
 	board.Name = "Board"
-	board.Position = CANVAS_POSITION
-	board.Size = CANVAS_SIZE
-	board.BackgroundColor3 = Color3.fromRGB(24, 20, 22)
+	local boardPosition, boardSize = stageFrame()
+	board.Position = boardPosition
+	board.Size = boardSize
+	board.BackgroundColor3 = UiTheme.color.ink
 	board.BorderSizePixel = 0
 	board.ClipsDescendants = true
 	board.Parent = photo
-	corner(board, 16)
+	stage = board
+	corner(board, 2)
 	local boardStroke = Instance.new("UIStroke")
-	boardStroke.Color = UiTheme.color.stroke
-	boardStroke.Thickness = 1.5
+	boardStroke.Color = UiTheme.color.gold
+	boardStroke.Thickness = 1
+	boardStroke.Transparency = 0.25
 	boardStroke.Parent = board
 
 	local viewport = Instance.new("ViewportFrame")
@@ -393,14 +424,14 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	caption.BackgroundColor3 = UiTheme.color.ink
 	caption.FontFace = UiTheme.font.bold
 	caption.TextSize = 14
-	caption.TextColor3 = UiTheme.color.text
+	caption.TextColor3 = UiTheme.color.gold
 	caption.Text = string.upper(region.label)
 	caption.TextXAlignment = Enum.TextXAlignment.Left
-	caption.Size = UDim2.fromOffset(180, 28)
+	caption.Size = UDim2.fromOffset(180, 26)
 	caption.Position = UDim2.fromOffset(12, 12)
 	caption.ZIndex = 5
 	caption.Parent = board
-	corner(caption, 8)
+	corner(caption, 2)
 	local captionPad = Instance.new("UIPadding")
 	captionPad.PaddingLeft = UDim.new(0, 10)
 	captionPad.Parent = caption
@@ -422,8 +453,9 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	window.BackgroundTransparency = 1
 	window.BorderSizePixel = 0
 	window.ClipsDescendants = true
-	window.Position = CANVAS_POSITION
-	window.Size = CANVAS_SIZE
+	local windowPosition, windowSize = stageFrame()
+	window.Position = windowPosition
+	window.Size = windowSize
 	window.ZIndex = 2
 	window.Parent = ink
 	viewWindow = window
@@ -442,12 +474,12 @@ local function buildCanvas(character: Model, region: BodyRegion)
 
 	local tools = Instance.new("Frame")
 	tools.Name = "ViewTools"
-	tools.AnchorPoint = Vector2.new(1, 1)
-	tools.Position = UDim2.new(0.745, -12, 0.97, -12)
+	tools.AnchorPoint = Vector2.new(0.5, 1)
+	tools.Position = UDim2.new(0.5, 0, 1, -10)
 	tools.Size = UDim2.fromOffset(248, 36)
 	tools.BackgroundTransparency = 1
 	tools.ZIndex = 10
-	tools.Parent = ink
+	tools.Parent = window
 	local toolRow = Instance.new("UIListLayout")
 	toolRow.FillDirection = Enum.FillDirection.Horizontal
 	toolRow.HorizontalAlignment = Enum.HorizontalAlignment.Right
@@ -460,31 +492,38 @@ local function buildCanvas(character: Model, region: BodyRegion)
 		local button = Instance.new("TextButton")
 		button.LayoutOrder = order
 		button.AutoButtonColor = true
-		button.BackgroundColor3 = Color3.fromRGB(250, 246, 240)
+		button.BackgroundColor3 = UiTheme.color.ink
+		button.BackgroundTransparency = 0.08
 		button.BorderSizePixel = 0
 		button.FontFace = UiTheme.font.bold
 		button.TextSize = 14
-		button.TextColor3 = Color3.fromRGB(20, 20, 20)
+		button.TextColor3 = UiTheme.color.text
 		button.Text = text
 		button.Size = UDim2.fromOffset(width, 32)
 		button.ZIndex = 11
 		button.Parent = tools
-		corner(button, 8)
+		corner(button, 2)
+		local ring = Instance.new("UIStroke")
+		ring.Color = UiTheme.color.stroke
+		ring.Thickness = 1
+		ring.Transparency = 0.35
+		ring.Parent = button
 		button.MouseButton1Click:Connect(callback)
 	end
 
 	local readout = Instance.new("TextLabel")
 	readout.LayoutOrder = 2
-	readout.BackgroundColor3 = Color3.fromRGB(250, 246, 240)
+	readout.BackgroundColor3 = UiTheme.color.ink
+	readout.BackgroundTransparency = 0.08
 	readout.BorderSizePixel = 0
 	readout.FontFace = UiTheme.font.bold
 	readout.TextSize = 13
-	readout.TextColor3 = Color3.fromRGB(20, 20, 20)
+	readout.TextColor3 = UiTheme.color.gold
 	readout.Text = "100%"
 	readout.Size = UDim2.fromOffset(58, 32)
 	readout.ZIndex = 11
 	readout.Parent = tools
-	corner(readout, 8)
+	corner(readout, 2)
 	zoomReadout = readout
 
 	photoCharacter = character

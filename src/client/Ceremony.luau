@@ -8,8 +8,11 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local BodyRegions = require(ReplicatedStorage.Shared.BodyRegions)
+local Catalogue = require(ReplicatedStorage.Shared.Catalogue)
 local CeremonyTypes = require(ReplicatedStorage.Shared.CeremonyTypes)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local FrameDress = require(script.Parent.FrameDress)
+local PlayerData = require(script.Parent.PlayerData)
 local TattooCanvas = require(script.Parent.TattooCanvas)
 local UiTheme = require(script.Parent.UiTheme)
 
@@ -32,7 +35,20 @@ local detail: TextLabel
 local list: ScrollingFrame
 local footer: TextLabel
 local confetti: Frame
+local panelStroke: UIStroke
+local frameDress: Frame
+local emoteRoot: Frame
+local emoteHolder: Frame
+local emoteLabel: TextLabel
+local emoteScale: UIScale
+local stamp: Frame
+local stampScale: UIScale
+local stampStroke: UIStroke
 local dots: { Frame } = {}
+local sparks: { Frame } = {}
+local emoteStyle = ""
+local emoteStarted = 0
+local emoteShownId = ""
 
 local function corner(parent: Instance, radius: number)
 	local uiCorner = Instance.new("UICorner")
@@ -172,6 +188,121 @@ local function fillShowcase(snapshot: CeremonySnapshot, featured: number)
 	end
 end
 
+local function colorAt(palette: { Color3 }, index: number): Color3
+	return palette[((index - 1) % #palette) + 1]
+end
+
+local function paintConfetti(entry: Entry)
+	local view = PlayerData.get()
+	if view ~= nil and not view.settings.confetti then
+		confetti.Visible = false
+		return
+	end
+	local palette: { Color3 } = { UiTheme.color.gold, UiTheme.color.magenta }
+	if entry.confetti ~= "" then
+		local item = Catalogue.get(entry.confetti)
+		local colors = if item ~= nil then item.palette else nil
+		if colors ~= nil and #colors > 0 then
+			table.clear(palette)
+			for _, color in colors do
+				table.insert(palette, Catalogue.toColor3(color))
+			end
+		end
+	end
+	for index, dot in dots do
+		dot.BackgroundColor3 = colorAt(palette, index)
+	end
+end
+
+local function hideFrame()
+	frameDress.Visible = false
+	FrameDress.clear(frameDress)
+	panelStroke.Transparency = 0
+	panelStroke.Color = UiTheme.color.stroke
+	panelStroke.Thickness = 1.5
+end
+
+local function applyFrame(entry: Entry)
+	if entry.frame == "" then
+		hideFrame()
+		return
+	end
+	local worn = Catalogue.get(entry.frame)
+	local accent = if worn ~= nil then worn.accent else nil
+	if worn == nil or accent == nil or worn.category ~= "frame" then
+		hideFrame()
+		return
+	end
+	panelStroke.Transparency = 1
+	frameDress.Visible = true
+	FrameDress.mount(frameDress, worn.style or "line", Catalogue.toColor3(accent), 16)
+end
+
+local function hideEmote()
+	emoteRoot.Visible = false
+	emoteShownId = ""
+end
+
+local function applyEmote(entry: Entry, phase: string)
+	if phase ~= "Party" then
+		hideEmote()
+		return
+	end
+	local worn = if entry.emote ~= "" then Catalogue.get(entry.emote) else nil
+	local shout = if worn ~= nil then worn.text else nil
+	if worn == nil or worn.category ~= "emote" or shout == nil or shout == "" then
+		hideEmote()
+		return
+	end
+	local accent = if worn.accent ~= nil then Catalogue.toColor3(worn.accent) else UiTheme.color.gold
+	emoteLabel.Text = shout
+	emoteLabel.TextColor3 = accent
+	stampStroke.Color = accent
+	stamp.Visible = worn.style == "stamp"
+	for _, spark in sparks do
+		spark.BackgroundColor3 = accent
+		spark.Visible = worn.style == "burst"
+	end
+	emoteStyle = worn.style or "pop"
+	if emoteShownId ~= worn.id then
+		emoteShownId = worn.id
+		emoteStarted = os.clock()
+	end
+	emoteRoot.Visible = true
+end
+
+local function stepEmote(now: number)
+	local elapsed = now - emoteStarted
+	emoteScale.Scale = 1
+	emoteLabel.Rotation = 0
+	emoteHolder.Position = UDim2.fromScale(0.5, 0.5)
+	if emoteStyle == "pop" then
+		emoteScale.Scale = 1 + math.sin(elapsed * 5) * 0.06
+	elseif emoteStyle == "bounce" then
+		emoteHolder.Position = UDim2.new(0.5, 0, 0.5, -math.abs(math.sin(elapsed * 6)) * 16)
+	elseif emoteStyle == "shake" then
+		emoteLabel.Rotation = math.sin(elapsed * 22) * 7
+	elseif emoteStyle == "float" then
+		emoteHolder.Position = UDim2.new(0.5, 0, 0.5, math.sin(elapsed * 2.2) * -12)
+		emoteScale.Scale = 1 + math.sin(elapsed * 2.2) * 0.04
+	elseif emoteStyle == "stamp" then
+		emoteScale.Scale = 1 + math.sin(elapsed * 4) * 0.04
+		local cycle = elapsed % 1.2
+		stampScale.Scale = 1 + cycle * 0.28
+		stampStroke.Transparency = cycle / 1.2
+	elseif emoteStyle == "burst" then
+		emoteScale.Scale = 1 + math.sin(elapsed * 7) * 0.05
+		local cycle = elapsed % 1.1
+		local dist = 18 + cycle * 64
+		for index, spark in sparks do
+			local angle = (index - 1) / #sparks * math.pi * 2
+			spark.Position = UDim2.new(0.5, math.cos(angle) * dist, 0.5, math.sin(angle) * dist * 0.62)
+			spark.Rotation = cycle * 160
+			spark.BackgroundTransparency = cycle / 1.1
+		end
+	end
+end
+
 local present: (CeremonySnapshot) -> ()
 
 local function fillVoting(snapshot: CeremonySnapshot)
@@ -251,6 +382,8 @@ present = function(snapshot: CeremonySnapshot)
 	panel.Visible = showingCase
 	confetti.Visible = snapshot.phase == "Party"
 	if snapshot.phase == "Idle" then
+		hideFrame()
+		hideEmote()
 		if caseOpen then
 			TattooCanvas.setInteractive(false)
 			TattooCanvas.clear()
@@ -260,6 +393,8 @@ present = function(snapshot: CeremonySnapshot)
 		return
 	end
 	if snapshot.phase == "TimeUp" then
+		hideFrame()
+		hideEmote()
 		TattooCanvas.setVisible(false)
 		return
 	end
@@ -284,7 +419,9 @@ present = function(snapshot: CeremonySnapshot)
 	if entry == nil then
 		artistName.Text = "No tattoos"
 		detail.Text = "The case is empty."
-		footer.Text = `You have {snapshot.yourTotal} points.`
+		footer.Text = `You have {snapshot.yourTotal} coins.`
+		hideFrame()
+		hideEmote()
 		clearList()
 		return
 	end
@@ -293,7 +430,12 @@ present = function(snapshot: CeremonySnapshot)
 	local limb = if region ~= nil then region.label else "Tattoo"
 	local marks = #entry.design.elements
 	local markWord = if marks == 1 then "mark" else "marks"
-	artistName.Text = entry.name
+	local wornTitle = if entry.title ~= "" then Catalogue.get(entry.title) else nil
+	local titleText = if wornTitle ~= nil and wornTitle.text ~= nil then wornTitle.text else ""
+	artistName.Text = if titleText ~= "" then `{entry.name}  ·  {titleText}` else entry.name
+	applyFrame(entry)
+	applyEmote(entry, snapshot.phase)
+	paintConfetti(entry)
 	if snapshot.phase == "Showcase" then
 		detail.Text = `{index} of {count}  ·  {limb}  ·  {marks} {markWord}`
 		footer.Text = "Voting opens when the case finishes."
@@ -317,9 +459,9 @@ present = function(snapshot: CeremonySnapshot)
 			end
 		end
 		if minePlace > 0 then
-			footer.Text = `+{mineAward} for {placeWord(minePlace)}. You have {snapshot.yourTotal} points.`
+			footer.Text = `+{mineAward} coins for {placeWord(minePlace)}. You have {snapshot.yourTotal} coins.`
 		else
-			footer.Text = `You have {snapshot.yourTotal} points.`
+			footer.Text = `You have {snapshot.yourTotal} coins.`
 		end
 	end
 
@@ -388,12 +530,12 @@ local function build()
 	stageTitle = Instance.new("TextLabel")
 	stageTitle.Name = "Stage"
 	stageTitle.AnchorPoint = Vector2.new(0.5, 0)
-	stageTitle.Position = UDim2.new(0.36, 0, 0, 78)
-	stageTitle.Size = UDim2.fromOffset(520, 64)
+	stageTitle.Position = UDim2.new(0.5, -(UiTheme.safe.dock + UiTheme.safe.side) / 2, 0, UiTheme.safe.top)
+	stageTitle.Size = UDim2.fromOffset(240, 44)
 	stageTitle.BackgroundColor3 = UiTheme.color.ink
 	stageTitle.BackgroundTransparency = 0.2
 	stageTitle.FontFace = UiTheme.font.heavy
-	stageTitle.TextSize = 36
+	stageTitle.TextSize = 22
 	stageTitle.TextColor3 = UiTheme.color.gold
 	stageTitle.Text = "Display case"
 	stageTitle.Visible = false
@@ -404,8 +546,8 @@ local function build()
 	panel = Instance.new("Frame")
 	panel.Name = "Case"
 	panel.AnchorPoint = Vector2.new(1, 0)
-	panel.Position = UDim2.fromScale(0.985, 0.1)
-	panel.Size = UDim2.fromScale(0.34, 0.84)
+	panel.Position = UDim2.new(1, -UiTheme.safe.side, 0, UiTheme.safe.top)
+	panel.Size = UDim2.new(0, UiTheme.safe.dock, 1, -(UiTheme.safe.top + UiTheme.safe.bottom))
 	panel.BackgroundColor3 = UiTheme.color.panel
 	panel.BackgroundTransparency = 0.06
 	panel.BorderSizePixel = 0
@@ -413,10 +555,10 @@ local function build()
 	panel.ZIndex = 5
 	panel.Parent = screen
 	corner(panel, 16)
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = UiTheme.color.stroke
-	stroke.Thickness = 1.5
-	stroke.Parent = panel
+	panelStroke = Instance.new("UIStroke")
+	panelStroke.Color = UiTheme.color.stroke
+	panelStroke.Thickness = 1.5
+	panelStroke.Parent = panel
 	local padding = Instance.new("UIPadding")
 	padding.PaddingTop = UDim.new(0, 16)
 	padding.PaddingBottom = UDim.new(0, 16)
@@ -427,6 +569,7 @@ local function build()
 	layout.FillDirection = Enum.FillDirection.Vertical
 	layout.Padding = UDim.new(0, 8)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.VerticalFlex = Enum.UIFlexAlignment.Fill
 	layout.Parent = panel
 
 	kicker = Instance.new("TextLabel")
@@ -471,9 +614,12 @@ local function build()
 	list.ScrollBarThickness = 4
 	list.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	list.CanvasSize = UDim2.fromOffset(0, 0)
-	list.Size = UDim2.new(1, 0, 0, 360)
+	list.Size = UDim2.fromScale(1, 0)
 	list.LayoutOrder = 4
 	list.Parent = panel
+	local listFlex = Instance.new("UIFlexItem")
+	listFlex.FlexMode = Enum.UIFlexMode.Fill
+	listFlex.Parent = list
 	local listLayout = Instance.new("UIListLayout")
 	listLayout.Padding = UDim.new(0, 6)
 	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -512,6 +658,99 @@ local function build()
 		corner(dot, 2)
 		table.insert(dots, dot)
 	end
+
+	frameDress = Instance.new("Frame")
+	frameDress.Name = "FrameDress"
+	frameDress.Active = false
+	frameDress.Interactable = false
+	frameDress.AnchorPoint = Vector2.new(1, 0)
+	frameDress.Position = panel.Position
+	frameDress.Size = panel.Size
+	frameDress.BackgroundTransparency = 1
+	frameDress.BorderSizePixel = 0
+	frameDress.Visible = false
+	frameDress.ZIndex = 6
+	frameDress.Parent = screen
+
+	emoteRoot = Instance.new("Frame")
+	emoteRoot.Name = "WinEmote"
+	emoteRoot.Active = false
+	emoteRoot.Interactable = false
+	emoteRoot.AnchorPoint = Vector2.new(0.5, 0)
+	emoteRoot.Position = UDim2.new(0.5, -math.floor(UiTheme.safe.dock / 2), 0, UiTheme.safe.top + 58)
+	emoteRoot.Size = UDim2.fromOffset(460, 110)
+	emoteRoot.BackgroundTransparency = 1
+	emoteRoot.BorderSizePixel = 0
+	emoteRoot.Visible = false
+	emoteRoot.ZIndex = 7
+	emoteRoot.Parent = screen
+
+	stamp = Instance.new("Frame")
+	stamp.Name = "Stamp"
+	stamp.Active = false
+	stamp.Interactable = false
+	stamp.AnchorPoint = Vector2.new(0.5, 0.5)
+	stamp.Position = UDim2.fromScale(0.5, 0.55)
+	stamp.Size = UDim2.fromOffset(280, 64)
+	stamp.BackgroundTransparency = 1
+	stamp.Visible = false
+	stamp.ZIndex = 7
+	stamp.Parent = emoteRoot
+	corner(stamp, 32)
+	stampStroke = Instance.new("UIStroke")
+	stampStroke.Color = UiTheme.color.gold
+	stampStroke.Thickness = 3
+	stampStroke.Parent = stamp
+	stampScale = Instance.new("UIScale")
+	stampScale.Parent = stamp
+
+	table.clear(sparks)
+	for _ = 1, 8 do
+		local spark = Instance.new("Frame")
+		spark.Active = false
+		spark.Interactable = false
+		spark.AnchorPoint = Vector2.new(0.5, 0.5)
+		spark.Size = UDim2.fromOffset(8, 8)
+		spark.BackgroundColor3 = UiTheme.color.gold
+		spark.BorderSizePixel = 0
+		spark.Visible = false
+		spark.ZIndex = 7
+		spark.Rotation = 45
+		spark.Parent = emoteRoot
+		corner(spark, 2)
+		table.insert(sparks, spark)
+	end
+
+	emoteHolder = Instance.new("Frame")
+	emoteHolder.Active = false
+	emoteHolder.Interactable = false
+	emoteHolder.AnchorPoint = Vector2.new(0.5, 0.5)
+	emoteHolder.Position = UDim2.fromScale(0.5, 0.5)
+	emoteHolder.Size = UDim2.new(1, -16, 1, 0)
+	emoteHolder.BackgroundTransparency = 1
+	emoteHolder.ZIndex = 8
+	emoteHolder.Parent = emoteRoot
+	emoteScale = Instance.new("UIScale")
+	emoteScale.Parent = emoteHolder
+
+	emoteLabel = Instance.new("TextLabel")
+	emoteLabel.BackgroundTransparency = 1
+	emoteLabel.Size = UDim2.fromScale(1, 1)
+	emoteLabel.FontFace = UiTheme.font.heavy
+	emoteLabel.TextScaled = true
+	emoteLabel.TextColor3 = UiTheme.color.gold
+	emoteLabel.Text = ""
+	emoteLabel.ZIndex = 8
+	emoteLabel.Parent = emoteHolder
+	local cap = Instance.new("UITextSizeConstraint")
+	cap.MaxTextSize = 64
+	cap.MinTextSize = 22
+	cap.Parent = emoteLabel
+	local inked = Instance.new("UIStroke")
+	inked.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+	inked.Color = UiTheme.color.ink
+	inked.Thickness = 2
+	inked.Parent = emoteLabel
 end
 
 local Ceremony = {}
@@ -559,8 +798,12 @@ function Ceremony.start()
 				end
 			end
 		end
+		local now = os.clock()
 		if confetti.Visible then
-			stepConfetti(os.clock())
+			stepConfetti(now)
+		end
+		if emoteRoot.Visible then
+			stepEmote(now)
 		end
 	end)
 end

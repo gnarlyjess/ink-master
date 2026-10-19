@@ -1,8 +1,9 @@
 --!strict
 
--- Builds the tattoo shop when the server starts.
--- This is a blockout: a readable parlour to spawn in, not finished art.
+-- Builds the Ink Masters parlour when the server starts.
+-- A converted street-front studio: cream plaster, walnut, charcoal, and brass.
 -- Players land inside, walk the floor, and sit while the round card runs on top.
+-- Lighting.Technology cannot be set from a runtime script. Use Future in Studio.
 
 local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
@@ -10,6 +11,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local InkColors = require(ReplicatedStorage.Shared.InkColors)
+local ParlourProps = require(script.Parent.ParlourProps)
+local Interior = require(script.Parent.Interior)
 
 local PREFIX = "[InkMasters]"
 
@@ -24,23 +27,31 @@ local DOOR_HALF = 5
 local DOOR_HEIGHT = 8.5
 
 local PALETTE = {
-	ink = Color3.fromRGB(10, 9, 14),
-	panel = Color3.fromRGB(22, 18, 30),
-	wall = Color3.fromRGB(238, 234, 228),
-	trim = Color3.fromRGB(248, 246, 242),
-	wood = Color3.fromRGB(156, 122, 86),
-	woodDark = Color3.fromRGB(128, 98, 70),
-	ceiling = Color3.fromRGB(246, 244, 240),
-	leather = Color3.fromRGB(24, 24, 26),
-	brass = Color3.fromRGB(92, 78, 64),
-	paper = Color3.fromRGB(236, 226, 204),
-	brick = Color3.fromRGB(150, 74, 58),
-	stationRed = Color3.fromRGB(176, 48, 52),
-	lot = Color3.fromRGB(78, 76, 74),
-	gold = Color3.fromRGB(242, 196, 122),
+	ink = Color3.fromRGB(32, 30, 28),
+	panel = Color3.fromRGB(46, 42, 40),
+	wall = Color3.fromRGB(232, 226, 216),
+	trim = Color3.fromRGB(214, 196, 172),
+	wood = Color3.fromRGB(118, 78, 50),
+	woodDark = Color3.fromRGB(78, 52, 36),
+	plankMid = Color3.fromRGB(104, 70, 46),
+	ceiling = Color3.fromRGB(226, 220, 210),
+	leather = Color3.fromRGB(42, 38, 36),
+	brass = Color3.fromRGB(168, 132, 84),
+	paper = Color3.fromRGB(236, 228, 214),
+	brick = Color3.fromRGB(116, 96, 88),
+	stationRed = Color3.fromRGB(62, 54, 50),
+	lot = Color3.fromRGB(64, 62, 58),
+	road = Color3.fromRGB(40, 40, 42),
+	sidewalk = Color3.fromRGB(164, 158, 150),
+	gold = Color3.fromRGB(186, 154, 104),
+	magenta = Color3.fromRGB(138, 74, 62),
+	glass = Color3.fromRGB(188, 206, 212),
+	shade = Color3.fromRGB(54, 46, 40),
+	oxblood = Color3.fromRGB(102, 46, 52),
+	dusk = Color3.fromRGB(46, 44, 48),
+	plaster = Color3.fromRGB(234, 228, 218),
+	charcoal = Color3.fromRGB(48, 44, 42),
 }
-
-local INK_ROTATION = { "black", "black", "black", "red", "black", "black", "black", "gold" }
 
 type PartSpec = {
 	name: string,
@@ -67,9 +78,12 @@ local function applyBase(part: BasePart, spec: PartSpec)
 	part.Material = spec.material
 	part.TopSurface = Enum.SurfaceType.Smooth
 	part.BottomSurface = Enum.SurfaceType.Smooth
-	part.CanCollide = if spec.collide == nil then true else spec.collide
+	local collides = if spec.collide == nil then true else spec.collide
+	part.CanCollide = collides
+	part.CanTouch = collides
 	part.Transparency = spec.transparency or 0
-	part.Reflectance = spec.reflectance or 0
+	local metalSheen = if spec.material == Enum.Material.Metal then 0.08 else 0
+	part.Reflectance = spec.reflectance or metalSheen
 	part.CastShadow = if spec.castShadow == nil then true else spec.castShadow
 	part.Parent = spec.parent
 end
@@ -120,8 +134,8 @@ local function surfaceText(part: BasePart, text: string, color: Color3, face: En
 	gui.Name = "Lettering"
 	gui.Face = face
 	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-	gui.PixelsPerStud = 40
-	gui.LightInfluence = 1
+	gui.PixelsPerStud = 48
+	gui.LightInfluence = 0
 	gui.Parent = part
 
 	local label = Instance.new("TextLabel")
@@ -150,27 +164,6 @@ local function upright(cf: CFrame): CFrame
 	return cf * CFrame.Angles(0, 0, math.rad(90))
 end
 
-local FLASH_DESIGNS = { "rose", "dagger", "swallow", "snake", "banner", "anchor", "moth", "star", "heart", "bolt" }
-
-local function designAt(index: number, width: number): string
-	if width >= 6 then
-		return "sheet"
-	end
-	local choice = FLASH_DESIGNS[((index - 1) % #FLASH_DESIGNS) + 1]
-	if choice == nil then
-		return "rose"
-	end
-	return choice
-end
-
-local function inkAt(index: number): string
-	local choice = INK_ROTATION[((index - 1) % #INK_ROTATION) + 1]
-	if choice == nil then
-		return "black"
-	end
-	return choice
-end
-
 local function clearDefaultPlace()
 	for _, child in Workspace:GetChildren() do
 		if child:IsA("SpawnLocation") or child.Name == "Baseplate" then
@@ -180,32 +173,36 @@ local function clearDefaultPlace()
 end
 
 local function dressLighting()
-	-- Fill is high enough to see the room the moment you join.
-	-- The lamps add warm pools on top. They must not be the only light,
-	-- or the shop stays black until those parts replicate.
-	Lighting.ClockTime = 16.4
-	Lighting.Brightness = 1.8
-	Lighting.Ambient = Color3.fromRGB(150, 132, 118)
-	Lighting.OutdoorAmbient = Color3.fromRGB(156, 140, 126)
+	-- Neutral fill keeps skin, paper and plaster true. Warmth comes from the
+	-- practical lamps, and the street outside sits in a cool dusk for contrast.
+	Lighting.ClockTime = 18.9
+	Lighting.GeographicLatitude = 35
+	Lighting.Brightness = 1.3
+	Lighting.Ambient = Color3.fromRGB(60, 59, 58)
+	Lighting.OutdoorAmbient = Color3.fromRGB(70, 76, 92)
 	Lighting.GlobalShadows = true
-	Lighting.EnvironmentDiffuseScale = 0.85
-	Lighting.EnvironmentSpecularScale = 0.08
-	Lighting.ExposureCompensation = 0.12
+	Lighting.ShadowSoftness = 0.2
+	Lighting.EnvironmentDiffuseScale = 0.35
+	Lighting.EnvironmentSpecularScale = 0.55
+	Lighting.ExposureCompensation = 0.2
 	Lighting.FogStart = 0
 	Lighting.FogEnd = 100000
-	Lighting.FogColor = Color3.fromRGB(150, 132, 118)
+	Lighting.FogColor = Color3.fromRGB(120, 126, 138)
 
 	for _, child in Lighting:GetChildren() do
-		if child:IsA("BloomEffect") then
+		if
+			child:IsA("Atmosphere")
+			or child:IsA("BloomEffect")
+			or child:IsA("SunRaysEffect")
+			or child:IsA("ColorCorrectionEffect")
+			or child:IsA("BlurEffect")
+			or child:IsA("DepthOfFieldEffect")
+		then
 			child:Destroy()
 		end
 	end
 
 	local function effect(className: string, name: string): Instance
-		local existing = Lighting:FindFirstChild(name)
-		if existing ~= nil then
-			existing:Destroy()
-		end
 		local created = Instance.new(className)
 		created.Name = name
 		created.Parent = Lighting
@@ -214,80 +211,27 @@ local function dressLighting()
 
 	local atmosphere = effect("Atmosphere", "InkMastersAtmosphere")
 	if atmosphere:IsA("Atmosphere") then
-		atmosphere.Density = 0
-		atmosphere.Offset = 0
+		atmosphere.Density = 0.06
+		atmosphere.Offset = 0.1
+		atmosphere.Color = Color3.fromRGB(188, 192, 198)
+		atmosphere.Decay = Color3.fromRGB(92, 98, 112)
 		atmosphere.Glare = 0
-		atmosphere.Haze = 0
+		atmosphere.Haze = 0.4
 	end
 
 	local grade = effect("ColorCorrectionEffect", "InkMastersGrade")
 	if grade:IsA("ColorCorrectionEffect") then
-		grade.Brightness = 0.04
-		grade.Contrast = 0.06
-		grade.Saturation = 0.02
-		grade.TintColor = Color3.fromRGB(255, 236, 214)
+		grade.Brightness = 0
+		grade.Contrast = 0.12
+		grade.Saturation = -0.04
+		grade.TintColor = Color3.fromRGB(255, 251, 247)
 	end
-end
 
-local FRAME_COLORS = {
-	PALETTE.wood,
-	PALETTE.woodDark,
-	Color3.fromRGB(62, 44, 36),
-	PALETTE.ink,
-}
-
-local PRINTS = { "garden", "dusk", "vase", "moon", "coast", "bloom" }
-
-local function buildPicture(
-	parent: Instance,
-	position: Vector3,
-	direction: Vector3,
-	width: number,
-	height: number,
-	index: number,
-	kind: "flash" | "print"
-)
-	local tilt = if width >= 5 then 0 else ((index % 5) - 2) * 0.7
-	local cf = faceToward(position, direction) * CFrame.Angles(0, 0, math.rad(tilt))
-	local frameColor = FRAME_COLORS[((index - 1) % #FRAME_COLORS) + 1]
-	local frameMaterial = if frameColor == PALETTE.ink then Enum.Material.SmoothPlastic else Enum.Material.Wood
-
-	makePart({
-		name = "PictureFrame",
-		size = Vector3.new(width + 0.72, height + 0.72, 0.12),
-		cframe = cf * CFrame.new(0, 0, 0.16),
-		color = frameColor,
-		material = frameMaterial,
-		parent = parent,
-		collide = false,
-	})
-	makePart({
-		name = "PictureMat",
-		size = Vector3.new(width + 0.28, height + 0.28, 0.06),
-		cframe = cf * CFrame.new(0, 0, 0.08),
-		color = Color3.fromRGB(246, 240, 230),
-		material = Enum.Material.SmoothPlastic,
-		parent = parent,
-		collide = false,
-	})
-
-	local canvas = makePart({
-		name = if kind == "flash" then "FlashCard" else "WallCanvas",
-		size = Vector3.new(width, height, 0.05),
-		cframe = cf,
-		color = PALETTE.paper,
-		material = Enum.Material.SmoothPlastic,
-		parent = parent,
-		collide = false,
-		castShadow = false,
-	})
-	if kind == "flash" then
-		canvas:SetAttribute("FlashDesign", designAt(index, width))
-		canvas:SetAttribute("FlashInk", inkAt(index))
-		canvas:SetAttribute("FlashTone", (index - 1) % 3)
-	else
-		local printId = PRINTS[((index - 1) % #PRINTS) + 1]
-		canvas:SetAttribute("WallPrint", printId)
+	local bloom = effect("BloomEffect", "InkMastersBloom")
+	if bloom:IsA("BloomEffect") then
+		bloom.Intensity = 0.3
+		bloom.Size = 20
+		bloom.Threshold = 1.7
 	end
 end
 
@@ -298,15 +242,26 @@ local function buildWordmark(
 	width: number,
 	height: number,
 	text: string,
-	bothSides: boolean?
+	bothSides: boolean?,
+	accent: Color3?
 )
 	local cf = faceToward(position, direction)
+	local letterColor = accent or Color3.fromRGB(236, 214, 168)
 	makePart({
 		name = "WordmarkFrame",
-		size = Vector3.new(width + 0.28, height + 0.28, 0.12),
-		cframe = cf * CFrame.new(0, 0, 0.08),
-		color = PALETTE.ink,
+		size = Vector3.new(width + 0.36, height + 0.36, 0.16),
+		cframe = cf * CFrame.new(0, 0, 0.12),
+		color = PALETTE.charcoal,
 		material = Enum.Material.SmoothPlastic,
+		parent = parent,
+		collide = false,
+	})
+	makePart({
+		name = "WordmarkLip",
+		size = Vector3.new(width + 0.5, 0.08, 0.08),
+		cframe = cf * CFrame.new(0, -(height / 2) - 0.16, 0.16),
+		color = PALETTE.brass,
+		material = Enum.Material.Metal,
 		parent = parent,
 		collide = false,
 	})
@@ -320,9 +275,9 @@ local function buildWordmark(
 		parent = parent,
 		collide = false,
 	})
-	surfaceText(plate, text, Color3.fromRGB(245, 242, 236), Enum.NormalId.Front)
+	surfaceText(plate, text, letterColor, Enum.NormalId.Front)
 	if bothSides then
-		surfaceText(plate, text, PALETTE.gold, Enum.NormalId.Back)
+		surfaceText(plate, text, letterColor, Enum.NormalId.Back)
 	end
 end
 
@@ -331,8 +286,8 @@ local function buildShell(lobby: Model)
 
 	makePart({
 		name = "Lot",
-		size = Vector3.new(160, 1, 150),
-		cframe = CFrame.new(0, -0.5, 4),
+		size = Vector3.new(210, 1, 240),
+		cframe = CFrame.new(0, -0.5, -28),
 		color = PALETTE.lot,
 		material = Enum.Material.Asphalt,
 		parent = shell,
@@ -342,10 +297,10 @@ local function buildShell(lobby: Model)
 		name = "Floor",
 		size = Vector3.new(ROOM_WIDTH - WALL - 0.2, FLOOR_TOP, ROOM_DEPTH + WALL),
 		cframe = CFrame.new(0, FLOOR_TOP / 2, 0),
-		color = PALETTE.woodDark,
-		material = Enum.Material.Wood,
+		color = Color3.fromRGB(124, 82, 48),
+		material = Enum.Material.WoodPlanks,
 		parent = shell,
-		reflectance = 0.02,
+		reflectance = 0.03,
 	})
 	lobby.PrimaryPart = floor
 
@@ -354,36 +309,9 @@ local function buildShell(lobby: Model)
 		name = "Porch",
 		size = Vector3.new(18, FLOOR_TOP, porchDepth),
 		cframe = CFrame.new(0, FLOOR_TOP / 2, -HALF_D - WALL / 2 - porchDepth / 2 + 0.3),
-		color = Color3.fromRGB(42, 40, 46),
+		color = Color3.fromRGB(132, 124, 114),
 		material = Enum.Material.Concrete,
 		parent = shell,
-	})
-
-	local plankCount = 8
-	local plankSpan = ROOM_WIDTH - WALL * 2 - 1
-	local plankWidth = plankSpan / plankCount
-	for index = 1, plankCount do
-		local shade = if index % 2 == 0 then PALETTE.wood else PALETTE.woodDark
-		local x = -plankSpan / 2 + plankWidth * (index - 0.5)
-		makePart({
-			name = "Plank",
-			size = Vector3.new(plankWidth - 0.12, 0.05, ROOM_DEPTH - 3),
-			cframe = CFrame.new(x, FLOOR_TOP + 0.03, 1),
-			color = shade,
-			material = Enum.Material.Wood,
-			parent = shell,
-			collide = false,
-		})
-	end
-
-	makePart({
-		name = "Rug",
-		size = Vector3.new(8.5, 0.06, 6.2),
-		cframe = CFrame.new(-26, FLOOR_TOP + 0.08, -17.2),
-		color = Color3.fromRGB(168, 78, 52),
-		material = Enum.Material.Fabric,
-		parent = shell,
-		collide = false,
 	})
 
 	makePart({
@@ -400,72 +328,215 @@ local function buildShell(lobby: Model)
 		name = "WallLeft",
 		size = Vector3.new(WALL, CEILING_Y, wallSizeZ),
 		cframe = CFrame.new(-HALF_W, CEILING_Y / 2, 0),
-		color = PALETTE.wall,
-		material = Enum.Material.SmoothPlastic,
+		color = PALETTE.plaster,
+		material = Enum.Material.Plaster,
 		parent = shell,
 	})
 	makePart({
 		name = "WallRight",
 		size = Vector3.new(WALL, CEILING_Y, wallSizeZ),
 		cframe = CFrame.new(HALF_W, CEILING_Y / 2, 0),
-		color = PALETTE.wall,
-		material = Enum.Material.SmoothPlastic,
+		color = PALETTE.plaster,
+		material = Enum.Material.Plaster,
 		parent = shell,
 	})
+	makePart({
+		name = "BrickFeature",
+		size = Vector3.new(ROOM_WIDTH - 2.4, 11.4, 0.16),
+		cframe = CFrame.new(0, 9.15, HALF_D - WALL / 2 - 0.1),
+		color = Color3.fromRGB(132, 72, 56),
+		material = Enum.Material.Brick,
+		parent = shell,
+		collide = false,
+	})
+	makePart({
+		name = "LoungeWall",
+		size = Vector3.new(0.16, 11.2, 16.5),
+		cframe = CFrame.new(-HALF_W + WALL / 2 + 0.1, 9.05, -16.4),
+		color = Color3.fromRGB(176, 118, 42),
+		material = Enum.Material.Plaster,
+		parent = shell,
+		collide = false,
+	})
+
 	makePart({
 		name = "WallBack",
 		size = Vector3.new(ROOM_WIDTH + WALL, CEILING_Y, WALL),
 		cframe = CFrame.new(0, CEILING_Y / 2, HALF_D),
+		color = PALETTE.plaster,
+		material = Enum.Material.Plaster,
+		parent = shell,
+	})
+
+	local sideWidth = HALF_W + WALL / 2 - DOOR_HALF
+	local sideCenter = DOOR_HALF + sideWidth / 2
+	local SILL_Y = 3.85
+	local WINDOW_TOP = 11.15
+	local WINDOW_WIDTH = 14
+
+	local function buildWindowBay(centerX: number)
+		local jamb = (sideWidth - WINDOW_WIDTH) / 2
+		local leftX = centerX - WINDOW_WIDTH / 2 - jamb / 2
+		local rightX = centerX + WINDOW_WIDTH / 2 + jamb / 2
+		local windowMidY = (SILL_Y + WINDOW_TOP) / 2
+		local windowHeight = WINDOW_TOP - SILL_Y
+
+		makePart({
+			name = "WindowJamb",
+			size = Vector3.new(jamb, CEILING_Y, WALL),
+			cframe = CFrame.new(leftX, CEILING_Y / 2, -HALF_D),
+			color = PALETTE.brick,
+			material = Enum.Material.Brick,
+			parent = shell,
+		})
+		makePart({
+			name = "WindowJamb",
+			size = Vector3.new(jamb, CEILING_Y, WALL),
+			cframe = CFrame.new(rightX, CEILING_Y / 2, -HALF_D),
+			color = PALETTE.brick,
+			material = Enum.Material.Brick,
+			parent = shell,
+		})
+		makePart({
+			name = "WindowSillWall",
+			size = Vector3.new(WINDOW_WIDTH, SILL_Y, WALL),
+			cframe = CFrame.new(centerX, SILL_Y / 2, -HALF_D),
+			color = PALETTE.brick,
+			material = Enum.Material.Brick,
+			parent = shell,
+		})
+		local bayHeader = CEILING_Y - WINDOW_TOP
+		makePart({
+			name = "WindowHeader",
+			size = Vector3.new(WINDOW_WIDTH, bayHeader, WALL),
+			cframe = CFrame.new(centerX, WINDOW_TOP + bayHeader / 2, -HALF_D),
+			color = PALETTE.brick,
+			material = Enum.Material.Brick,
+			parent = shell,
+		})
+		makePart({
+			name = "WindowGlass",
+			size = Vector3.new(WINDOW_WIDTH - 0.3, windowHeight + 0.06, 0.1),
+			cframe = CFrame.new(centerX, windowMidY, -HALF_D),
+			color = PALETTE.glass,
+			material = Enum.Material.Glass,
+			parent = shell,
+			collide = false,
+			transparency = 0.42,
+			reflectance = 0.16,
+			castShadow = false,
+		})
+
+		local mullionZ = -HALF_D + 0.28
+		makePart({
+			name = "Mullion",
+			size = Vector3.new(0.14, windowHeight - 0.16, 0.14),
+			cframe = CFrame.new(centerX, windowMidY, mullionZ),
+			color = PALETTE.ink,
+			material = Enum.Material.SmoothPlastic,
+			parent = shell,
+			collide = false,
+		})
+		makePart({
+			name = "Mullion",
+			size = Vector3.new(WINDOW_WIDTH - 0.24, 0.14, 0.14),
+			cframe = CFrame.new(centerX, windowMidY, mullionZ),
+			color = PALETTE.ink,
+			material = Enum.Material.SmoothPlastic,
+			parent = shell,
+			collide = false,
+		})
+		makePart({
+			name = "WindowSill",
+			size = Vector3.new(WINDOW_WIDTH + 0.35, 0.16, 0.62),
+			cframe = CFrame.new(centerX, SILL_Y + 0.04, -HALF_D + 0.38),
+			color = PALETTE.woodDark,
+			material = Enum.Material.Wood,
+			parent = shell,
+			collide = false,
+		})
+		local linerZ = -HALF_D + 0.48
+		local function plasterFace(size: Vector3, cframe: CFrame)
+			makePart({
+				name = "Plaster",
+				size = size,
+				cframe = cframe,
+				color = PALETTE.plaster,
+				material = Enum.Material.Plaster,
+				parent = shell,
+				collide = false,
+			})
+		end
+		plasterFace(
+			Vector3.new(math.max(jamb - 0.08, 0.4), CEILING_Y - 0.5, 0.1),
+			CFrame.new(leftX, CEILING_Y / 2, linerZ)
+		)
+		plasterFace(
+			Vector3.new(math.max(jamb - 0.08, 0.4), CEILING_Y - 0.5, 0.1),
+			CFrame.new(rightX, CEILING_Y / 2, linerZ)
+		)
+		plasterFace(
+			Vector3.new(WINDOW_WIDTH, math.max(SILL_Y - 0.2, 0.4), 0.1),
+			CFrame.new(centerX, SILL_Y / 2, linerZ)
+		)
+		plasterFace(
+			Vector3.new(WINDOW_WIDTH, math.max(bayHeader - 0.15, 0.4), 0.1),
+			CFrame.new(centerX, WINDOW_TOP + bayHeader / 2, linerZ)
+		)
+	end
+
+	buildWindowBay(-sideCenter)
+	buildWindowBay(sideCenter)
+
+	local transomBottom = 10.35
+	local transomTop = 14.15
+	local doorWidth = DOOR_HALF * 2
+	makePart({
+		name = "DoorRail",
+		size = Vector3.new(doorWidth, transomBottom - DOOR_HEIGHT, WALL),
+		cframe = CFrame.new(0, DOOR_HEIGHT + (transomBottom - DOOR_HEIGHT) / 2, -HALF_D),
 		color = PALETTE.brick,
 		material = Enum.Material.Brick,
 		parent = shell,
 	})
 	makePart({
-		name = "RedWallLeft",
-		size = Vector3.new(0.22, 11, 26),
-		cframe = CFrame.new(-HALF_W + WALL / 2 + 0.16, 6.4, 10),
-		color = PALETTE.stationRed,
-		material = Enum.Material.SmoothPlastic,
+		name = "DoorHead",
+		size = Vector3.new(doorWidth, CEILING_Y - transomTop, WALL),
+		cframe = CFrame.new(0, transomTop + (CEILING_Y - transomTop) / 2, -HALF_D),
+		color = PALETTE.brick,
+		material = Enum.Material.Brick,
+		parent = shell,
+	})
+	local doorLinerZ = -HALF_D + 0.48
+	makePart({
+		name = "Plaster",
+		size = Vector3.new(doorWidth - 0.2, transomBottom - DOOR_HEIGHT - 0.08, 0.1),
+		cframe = CFrame.new(0, DOOR_HEIGHT + (transomBottom - DOOR_HEIGHT) / 2, doorLinerZ),
+		color = PALETTE.plaster,
+		material = Enum.Material.Plaster,
 		parent = shell,
 		collide = false,
 	})
 	makePart({
-		name = "RedWallRight",
-		size = Vector3.new(0.22, 11, 26),
-		cframe = CFrame.new(HALF_W - WALL / 2 - 0.16, 6.4, 10),
-		color = PALETTE.stationRed,
-		material = Enum.Material.SmoothPlastic,
+		name = "Plaster",
+		size = Vector3.new(doorWidth - 0.2, math.max(CEILING_Y - transomTop - 0.1, 0.4), 0.1),
+		cframe = CFrame.new(0, transomTop + (CEILING_Y - transomTop) / 2, doorLinerZ),
+		color = PALETTE.plaster,
+		material = Enum.Material.Plaster,
 		parent = shell,
 		collide = false,
 	})
-
-	local sideWidth = HALF_W + WALL / 2 - DOOR_HALF
-	local sideCenter = DOOR_HALF + sideWidth / 2
 	makePart({
-		name = "WallFrontLeft",
-		size = Vector3.new(sideWidth, CEILING_Y, WALL),
-		cframe = CFrame.new(-sideCenter, CEILING_Y / 2, -HALF_D),
-		color = PALETTE.wall,
-		material = Enum.Material.SmoothPlastic,
+		name = "Transom",
+		size = Vector3.new(doorWidth - 0.35, transomTop - transomBottom + 0.06, 0.1),
+		cframe = CFrame.new(0, (transomBottom + transomTop) / 2, -HALF_D),
+		color = PALETTE.glass,
+		material = Enum.Material.Glass,
 		parent = shell,
-	})
-	makePart({
-		name = "WallFrontRight",
-		size = Vector3.new(sideWidth, CEILING_Y, WALL),
-		cframe = CFrame.new(sideCenter, CEILING_Y / 2, -HALF_D),
-		color = PALETTE.wall,
-		material = Enum.Material.SmoothPlastic,
-		parent = shell,
-	})
-
-	local headerHeight = CEILING_Y - DOOR_HEIGHT
-	makePart({
-		name = "DoorHeader",
-		size = Vector3.new(DOOR_HALF * 2, headerHeight, WALL),
-		cframe = CFrame.new(0, DOOR_HEIGHT + headerHeight / 2, -HALF_D),
-		color = PALETTE.wall,
-		material = Enum.Material.SmoothPlastic,
-		parent = shell,
+		collide = false,
+		transparency = 0.38,
+		reflectance = 0.14,
+		castShadow = false,
 	})
 
 	makePart({
@@ -478,73 +549,99 @@ local function buildShell(lobby: Model)
 		collide = false,
 	})
 
-	local function baseboard(size: Vector3, cframe: CFrame)
+	local faceZ = -HALF_D - 0.78
+	local function masonry(name: string, size: Vector3, cframe: CFrame, collide: boolean?)
 		makePart({
-			name = "Baseboard",
+			name = name,
 			size = size,
 			cframe = cframe,
-			color = PALETTE.trim,
-			material = Enum.Material.SmoothPlastic,
+			color = PALETTE.brick,
+			material = Enum.Material.Brick,
 			parent = shell,
-			collide = false,
+			collide = collide,
 		})
 	end
 
-	local boardY = FLOOR_TOP + 0.55
-	baseboard(Vector3.new(ROOM_WIDTH - 2, 1.1, 0.18), CFrame.new(0, boardY, HALF_D - WALL / 2 - 0.2))
-	baseboard(Vector3.new(0.18, 1.1, ROOM_DEPTH - 2), CFrame.new(-HALF_W + WALL / 2 + 0.2, boardY, 0))
-	baseboard(Vector3.new(0.18, 1.1, ROOM_DEPTH - 2), CFrame.new(HALF_W - WALL / 2 - 0.2, boardY, 0))
-	baseboard(Vector3.new(sideWidth - 1, 1.1, 0.18), CFrame.new(-sideCenter, boardY, -HALF_D + WALL / 2 + 0.2))
-	baseboard(Vector3.new(sideWidth - 1, 1.1, 0.18), CFrame.new(sideCenter, boardY, -HALF_D + WALL / 2 + 0.2))
+	masonry(
+		"ExteriorSide",
+		Vector3.new(0.42, CEILING_Y + 0.35, ROOM_DEPTH + 1.4),
+		CFrame.new(-HALF_W - 0.55, CEILING_Y / 2, 0),
+		true
+	)
+	masonry(
+		"ExteriorSide",
+		Vector3.new(0.42, CEILING_Y + 0.35, ROOM_DEPTH + 1.4),
+		CFrame.new(HALF_W + 0.55, CEILING_Y / 2, 0),
+		true
+	)
+	masonry(
+		"ExteriorBack",
+		Vector3.new(ROOM_WIDTH + 1.6, CEILING_Y + 0.35, 0.42),
+		CFrame.new(0, CEILING_Y / 2, HALF_D + 0.55),
+		true
+	)
+	masonry("Pier", Vector3.new(1.35, CEILING_Y + 0.5, 1.05), CFrame.new(-HALF_W + 0.35, CEILING_Y / 2, faceZ), true)
+	masonry("Pier", Vector3.new(1.35, CEILING_Y + 0.5, 1.05), CFrame.new(HALF_W - 0.35, CEILING_Y / 2, faceZ), true)
+	masonry("Fascia", Vector3.new(ROOM_WIDTH + 0.4, 2.35, 0.72), CFrame.new(0, CEILING_Y - 0.85, faceZ), false)
+	masonry("StallRiser", Vector3.new(WINDOW_WIDTH + 0.5, 1.05, 0.48), CFrame.new(-sideCenter, 0.62, faceZ), true)
+	masonry("StallRiser", Vector3.new(WINDOW_WIDTH + 0.5, 1.05, 0.48), CFrame.new(sideCenter, 0.62, faceZ), true)
+	masonry(
+		"MullionPier",
+		Vector3.new(0.72, CEILING_Y - 1.2, 0.55),
+		CFrame.new(-DOOR_HALF - 0.7, CEILING_Y / 2, faceZ),
+		true
+	)
+	masonry(
+		"MullionPier",
+		Vector3.new(0.72, CEILING_Y - 1.2, 0.55),
+		CFrame.new(DOOR_HALF + 0.7, CEILING_Y / 2, faceZ),
+		true
+	)
 
-	for _, beamZ in { -10, 8 } do
-		makePart({
-			name = "Beam",
-			size = Vector3.new(ROOM_WIDTH - 4, 0.35, 0.45),
-			cframe = CFrame.new(0, CEILING_Y - 0.4, beamZ),
-			color = PALETTE.ink,
-			material = Enum.Material.Metal,
-			parent = shell,
-			collide = false,
-		})
+	local function windowBars(centerX: number)
+		local windowMidY = (SILL_Y + WINDOW_TOP) / 2
+		local windowHeight = WINDOW_TOP - SILL_Y
+		local barZ = -HALF_D - 0.42
+		local function bar(size: Vector3, cframe: CFrame)
+			makePart({
+				name = "WindowFrame",
+				size = size,
+				cframe = cframe,
+				color = PALETTE.ink,
+				material = Enum.Material.Metal,
+				parent = shell,
+				collide = false,
+			})
+		end
+		bar(Vector3.new(WINDOW_WIDTH + 0.35, 0.16, 0.16), CFrame.new(centerX, WINDOW_TOP, barZ))
+		bar(Vector3.new(WINDOW_WIDTH + 0.35, 0.16, 0.16), CFrame.new(centerX, SILL_Y, barZ))
+		bar(Vector3.new(0.16, windowHeight, 0.16), CFrame.new(centerX - WINDOW_WIDTH / 2, windowMidY, barZ))
+		bar(Vector3.new(0.16, windowHeight, 0.16), CFrame.new(centerX + WINDOW_WIDTH / 2, windowMidY, barZ))
 	end
-
-	for index, lightZ in { -14, 2, 16 } do
-		local lamp = makePart({
-			name = `ShopLight{index}`,
-			size = Vector3.new(14, 0.18, 2.4),
-			cframe = CFrame.new(0, CEILING_Y - 0.28, lightZ),
-			color = Color3.fromRGB(214, 196, 168),
-			material = Enum.Material.SmoothPlastic,
-			parent = shell,
-			collide = false,
-			castShadow = false,
-		})
-		addLight(lamp, Color3.fromRGB(255, 214, 170), 0.22, 18)
-	end
+	windowBars(-sideCenter)
+	windowBars(sideCenter)
 end
 
 local function buildStation(parent: Instance, index: number, origin: Vector3, yaw: number)
 	local cf = CFrame.new(origin) * CFrame.Angles(0, yaw, 0)
+	local station = Instance.new("Model")
+	station.Name = "Station"
+	station:SetAttribute("Index", index)
+	station.Parent = parent
+	parent = station
 	local function at(offset: Vector3): CFrame
 		return cf * CFrame.new(offset)
 	end
 
-	local tile = 1.55
-	for column = 0, 4 do
-		for row = 0, 5 do
-			local dark = (column + row) % 2 == 0
-			makePart({
-				name = "Checker",
-				size = Vector3.new(tile - 0.06, 0.04, tile - 0.06),
-				cframe = at(Vector3.new((column - 2) * tile + 0.3, 0.06, (row - 2.5) * tile)),
-				color = if dark then Color3.fromRGB(32, 32, 34) else Color3.fromRGB(236, 234, 230),
-				material = Enum.Material.SmoothPlastic,
-				parent = parent,
-				collide = false,
-			})
-		end
-	end
+	makePart({
+		name = "StationMat",
+		size = Vector3.new(6.2, 0.035, 8.4),
+		cframe = at(Vector3.new(0.35, 0.03, 0.15)),
+		color = PALETTE.charcoal,
+		material = Enum.Material.Fabric,
+		parent = parent,
+		collide = false,
+	})
 
 	local legOffsets = {
 		Vector3.new(-1.15, 1.35, -2.7),
@@ -597,6 +694,57 @@ local function buildStation(parent: Instance, index: number, origin: Vector3, ya
 		parent = parent,
 		collide = false,
 	})
+	makePart({
+		name = "Headboard",
+		size = Vector3.new(2.45, 1.15, 0.28),
+		cframe = at(Vector3.new(0, 3.55, -2.95)),
+		color = PALETTE.leather,
+		material = Enum.Material.Leather,
+		parent = parent,
+	})
+	makePart({
+		name = "Footboard",
+		size = Vector3.new(2.45, 0.7, 0.22),
+		cframe = at(Vector3.new(0, 3.25, 2.95)),
+		color = PALETTE.leather,
+		material = Enum.Material.Leather,
+		parent = parent,
+	})
+	makePart({
+		name = "SideRail",
+		size = Vector3.new(0.1, 0.22, 5.6),
+		cframe = at(Vector3.new(-1.28, 2.95, 0)),
+		color = PALETTE.brass,
+		material = Enum.Material.Metal,
+		parent = parent,
+		collide = false,
+	})
+	makePart({
+		name = "SideRail",
+		size = Vector3.new(0.1, 0.22, 5.6),
+		cframe = at(Vector3.new(1.28, 2.95, 0)),
+		color = PALETTE.brass,
+		material = Enum.Material.Metal,
+		parent = parent,
+		collide = false,
+	})
+	makePart({
+		name = "ArmPost",
+		size = Vector3.new(0.14, 0.72, 0.14),
+		cframe = at(Vector3.new(1.42, 3.15, 0.35)),
+		color = PALETTE.brass,
+		material = Enum.Material.Metal,
+		parent = parent,
+	})
+	makePart({
+		name = "Armrest",
+		size = Vector3.new(1.15, 0.14, 0.48),
+		cframe = at(Vector3.new(1.85, 3.48, 0.35)),
+		color = PALETTE.leather,
+		material = Enum.Material.Leather,
+		parent = parent,
+		collide = false,
+	})
 
 	makePart({
 		name = "StoolPole",
@@ -639,7 +787,7 @@ local function buildStation(parent: Instance, index: number, origin: Vector3, ya
 		size = Vector3.new(0.46, 0.46, 0.46),
 		cframe = CFrame.new(at(Vector3.new(0.15, 5.15, -1.2)).Position),
 		color = Color3.fromRGB(255, 236, 210),
-		material = Enum.Material.SmoothPlastic,
+		material = Enum.Material.Neon,
 		parent = parent,
 		collide = false,
 		castShadow = false,
@@ -654,6 +802,25 @@ local function buildStation(parent: Instance, index: number, origin: Vector3, ya
 		color = PALETTE.ink,
 		material = Enum.Material.Metal,
 		parent = parent,
+	})
+	makePart({
+		name = "Machine",
+		size = Vector3.new(0.26, 0.2, 0.72),
+		cframe = at(Vector3.new(2.15, 2.74, 1.15)) * CFrame.Angles(0.35, 0.7, 0),
+		color = PALETTE.ink,
+		material = Enum.Material.Metal,
+		parent = parent,
+		collide = false,
+	})
+	makePart({
+		name = "MachineCoil",
+		size = Vector3.new(0.16, 0.16, 0.16),
+		cframe = at(Vector3.new(2.05, 2.9, 1.02)),
+		color = PALETTE.brass,
+		material = Enum.Material.Metal,
+		parent = parent,
+		collide = false,
+		shape = Enum.PartType.Ball,
 	})
 
 	for bottleIndex = 1, 3 do
@@ -671,33 +838,34 @@ local function buildStation(parent: Instance, index: number, origin: Vector3, ya
 		})
 	end
 
-	makePart({
-		name = "CurtainRod",
-		size = Vector3.new(0.12, 0.12, 5.4),
-		cframe = at(Vector3.new(-1.85, 6.3, 0)),
-		color = PALETTE.brass,
-		material = Enum.Material.Metal,
-		parent = parent,
-		collide = false,
+	local function tuck(rigName: string, names: { string })
+		local rig = Instance.new("Folder")
+		rig.Name = rigName
+		rig.Parent = station
+		local children = station:GetChildren()
+		for _, child in children do
+			if child ~= rig and table.find(names, child.Name) ~= nil then
+				child.Parent = rig
+			end
+		end
+	end
+
+	tuck("RigBed", {
+		"BedLeg",
+		"BedFrame",
+		"Mattress",
+		"Sheet",
+		"Pillow",
+		"Headboard",
+		"Footboard",
+		"SideRail",
+		"ArmPost",
+		"Armrest",
 	})
-	makePart({
-		name = "Curtain",
-		size = Vector3.new(0.12, 3.2, 2.3),
-		cframe = at(Vector3.new(-1.85, 4.55, -1.3)),
-		color = Color3.fromRGB(86, 18, 46),
-		material = Enum.Material.Fabric,
-		parent = parent,
-		collide = false,
-	})
-	makePart({
-		name = "Curtain",
-		size = Vector3.new(0.12, 3.2, 2.3),
-		cframe = at(Vector3.new(-1.85, 4.55, 1.3)),
-		color = Color3.fromRGB(64, 16, 48),
-		material = Enum.Material.Fabric,
-		parent = parent,
-		collide = false,
-	})
+	tuck("RigStool", { "StoolPole", "ArtistStool" })
+	tuck("RigLamp", { "LampPole", "LampArm", "LampBulb" })
+	tuck("RigTray", { "Tray", "Machine", "MachineCoil" })
+	station.WorldPivot = cf
 end
 
 local function buildStations(lobby: Model)
@@ -709,183 +877,89 @@ local function buildStations(lobby: Model)
 	buildStation(stations, 4, Vector3.new(23, FLOOR_TOP, 16), math.pi)
 end
 
-local function buildGallery(lobby: Model)
-	local gallery = makeFolder(lobby, "Gallery")
-	local index = 1
-	local function hang(position: Vector3, direction: Vector3, width: number, height: number, kind: "flash" | "print")
-		-- Sit the frame just off the plaster so the moulding reads.
-		local anchor = position + direction * 0.32
-		buildPicture(gallery, anchor, direction, width, height, index, kind)
-		index += 1
-	end
-
-	local back = Vector3.new(0, 0, -1)
-	local backZ = HALF_D - WALL / 2
-	-- Brick wall: a small flash group, one big framed sheet, then paintings. Brick stays visible.
-	hang(Vector3.new(-24, 6.9, backZ), back, 2.5, 3.2, "flash")
-	hang(Vector3.new(-20.2, 7.4, backZ), back, 2.5, 3.2, "flash")
-	hang(Vector3.new(-24.2, 11.1, backZ), back, 2.4, 3.0, "flash")
-	hang(Vector3.new(-20, 11.4, backZ), back, 2.4, 3.0, "flash")
-	hang(Vector3.new(-8.6, 9.2, backZ), back, 3.6, 4.6, "print")
-	hang(Vector3.new(8.8, 9.1, backZ), back, 3.4, 4.4, "print")
-	hang(Vector3.new(14.2, 7.1, backZ), back, 3.2, 4.2, "print")
-	hang(Vector3.new(18.6, 6.7, backZ), back, 2.6, 3.4, "print")
-	hang(Vector3.new(14.6, 11.8, backZ), back, 3.4, 2.6, "print")
-	hang(Vector3.new(19.2, 11.5, backZ), back, 2.4, 3.0, "print")
-	hang(Vector3.new(24.6, 8.8, backZ), back, 2.6, 3.4, "flash")
-
-	local left = Vector3.new(1, 0, 0)
-	local leftX = -HALF_W + WALL / 2
-	hang(Vector3.new(leftX, 9.5, -18.5), left, 3.4, 4.4, "print")
-	hang(Vector3.new(leftX, 9.3, -8.5), left, 2.8, 3.6, "print")
-	hang(Vector3.new(leftX, 9.6, 1.5), left, 3.2, 4.2, "flash")
-	hang(Vector3.new(leftX, 9.2, 11), left, 2.8, 3.6, "print")
-	hang(Vector3.new(leftX, 9.5, 20), left, 3.4, 4.4, "print")
-
-	local right = Vector3.new(-1, 0, 0)
-	local rightX = HALF_W - WALL / 2
-	hang(Vector3.new(rightX, 9.4, -20), right, 3.2, 4.2, "print")
-	hang(Vector3.new(rightX, 9.6, -9), right, 2.6, 3.4, "flash")
-	hang(Vector3.new(rightX, 9.2, 2.5), right, 3.4, 4.6, "print")
-	hang(Vector3.new(rightX, 9.5, 12.5), right, 3.0, 3.8, "print")
-	hang(Vector3.new(rightX, 9.3, 21), right, 2.8, 3.6, "print")
-
-	local intoRoom = Vector3.new(0, 0, 1)
-	local frontZ = -HALF_D + WALL / 2
-	hang(Vector3.new(-24, 9.5, frontZ), intoRoom, 3.2, 4.2, "print")
-	hang(Vector3.new(-16, 9.2, frontZ), intoRoom, 2.6, 3.4, "print")
-	hang(Vector3.new(16.5, 9.4, frontZ), intoRoom, 2.8, 3.6, "flash")
-	hang(Vector3.new(24.5, 9.6, frontZ), intoRoom, 3.2, 4.2, "print")
-end
-
-local LEAF_COLORS = {
-	Color3.fromRGB(36, 92, 58),
-	Color3.fromRGB(58, 122, 74),
-	Color3.fromRGB(24, 70, 46),
-	Color3.fromRGB(78, 140, 86),
-}
-
-local BLOOM_COLORS = {
-	Color3.fromRGB(232, 126, 142),
-	Color3.fromRGB(244, 198, 132),
-	Color3.fromRGB(236, 228, 214),
-}
-
-local POT_COLORS = {
-	Color3.fromRGB(176, 96, 70),
-	Color3.fromRGB(232, 214, 196),
-	Color3.fromRGB(214, 186, 150),
-	Color3.fromRGB(108, 122, 96),
-	Color3.fromRGB(154, 72, 58),
-}
-
-local function buildPlant(
-	parent: Instance,
-	position: Vector3,
-	scale: number,
-	potColor: Color3,
-	bloom: boolean,
-	trail: boolean
-)
-	local potHeight = 1.15 * scale
-	local direction = if trail then -1 else 1
-	makePart({
-		name = "PlantSaucer",
-		size = Vector3.new(0.08 * scale, 1.45 * scale, 1.45 * scale),
-		cframe = upright(CFrame.new(position + Vector3.new(0, 0.04 * scale, 0))),
-		color = potColor,
-		material = Enum.Material.SmoothPlastic,
-		parent = parent,
-		shape = Enum.PartType.Cylinder,
-	})
-	makePart({
-		name = "PlantPot",
-		size = Vector3.new(potHeight, 1.12 * scale, 1.12 * scale),
-		cframe = upright(CFrame.new(position + Vector3.new(0, potHeight / 2, 0))),
-		color = potColor,
-		material = Enum.Material.SmoothPlastic,
-		parent = parent,
-		shape = Enum.PartType.Cylinder,
-	})
-	makePart({
-		name = "Soil",
-		size = Vector3.new(0.1 * scale, 0.92 * scale, 0.92 * scale),
-		cframe = upright(CFrame.new(position + Vector3.new(0, potHeight - 0.02 * scale, 0))),
-		color = Color3.fromRGB(62, 44, 32),
-		material = Enum.Material.Ground,
-		parent = parent,
-		collide = false,
-		shape = Enum.PartType.Cylinder,
-	})
-	makePart({
-		name = "Stem",
-		size = Vector3.new(1.15 * scale, 0.14 * scale, 0.14 * scale),
-		cframe = upright(CFrame.new(position + Vector3.new(0, potHeight + direction * 0.45 * scale, 0))),
-		color = Color3.fromRGB(54, 78, 48),
-		material = Enum.Material.Grass,
-		parent = parent,
-		collide = false,
-		shape = Enum.PartType.Cylinder,
-	})
-
-	local sprouts = {
-		Vector3.new(0, 2.25, 0),
-		Vector3.new(0.72, 1.95, 0.12),
-		Vector3.new(-0.68, 2.05, -0.18),
-		Vector3.new(0.18, 2.55, -0.55),
-		Vector3.new(-0.12, 2.45, 0.62),
-		Vector3.new(0.88, 1.6, -0.38),
-		Vector3.new(-0.82, 1.55, 0.32),
-		Vector3.new(0.28, 1.5, 0.72),
-		Vector3.new(-0.36, 1.7, -0.7),
-		Vector3.new(0, 1.42, 0.05),
-	}
-	for leafIndex, offset in sprouts do
-		local leaf = LEAF_COLORS[((leafIndex - 1) % #LEAF_COLORS) + 1]
-		local placed = Vector3.new(offset.X, direction * offset.Y * (if trail then 0.72 else 1), offset.Z)
-		makePart({
-			name = "Leaf",
-			size = Vector3.new(1.05, 0.82, 1.05) * scale,
-			cframe = CFrame.new(position + placed * scale),
-			color = leaf,
-			material = Enum.Material.Grass,
-			parent = parent,
-			collide = false,
-			shape = Enum.PartType.Ball,
-		})
-	end
-
-	if bloom then
-		local flowers = {
-			Vector3.new(0.35, 2.35, 0.2),
-			Vector3.new(-0.42, 2.15, -0.15),
-			Vector3.new(0.05, 2.6, -0.28),
-		}
-		for bloomIndex, offset in flowers do
-			local petal = BLOOM_COLORS[((bloomIndex - 1) % #BLOOM_COLORS) + 1]
-			local placed = Vector3.new(offset.X, direction * offset.Y * (if trail then 0.72 else 1), offset.Z)
-			makePart({
-				name = "Bloom",
-				size = Vector3.new(0.42, 0.36, 0.42) * scale,
-				cframe = CFrame.new(position + placed * scale),
-				color = petal,
-				material = Enum.Material.SmoothPlastic,
-				parent = parent,
-				collide = false,
-				shape = Enum.PartType.Ball,
-			})
-		end
-	end
-end
-
 local function buildEntrance(lobby: Model)
 	local entrance = makeFolder(lobby, "Entrance")
 	local intoRoom = Vector3.new(0, 0, 1)
 	local towardStreet = Vector3.new(0, 0, -1)
 
-	buildWordmark(entrance, Vector3.new(0, 12.4, -HALF_D - 0.75), towardStreet, 13.5, 2.3, "INK MASTERS")
-	buildWordmark(entrance, Vector3.new(0, 13.4, -HALF_D + 3.4), intoRoom, 11, 1.8, "INK MASTERS")
-	buildWordmark(entrance, Vector3.new(-9.5, 7.4, -HALF_D - 0.7), towardStreet, 3.2, 1.35, "OPEN")
+	buildWordmark(entrance, Vector3.new(0, 15.05, -HALF_D - 1.25), towardStreet, 18.5, 1.7, "INK MASTERS")
+	buildWordmark(entrance, Vector3.new(0, 12.15, -HALF_D + 0.95), intoRoom, 10.5, 1.15, "INK MASTERS")
+	buildWordmark(
+		entrance,
+		Vector3.new(-8.6, 5.6, -HALF_D - 0.72),
+		towardStreet,
+		3.1,
+		0.85,
+		"OPEN",
+		false,
+		PALETTE.brass
+	)
+
+	makePart({
+		name = "Awning",
+		size = Vector3.new(12.6, 0.12, 4.2),
+		cframe = CFrame.new(0, 9.4, -HALF_D - 2.1) * CFrame.Angles(math.rad(-14), 0, 0),
+		color = PALETTE.oxblood,
+		material = Enum.Material.Fabric,
+		parent = entrance,
+		collide = false,
+	})
+	makePart({
+		name = "AwningValance",
+		size = Vector3.new(12.6, 0.5, 0.08),
+		cframe = CFrame.new(0, 8.78, -HALF_D - 4.05),
+		color = PALETTE.oxblood,
+		material = Enum.Material.Fabric,
+		parent = entrance,
+		collide = false,
+	})
+	makePart({
+		name = "AwningStripe",
+		size = Vector3.new(12.6, 0.08, 0.04),
+		cframe = CFrame.new(0, 8.98, -HALF_D - 4.1),
+		color = PALETTE.gold,
+		material = Enum.Material.SmoothPlastic,
+		parent = entrance,
+		collide = false,
+		castShadow = false,
+	})
+	for _, armX in { -5.5, 5.5 } do
+		makePart({
+			name = "AwningArm",
+			size = Vector3.new(0.1, 0.1, 3.4),
+			cframe = CFrame.new(armX, 9.2, -HALF_D - 1.7) * CFrame.Angles(math.rad(-14), 0, 0),
+			color = PALETTE.brass,
+			material = Enum.Material.Metal,
+			parent = entrance,
+			collide = false,
+		})
+	end
+
+	local function pilaster(x: number)
+		makePart({
+			name = "Pilaster",
+			size = Vector3.new(0.62, CEILING_Y - 0.3, 0.4),
+			cframe = CFrame.new(x, (CEILING_Y - 0.3) / 2 + 0.15, -HALF_D - 0.72),
+			color = PALETTE.ink,
+			material = Enum.Material.SmoothPlastic,
+			parent = entrance,
+			collide = false,
+		})
+	end
+	pilaster(-DOOR_HALF - 0.15)
+	pilaster(DOOR_HALF + 0.15)
+	pilaster(-HALF_W + 0.55)
+	pilaster(HALF_W - 0.55)
+
+	makePart({
+		name = "Cornice",
+		size = Vector3.new(ROOM_WIDTH + 2.2, 0.65, 1.45),
+		cframe = CFrame.new(0, CEILING_Y + 0.2, -HALF_D - 0.85),
+		color = PALETTE.ink,
+		material = Enum.Material.SmoothPlastic,
+		parent = entrance,
+		collide = false,
+	})
 
 	-- Centered on the back wall, facing the people who walk in.
 	local backFace = HALF_D - WALL / 2
@@ -908,145 +982,53 @@ local function buildEntrance(lobby: Model)
 		material = Enum.Material.SmoothPlastic,
 		parent = entrance,
 	})
-	local couchCf = faceToward(Vector3.new(-29.2, FLOOR_TOP, -17.5), Vector3.new(1, 0, 0))
-	local function couchAt(offset: Vector3): CFrame
-		return couchCf * CFrame.new(offset)
-	end
-	makePart({
-		name = "CouchSeat",
-		size = Vector3.new(6.2, 0.45, 2.15),
-		cframe = couchAt(Vector3.new(0, 1.25, 0.15)),
-		color = PALETTE.leather,
-		material = Enum.Material.Leather,
-		parent = entrance,
-	})
-	makePart({
-		name = "CouchBack",
-		size = Vector3.new(6.2, 2.1, 0.35),
-		cframe = couchAt(Vector3.new(0, 2.15, 1.05)),
-		color = Color3.fromRGB(32, 18, 28),
-		material = Enum.Material.Leather,
-		parent = entrance,
-	})
-	makeSeat({
-		name = "WaitingSeat",
-		size = Vector3.new(2.4, 0.2, 1.7),
-		cframe = couchAt(Vector3.new(-1.5, 1.55, -0.15)),
-		color = PALETTE.leather,
-		material = Enum.Material.Leather,
-		parent = entrance,
-	})
-	makeSeat({
-		name = "WaitingSeat",
-		size = Vector3.new(2.4, 0.2, 1.7),
-		cframe = couchAt(Vector3.new(1.5, 1.55, -0.15)),
-		color = PALETTE.leather,
-		material = Enum.Material.Leather,
-		parent = entrance,
-	})
-	makePart({
-		name = "Cushion",
-		size = Vector3.new(1.35, 0.38, 1.05),
-		cframe = couchAt(Vector3.new(1.7, 1.72, 0.05)),
-		color = Color3.fromRGB(232, 176, 176),
-		material = Enum.Material.Fabric,
-		parent = entrance,
-		collide = false,
-	})
-	makePart({
-		name = "Cushion",
-		size = Vector3.new(1.15, 0.32, 0.9),
-		cframe = couchAt(Vector3.new(-1.5, 1.68, 0.2)) * CFrame.Angles(0, 0.4, 0.15),
-		color = Color3.fromRGB(214, 154, 132),
-		material = Enum.Material.Fabric,
-		parent = entrance,
-		collide = false,
-	})
 
+	local stageZ = backFace - 0.55
 	makePart({
-		name = "CoffeeTable",
-		size = Vector3.new(3.4, 0.28, 1.5),
-		cframe = CFrame.new(-25.4, FLOOR_TOP + 1.05, -17.5),
-		color = PALETTE.ink,
-		material = Enum.Material.Wood,
-		parent = entrance,
-	})
-
-	makePart({
-		name = "Book",
-		size = Vector3.new(0.95, 0.08, 0.7),
-		cframe = CFrame.new(-25.8, FLOOR_TOP + 1.24, -17.35) * CFrame.Angles(0, 0.35, 0),
-		color = Color3.fromRGB(168, 64, 58),
-		material = Enum.Material.SmoothPlastic,
-		parent = entrance,
-		collide = false,
-	})
-	makePart({
-		name = "Book",
-		size = Vector3.new(0.8, 0.07, 0.62),
-		cframe = CFrame.new(-24.9, FLOOR_TOP + 1.32, -17.7) * CFrame.Angles(0, -0.2, 0),
-		color = Color3.fromRGB(232, 220, 196),
-		material = Enum.Material.SmoothPlastic,
-		parent = entrance,
-		collide = false,
-	})
-	local deskCf = faceToward(Vector3.new(22, FLOOR_TOP, -19), intoRoom)
-	makePart({
-		name = "Desk",
-		size = Vector3.new(8.4, 3.15, 2.5),
-		cframe = deskCf * CFrame.new(0, 1.58, 0),
+		name = "StagePost",
+		size = Vector3.new(0.42, 8.2, 0.36),
+		cframe = CFrame.new(-5.7, 7.5, stageZ),
 		color = PALETTE.woodDark,
 		material = Enum.Material.Wood,
 		parent = entrance,
+		collide = false,
 	})
 	makePart({
-		name = "DeskTop",
-		size = Vector3.new(8.8, 0.18, 2.9),
-		cframe = deskCf * CFrame.new(0, 3.2, 0),
+		name = "StagePost",
+		size = Vector3.new(0.42, 8.2, 0.36),
+		cframe = CFrame.new(5.7, 7.5, stageZ),
+		color = PALETTE.woodDark,
+		material = Enum.Material.Wood,
+		parent = entrance,
+		collide = false,
+	})
+	makePart({
+		name = "StageLintel",
+		size = Vector3.new(11.8, 0.42, 0.36),
+		cframe = CFrame.new(0, 11.45, stageZ),
+		color = PALETTE.woodDark,
+		material = Enum.Material.Wood,
+		parent = entrance,
+		collide = false,
+	})
+	local boardLight = makePart({
+		name = "BoardLight",
+		size = Vector3.new(1.4, 0.28, 0.4),
+		cframe = CFrame.lookAt(Vector3.new(0, 13.2, backFace - 5.5), Vector3.new(0, 8.2, backFace)),
 		color = PALETTE.ink,
-		material = Enum.Material.SmoothPlastic,
-		parent = entrance,
-	})
-	makePart({
-		name = "Register",
-		size = Vector3.new(1.1, 0.7, 0.85),
-		cframe = deskCf * CFrame.new(-2.4, 3.65, 0.2),
-		color = PALETTE.panel,
-		material = Enum.Material.SmoothPlastic,
-		parent = entrance,
-	})
-	makePart({
-		name = "RegisterScreen",
-		size = Vector3.new(0.9, 0.55, 0.08),
-		cframe = deskCf * CFrame.new(-2.4, 4.15, -0.15),
-		color = Color3.fromRGB(36, 40, 44),
-		material = Enum.Material.SmoothPlastic,
+		material = Enum.Material.Metal,
 		parent = entrance,
 		collide = false,
 		castShadow = false,
 	})
-
-	local mirrorCf = faceToward(Vector3.new(16.2, FLOOR_TOP + 3.15, 9.2), Vector3.new(0, 0, -1))
-	makePart({
-		name = "MirrorFrame",
-		size = Vector3.new(2.55, 5.7, 0.16),
-		cframe = mirrorCf * CFrame.new(0, 0, 0.1),
-		color = PALETTE.ink,
-		material = Enum.Material.SmoothPlastic,
-		parent = entrance,
-	})
-	makePart({
-		name = "Mirror",
-		size = Vector3.new(2.15, 5.2, 0.08),
-		cframe = mirrorCf,
-		color = Color3.fromRGB(186, 206, 214),
-		material = Enum.Material.Glass,
-		parent = entrance,
-		transparency = 0.25,
-		reflectance = 0.12,
-		collide = false,
-	})
-
+	local boardSpot = Instance.new("SpotLight")
+	boardSpot.Face = Enum.NormalId.Front
+	boardSpot.Angle = 48
+	boardSpot.Brightness = 1.5
+	boardSpot.Range = 16
+	boardSpot.Color = Color3.fromRGB(255, 216, 180)
+	boardSpot.Shadows = false
+	boardSpot.Parent = boardLight
 	makePart({
 		name = "Pole",
 		size = Vector3.new(8.5, 0.35, 0.35),
@@ -1057,192 +1039,42 @@ local function buildEntrance(lobby: Model)
 		shape = Enum.PartType.Cylinder,
 	})
 	buildWordmark(entrance, Vector3.new(14, 10.2, -HALF_D - 8), towardStreet, 3.4, 2.4, "INK", true)
-end
 
-local BOOK_COLORS = {
-	Color3.fromRGB(168, 64, 58),
-	Color3.fromRGB(62, 78, 64),
-	Color3.fromRGB(232, 220, 196),
-	Color3.fromRGB(92, 64, 48),
-}
-
-local function buildShelf(
-	parent: Instance,
-	wallFace: Vector3,
-	into: Vector3,
-	along: Vector3,
-	length: number,
-	pot: (Vector3, number, boolean, boolean) -> ()
-)
-	local depth = 1.15
-	local center = wallFace + into * (depth / 2 + 0.06)
-	local xAxis = along.Unit
-	local yAxis = Vector3.yAxis
-	local zAxis = xAxis:Cross(yAxis)
-	if zAxis:Dot(into) > 0 then
-		xAxis = -xAxis
-		zAxis = -zAxis
-	end
-	local cf = CFrame.fromMatrix(center, xAxis, yAxis, zAxis)
-
-	makePart({
-		name = "Shelf",
-		size = Vector3.new(length, 0.16, depth),
-		cframe = cf,
-		color = PALETTE.wood,
-		material = Enum.Material.Wood,
-		parent = parent,
-		collide = false,
-	})
-
-	local bracketCount = if length > 8 then 3 else 2
-	for bracket = 1, bracketCount do
-		local x = -length / 2 + 0.45 + (bracket - 1) * ((length - 0.9) / (bracketCount - 1))
+	local function doorLeaf(sign: number)
+		local hingeX = sign * 4.55
+		local leafWidth = 4.15
+		local leafX = hingeX + sign * (leafWidth / 2 - 0.15)
 		makePart({
-			name = "ShelfBracket",
-			size = Vector3.new(0.14, 0.5, depth * 0.78),
-			cframe = cf * CFrame.new(x, -0.3, 0.08),
+			name = "DoorLeaf",
+			size = Vector3.new(leafWidth, 7.6, 0.12),
+			cframe = CFrame.new(leafX, FLOOR_TOP + 3.85, -HALF_D + 0.72),
 			color = PALETTE.woodDark,
 			material = Enum.Material.Wood,
-			parent = parent,
-			collide = false,
+			parent = entrance,
 		})
-	end
-
-	local spots = math.max(2, math.floor(length / 2.15))
-	for spot = 1, spots do
-		local x = -length / 2 + 0.7 + (spot - 1) * ((length - 1.4) / (spots - 1))
-		local point = (cf * CFrame.new(x, 0.12, -0.12)).Position
-		local kind = spot % 3
-		if kind == 1 then
-			pot(point, 0.42, spot % 2 == 0, false)
-		elseif kind == 2 then
-			local bookColor = BOOK_COLORS[((spot - 1) % #BOOK_COLORS) + 1]
-			makePart({
-				name = "ShelfBook",
-				size = Vector3.new(0.16, 0.62, 0.46),
-				cframe = cf * CFrame.new(x - 0.12, 0.42, -0.08) * CFrame.Angles(0, 0.15, 0.12),
-				color = bookColor,
-				material = Enum.Material.SmoothPlastic,
-				parent = parent,
-				collide = false,
-			})
-			makePart({
-				name = "ShelfBook",
-				size = Vector3.new(0.14, 0.55, 0.42),
-				cframe = cf * CFrame.new(x + 0.1, 0.38, -0.05) * CFrame.Angles(0, -0.2, -0.08),
-				color = BOOK_COLORS[(spot % #BOOK_COLORS) + 1],
-				material = Enum.Material.SmoothPlastic,
-				parent = parent,
-				collide = false,
-			})
-		else
-			makePart({
-				name = "Candle",
-				size = Vector3.new(0.55, 0.22, 0.22),
-				cframe = upright(CFrame.new(point + Vector3.new(0, 0.2, 0))),
-				color = Color3.fromRGB(236, 226, 206),
-				material = Enum.Material.SmoothPlastic,
-				parent = parent,
-				collide = false,
-				shape = Enum.PartType.Cylinder,
-			})
-		end
-	end
-
-	local trailAt = (cf * CFrame.new(-length / 2 + 0.55, 0.14, -depth / 2 + 0.16)).Position
-	pot(trailAt, 0.48, true, true)
-end
-
-local function buildGreenery(lobby: Model)
-	local plants = makeFolder(lobby, "Greenery")
-	local planted = 0
-
-	local function pot(position: Vector3, scale: number, bloom: boolean, trail: boolean)
-		planted += 1
-		local color = POT_COLORS[((planted - 1) % #POT_COLORS) + 1]
-		buildPlant(plants, position, scale, color, bloom, trail)
-	end
-
-	local function hang(x: number, z: number, scale: number)
-		local potBottom = 9.4
-		local potHeight = 1.15 * scale
-		local top = potBottom + potHeight
-		local chain = CEILING_Y - 0.35 - top
 		makePart({
-			name = "PlantChain",
-			size = Vector3.new(chain, 0.08, 0.08),
-			cframe = upright(CFrame.new(x, top + chain / 2, z)),
+			name = "DoorGlass",
+			size = Vector3.new(leafWidth - 0.85, 3.1, 0.05),
+			cframe = CFrame.new(leafX, FLOOR_TOP + 5.15, -HALF_D + 0.8),
+			color = PALETTE.glass,
+			material = Enum.Material.Glass,
+			parent = entrance,
+			transparency = 0.4,
+			collide = false,
+			castShadow = false,
+		})
+		makePart({
+			name = "DoorPull",
+			size = Vector3.new(0.08, 1.15, 0.08),
+			cframe = CFrame.new(hingeX + sign * 0.35, FLOOR_TOP + 4.1, -HALF_D + 0.88),
 			color = PALETTE.brass,
 			material = Enum.Material.Metal,
-			parent = plants,
+			parent = entrance,
 			collide = false,
-			shape = Enum.PartType.Cylinder,
 		})
-		pot(Vector3.new(x, potBottom, z), scale, true, true)
 	end
-
-	local function shelf(wallFace: Vector3, into: Vector3, along: Vector3, length: number)
-		buildShelf(plants, wallFace, into, along, length, pot)
-	end
-
-	local leftX = -HALF_W + WALL / 2
-	local rightX = HALF_W - WALL / 2
-	local frontZ = -HALF_D + WALL / 2
-	local alongZ = Vector3.new(0, 0, 1)
-	local alongX = Vector3.new(1, 0, 0)
-	-- Waist-high shelves with pots, books, and a trailing plant. Pictures hang above them.
-	shelf(Vector3.new(leftX, 4.35, -18.8), Vector3.new(1, 0, 0), alongZ, 9.2)
-	shelf(Vector3.new(leftX, 4.35, -0.5), Vector3.new(1, 0, 0), alongZ, 10.4)
-	shelf(Vector3.new(leftX, 4.35, 18.6), Vector3.new(1, 0, 0), alongZ, 9)
-	shelf(Vector3.new(leftX, 13.15, -19), Vector3.new(1, 0, 0), alongZ, 6.2)
-	shelf(Vector3.new(leftX, 13.15, 19.2), Vector3.new(1, 0, 0), alongZ, 5.8)
-	shelf(Vector3.new(rightX, 4.35, -17), Vector3.new(-1, 0, 0), alongZ, 9.4)
-	shelf(Vector3.new(rightX, 4.35, 1.2), Vector3.new(-1, 0, 0), alongZ, 10)
-	shelf(Vector3.new(rightX, 4.35, 19.4), Vector3.new(-1, 0, 0), alongZ, 8.6)
-	shelf(Vector3.new(rightX, 13.15, -16.5), Vector3.new(-1, 0, 0), alongZ, 6)
-	shelf(Vector3.new(rightX, 13.15, 20), Vector3.new(-1, 0, 0), alongZ, 5.6)
-	shelf(Vector3.new(-21, 4.35, frontZ), Vector3.new(0, 0, 1), alongX, 10)
-	shelf(Vector3.new(21, 4.35, frontZ), Vector3.new(0, 0, 1), alongX, 10)
-
-	-- Waiting nook, desk side, and the aisle edges you see from spawn.
-	pot(Vector3.new(-28.4, FLOOR_TOP, -24.4), 1.55, true, false)
-	pot(Vector3.new(-21.2, FLOOR_TOP, -22.6), 1.4, true, false)
-	pot(Vector3.new(-32.4, FLOOR_TOP, -12.2), 1.45, false, false)
-	pot(Vector3.new(-18.5, FLOOR_TOP, -13.4), 1.15, true, false)
-	pot(Vector3.new(-15.5, FLOOR_TOP, 1.2), 1.35, true, false)
-	pot(Vector3.new(14.2, FLOOR_TOP, -22.4), 1.55, true, false)
-	pot(Vector3.new(26.2, FLOOR_TOP, -24.2), 1.5, false, false)
-	pot(Vector3.new(19.5, FLOOR_TOP, -13.6), 1.2, true, false)
-	pot(Vector3.new(-13.2, FLOOR_TOP, -3.6), 1.5, true, false)
-	pot(Vector3.new(13.2, FLOOR_TOP, -3.6), 1.4, true, false)
-	pot(Vector3.new(-13.4, FLOOR_TOP, 10.2), 1.6, false, false)
-	pot(Vector3.new(13.4, FLOOR_TOP, 10.2), 1.48, true, false)
-	pot(Vector3.new(-12.2, FLOOR_TOP, 22.2), 1.72, true, false)
-	pot(Vector3.new(12.2, FLOOR_TOP, 22.4), 1.58, false, false)
-	pot(Vector3.new(6.5, FLOOR_TOP, 23.2), 1.25, true, false)
-
-	-- Beside each bed, on the aisle side of the foot.
-	local stations: { { origin: Vector3, yaw: number } } = {
-		{ origin = Vector3.new(-23, FLOOR_TOP, 3), yaw = 0 },
-		{ origin = Vector3.new(-23, FLOOR_TOP, 16), yaw = 0 },
-		{ origin = Vector3.new(23, FLOOR_TOP, 3), yaw = math.pi },
-		{ origin = Vector3.new(23, FLOOR_TOP, 16), yaw = math.pi },
-	}
-	for step, station in stations do
-		local cf = CFrame.new(station.origin) * CFrame.Angles(0, station.yaw, 0)
-		pot((cf * CFrame.new(1.9, 0, 4.2)).Position, 0.95, step % 2 == 0, false)
-		pot((cf * CFrame.new(-2.3, 0, -3.5)).Position, 0.8, true, false)
-	end
-
-	-- Small pots on the table and the desk.
-	pot(Vector3.new(-26.5, FLOOR_TOP + 1.24, -17.15), 0.34, true, false)
-	pot(Vector3.new(25.2, FLOOR_TOP + 3.32, -19.15), 0.36, true, false)
-
-	hang(-16, -6, 0.85)
-	hang(16, -6, 0.8)
-	hang(-16, 12, 0.9)
-	hang(16, 18, 0.82)
+	doorLeaf(-1)
+	doorLeaf(1)
 end
 
 local function buildSpawns(lobby: Model): { SpawnLocation }
@@ -1265,10 +1097,16 @@ local function buildSpawns(lobby: Model): { SpawnLocation }
 		local pad = Instance.new("SpawnLocation")
 		pad.Name = `ShopSpawn{index}`
 		pad.Anchored = true
-		pad.Size = Vector3.new(3.6, 0.2, 3.6)
-		pad.CFrame = CFrame.lookAt(spot, spot + Vector3.new(0, 0, 8))
+		pad.Size = Vector3.new(3.2, 0.05, 3.2)
+		pad.CFrame = CFrame.lookAt(
+			Vector3.new(spot.X, FLOOR_TOP + 0.1, spot.Z),
+			Vector3.new(spot.X, FLOOR_TOP + 0.1, spot.Z + 8)
+		)
 		pad.Color = PALETTE.woodDark
 		pad.Material = Enum.Material.Wood
+		pad.Transparency = 1
+		pad.CanCollide = false
+		pad.CastShadow = false
 		pad.TopSurface = Enum.SurfaceType.Smooth
 		pad.BottomSurface = Enum.SurfaceType.Smooth
 		pad.Neutral = true
@@ -1321,112 +1159,160 @@ local function placeExistingCharacters(pads: { SpawnLocation })
 	end
 end
 
-local LAMP = Color3.fromRGB(255, 188, 132)
-local BULB = Color3.fromRGB(255, 220, 186)
-local SHADE = Color3.fromRGB(64, 42, 36)
+local function buildStreet(lobby: Model)
+	local street = makeFolder(lobby, "Street")
 
-local function buildFloorLamp(parent: Instance, position: Vector3, height: number)
 	makePart({
-		name = "LampBase",
-		size = Vector3.new(0.12, 1.15, 1.15),
-		cframe = upright(CFrame.new(position + Vector3.new(0, 0.06, 0))),
-		color = PALETTE.ink,
-		material = Enum.Material.Metal,
-		parent = parent,
-		shape = Enum.PartType.Cylinder,
+		name = "Sidewalk",
+		size = Vector3.new(128, 0.22, 18.9),
+		cframe = CFrame.new(0, 0.11, -48.05),
+		color = PALETTE.sidewalk,
+		material = Enum.Material.Concrete,
+		parent = street,
 	})
 	makePart({
-		name = "LampPole",
-		size = Vector3.new(0.1, height - 0.7, 0.1),
-		cframe = CFrame.new(position + Vector3.new(0, height / 2, 0)),
-		color = PALETTE.ink,
-		material = Enum.Material.Metal,
-		parent = parent,
+		name = "Road",
+		size = Vector3.new(156, 0.16, 20.8),
+		cframe = CFrame.new(0, 0.08, -67.6),
+		color = PALETTE.road,
+		material = Enum.Material.Asphalt,
+		parent = street,
 	})
-	local shadeY = position.Y + height - 0.28
-	makePart({
-		name = "LampShade",
-		size = Vector3.new(0.62, 1.45, 1.45),
-		cframe = upright(CFrame.new(position.X, shadeY, position.Z)),
-		color = SHADE,
-		material = Enum.Material.Fabric,
-		parent = parent,
-		collide = false,
-		shape = Enum.PartType.Cylinder,
-	})
-	local bulb = makePart({
-		name = "LampBulb",
-		size = Vector3.new(0.34, 0.34, 0.34),
-		cframe = CFrame.new(position.X, shadeY - 0.05, position.Z),
-		color = BULB,
-		material = Enum.Material.SmoothPlastic,
-		parent = parent,
-		collide = false,
-		castShadow = false,
-		shape = Enum.PartType.Ball,
-	})
-	addLight(bulb, LAMP, if height < 3 then 0.9 else 1.25, if height < 3 then 9 else 15)
-end
-
-local function buildSconce(parent: Instance, position: Vector3, into: Vector3)
-	local cf = CFrame.lookAt(position, position + into)
-	makePart({
-		name = "SconcePlate",
-		size = Vector3.new(0.55, 0.7, 0.08),
-		cframe = cf,
-		color = PALETTE.ink,
-		material = Enum.Material.Metal,
-		parent = parent,
-		collide = false,
-	})
-	makePart({
-		name = "SconceShade",
-		size = Vector3.new(0.7, 0.22, 0.42),
-		cframe = cf * CFrame.new(0, -0.12, -0.28),
-		color = SHADE,
-		material = Enum.Material.Fabric,
-		parent = parent,
-		collide = false,
-	})
-	local bulb = makePart({
-		name = "SconceBulb",
-		size = Vector3.new(0.16, 0.16, 0.16),
-		cframe = cf * CFrame.new(0, -0.18, -0.36),
-		color = BULB,
-		material = Enum.Material.SmoothPlastic,
-		parent = parent,
-		collide = false,
-		castShadow = false,
-		shape = Enum.PartType.Ball,
-	})
-	addLight(bulb, LAMP, 0.75, 11)
-end
-
-local function buildLamps(lobby: Model)
-	local lamps = makeFolder(lobby, "Lamps")
-	local function floorLamp(x: number, z: number, height: number)
-		buildFloorLamp(lamps, Vector3.new(x, FLOOR_TOP, z), height)
+	for index = 0, 3 do
+		makePart({
+			name = "LaneDash",
+			size = Vector3.new(0.85, 0.04, 2.6),
+			cframe = CFrame.new(0, 0.18, -60.5 - index * 4.4),
+			color = Color3.fromRGB(214, 190, 128),
+			material = Enum.Material.SmoothPlastic,
+			parent = street,
+			collide = false,
+			castShadow = false,
+		})
 	end
 
-	floorLamp(-24.5, -10.5, 5.3)
-	floorLamp(23.5, -9, 5.1)
-	floorLamp(-9, 16.5, 5.4)
-	floorLamp(9.5, 15.5, 5.2)
-	floorLamp(-20, 24.2, 4.8)
-	floorLamp(20.5, 24, 4.9)
-	-- Coffee table and desk.
-	buildFloorLamp(lamps, Vector3.new(-24.2, FLOOR_TOP + 1.22, -17.55), 1.35)
-	buildFloorLamp(lamps, Vector3.new(20.6, FLOOR_TOP + 3.32, -18.7), 1.15)
+	local function neighbor(x: number, label: string)
+		local width = 18
+		local depth = 30
+		local height = 13.2
+		local z = -23.8
+		makePart({
+			name = "Neighbor",
+			size = Vector3.new(width, height, depth),
+			cframe = CFrame.new(x, height / 2, z),
+			color = Color3.fromRGB(52, 44, 50),
+			material = Enum.Material.Concrete,
+			parent = street,
+		})
+		makePart({
+			name = "NeighborCap",
+			size = Vector3.new(width + 0.8, 0.5, depth + 0.4),
+			cframe = CFrame.new(x, height + 0.18, z),
+			color = PALETTE.ink,
+			material = Enum.Material.SmoothPlastic,
+			parent = street,
+			collide = false,
+		})
+		makePart({
+			name = "NeighborWindow",
+			size = Vector3.new(5.4, 3.4, 0.14),
+			cframe = CFrame.new(x, 6.2, z - depth / 2 - 0.04),
+			color = PALETTE.glass,
+			material = Enum.Material.Glass,
+			parent = street,
+			transparency = 0.35,
+			reflectance = 0.1,
+			collide = false,
+			castShadow = false,
+		})
+		local sign = makePart({
+			name = "NeighborSign",
+			size = Vector3.new(6.4, 1.25, 0.12),
+			cframe = CFrame.new(x, 11.15, z - depth / 2 - 0.16),
+			color = PALETTE.ink,
+			material = Enum.Material.SmoothPlastic,
+			parent = street,
+			collide = false,
+		})
+		surfaceText(sign, label, PALETTE.gold, Enum.NormalId.Front)
+	end
+	neighbor(-43.3, "SUPPLY")
+	neighbor(43.3, "FLASH")
 
-	local left = Vector3.new(1, 0, 0)
-	local right = Vector3.new(-1, 0, 0)
-	local into = Vector3.new(0, 0, 1)
-	buildSconce(lamps, Vector3.new(-HALF_W + WALL / 2 + 0.16, 6.7, -11.5), left)
-	buildSconce(lamps, Vector3.new(-HALF_W + WALL / 2 + 0.16, 6.7, 8.2), left)
-	buildSconce(lamps, Vector3.new(HALF_W - WALL / 2 - 0.16, 6.7, -9.5), right)
-	buildSconce(lamps, Vector3.new(HALF_W - WALL / 2 - 0.16, 6.7, 10.5), right)
-	buildSconce(lamps, Vector3.new(-12, 6.9, -HALF_D + WALL / 2 + 0.16), into)
-	buildSconce(lamps, Vector3.new(12, 6.9, -HALF_D + WALL / 2 + 0.16), into)
+	local skyline = {
+		{ x = -56, z = -94, w = 20, h = 30, d = 14, color = Color3.fromRGB(44, 38, 52) },
+		{ x = -26, z = -106, w = 16, h = 46, d = 12, color = Color3.fromRGB(30, 28, 38) },
+		{ x = 24, z = -100, w = 18, h = 36, d = 14, color = Color3.fromRGB(50, 38, 44) },
+		{ x = 58, z = -90, w = 22, h = 26, d = 16, color = Color3.fromRGB(28, 32, 42) },
+	}
+	for _, block in skyline do
+		makePart({
+			name = "Skyline",
+			size = Vector3.new(block.w, block.h, block.d),
+			cframe = CFrame.new(block.x, block.h / 2, block.z),
+			color = block.color,
+			material = Enum.Material.Concrete,
+			parent = street,
+			collide = false,
+		})
+		makePart({
+			name = "SkylineCap",
+			size = Vector3.new(block.w + 0.6, 0.4, block.d + 0.4),
+			cframe = CFrame.new(block.x, block.h + 0.12, block.z),
+			color = PALETTE.dusk,
+			material = Enum.Material.SmoothPlastic,
+			parent = street,
+			collide = false,
+		})
+		local faceZ = block.z + block.d / 2 + 0.08
+		for windowIndex = 1, 2 do
+			local windowX = block.x + (if windowIndex == 1 then -2.3 else 2.3)
+			local windowY = block.h * (0.32 + windowIndex * 0.2)
+			makePart({
+				name = "SkylineWindow",
+				size = Vector3.new(1.6, 2.2, 0.08),
+				cframe = CFrame.new(windowX, windowY, faceZ),
+				color = Color3.fromRGB(255, 206, 156),
+				material = Enum.Material.SmoothPlastic,
+				parent = street,
+				collide = false,
+				castShadow = false,
+			})
+		end
+	end
+
+	local function streetLamp(x: number, z: number)
+		makePart({
+			name = "StreetPole",
+			size = Vector3.new(0.22, 10.6, 0.22),
+			cframe = CFrame.new(x, 5.3, z),
+			color = PALETTE.ink,
+			material = Enum.Material.Metal,
+			parent = street,
+		})
+		makePart({
+			name = "StreetArm",
+			size = Vector3.new(0.14, 0.14, 1.5),
+			cframe = CFrame.new(x, 10.4, z - 0.55),
+			color = PALETTE.ink,
+			material = Enum.Material.Metal,
+			parent = street,
+			collide = false,
+		})
+		local bulb = makePart({
+			name = "StreetBulb",
+			size = Vector3.new(0.55, 0.28, 0.7),
+			cframe = CFrame.new(x, 10.15, z - 1.15),
+			color = Color3.fromRGB(255, 214, 170),
+			material = Enum.Material.Neon,
+			parent = street,
+			collide = false,
+			castShadow = false,
+		})
+		addLight(bulb, Color3.fromRGB(255, 196, 140), 1.05, 28)
+	end
+	streetLamp(-16, -44)
+	streetLamp(18, -44)
 end
 
 local Lobby = {}
@@ -1446,13 +1332,13 @@ function Lobby.build()
 
 	buildShell(lobby)
 	buildStations(lobby)
-	buildGallery(lobby)
 	buildEntrance(lobby)
-	buildGreenery(lobby)
-	buildLamps(lobby)
+	buildStreet(lobby)
+	Interior.build(lobby)
 	local pads = buildSpawns(lobby)
 
 	lobby.Parent = Workspace
+	ParlourProps.dress(lobby)
 	clearDefaultPlace()
 	placeExistingCharacters(pads)
 

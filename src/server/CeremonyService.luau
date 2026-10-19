@@ -1,16 +1,20 @@
 --!strict
 
 -- Time's up, the display case, the vote, and the podium party.
--- Points are awarded here. The client only renders the result.
+-- The vote is counted here and handed to RoundRewards. The client only renders the result.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local DesignService = require(script.Parent.DesignService)
+local Economy = require(ReplicatedStorage.Shared.Economy)
 local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
+local PlayerEconomy = require(script.Parent.PlayerEconomy)
+local Profiles = require(script.Parent.Profiles)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local RoundManager = require(script.Parent.RoundManager)
+local RoundRewards = require(script.Parent.RoundRewards)
 local RoundTypes = require(ReplicatedStorage.Shared.RoundTypes)
 
 type RoundState = RoundTypes.RoundState
@@ -31,14 +35,30 @@ local VOTE_COOLDOWN_SECONDS = 0.3
 local phase = "Idle"
 local revision = 0
 local showcaseStart: number? = nil
-local points: { [number]: number } = {}
 local votes: { [number]: number } = {}
 local places: { PlaceRow } = {}
 local talliedRound = 0
 local lastVoteAt: { [number]: number } = {}
 
-local function voterTotal(userId: number): number
-	return points[userId] or 0
+local function balanceOf(userId: number): number
+	local player = Players:GetPlayerByUserId(userId)
+	if player == nil then
+		return 0
+	end
+	return PlayerEconomy.getCoins(player)
+end
+
+local function equippedFor(userId: number, slot: string): string
+	local player = Players:GetPlayerByUserId(userId)
+	if player == nil then
+		return ""
+	end
+	local data = Profiles.get(player)
+	if data == nil then
+		return ""
+	end
+	local id: string? = data.equipped[slot]
+	return id or ""
 end
 
 local function designWire(design: LockedDesign, roundId: number)
@@ -59,6 +79,10 @@ local function broadcast()
 			userId = design.userId,
 			name = design.name,
 			design = designWire(design, roundId),
+			title = equippedFor(design.userId, "title"),
+			frame = equippedFor(design.userId, "frame"),
+			confetti = equippedFor(design.userId, "confetti"),
+			emote = equippedFor(design.userId, "emote"),
 		})
 	end
 	local placeWire = {}
@@ -82,7 +106,7 @@ local function broadcast()
 			secondsEach = GameConfig.getShowcaseSlice(),
 			showcaseStart = showcaseStart,
 			yourVote = choice,
-			yourTotal = voterTotal(player.UserId),
+			yourTotal = PlayerEconomy.getCoins(player),
 			entries = entries,
 			places = placeWire,
 		})
@@ -106,20 +130,23 @@ local function tally()
 	talliedRound = roundId
 	table.clear(places)
 
+	-- Only artists who drew something can place. An empty display case never wins.
 	local scored: { { userId: number, name: string, votes: number, order: number } } = {}
 	for index, design in DesignService.getLocked() do
-		local count = 0
-		for _, target in votes do
-			if target == design.userId then
-				count += 1
+		if #design.design.elements > 0 then
+			local count = 0
+			for _, target in votes do
+				if target == design.userId then
+					count += 1
+				end
 			end
+			table.insert(scored, {
+				userId = design.userId,
+				name = design.name,
+				votes = count,
+				order = index,
+			})
 		end
-		table.insert(scored, {
-			userId = design.userId,
-			name = design.name,
-			votes = count,
-			order = index,
-		})
 	end
 	table.sort(scored, function(a, b)
 		if a.votes ~= b.votes then
@@ -128,21 +155,32 @@ local function tally()
 		return a.order < b.order
 	end)
 
+	local ranked: { RoundRewards.RankedRow } = {}
+	for _, row in scored do
+		table.insert(ranked, { userId = row.userId, votes = row.votes })
+	end
+	local voteCopy = table.clone(votes)
+	RoundRewards.award({
+		roundId = roundId,
+		entries = DesignService.getLocked(),
+		ranked = ranked,
+		votes = voteCopy,
+	})
+
+	local placementOn = #scored >= Economy.minEntriesForPlacement()
 	local summary = ""
 	for index, row in scored do
 		if index > 3 then
 			break
 		end
-		local awarded = GameConfig.getPlacePoints(index)
-		local total = voterTotal(row.userId) + awarded
-		points[row.userId] = total
+		local awarded = if placementOn then Economy.placementReward(index).coins else 0
 		table.insert(places, {
 			place = index,
 			userId = row.userId,
 			name = row.name,
 			votes = row.votes,
 			awarded = awarded,
-			total = total,
+			total = balanceOf(row.userId),
 		})
 		local label = if index == 1 then "1st" elseif index == 2 then "2nd" else "3rd"
 		summary ..= `{label} {row.name} +{awarded} ({row.votes} votes) `

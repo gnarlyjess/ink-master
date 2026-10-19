@@ -28,6 +28,10 @@ local Remotes = {
 	DevSetPaused = remoteEvent(remotesFolder, "DevSetPaused"),
 	CeremonyUpdated = remoteEvent(remotesFolder, "CeremonyUpdated"),
 	CastVote = remoteEvent(remotesFolder, "CastVote"),
+	ProfileUpdated = remoteEvent(remotesFolder, "ProfileUpdated"),
+	ProfileAction = remoteEvent(remotesFolder, "ProfileAction"),
+	ProfileNotice = remoteEvent(remotesFolder, "ProfileNotice"),
+	RoundRewards = remoteEvent(remotesFolder, "RoundRewards"),
 }
 
 return Remotes

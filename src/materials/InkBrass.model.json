@@ -1,0 +1,11 @@
+{
+  "className": "MaterialVariant",
+  "properties": {
+    "BaseMaterial": "Foil",
+    "StudsPerTile": 3.0,
+    "ColorMap": "rbxassetid://140608694401563",
+    "NormalMap": "rbxassetid://95853905782231",
+    "RoughnessMap": "rbxassetid://134053490764694",
+    "MetalnessMap": "rbxassetid://137658672011033"
+  }
+}

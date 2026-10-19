@@ -3,6 +3,7 @@
 -- Left-side card for the selected mark. It only shows while a shape is selected.
 
 local InkColors = require(game:GetService("ReplicatedStorage").Shared.InkColors)
+local PlayerData = require(script.Parent.PlayerData)
 local UiTheme = require(script.Parent.UiTheme)
 
 export type Rgb = { r: number, g: number, b: number }
@@ -50,20 +51,20 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 	local card = Instance.new("Frame")
 	card.Name = "MarkEditor"
 	card.AnchorPoint = Vector2.new(0, 0)
-	card.Position = UDim2.fromOffset(16, 78)
-	card.Size = UDim2.new(0, 252, 0.74, 0)
+	card.Position = UDim2.fromOffset(UiTheme.safe.side, UiTheme.safe.top)
+	card.Size = UDim2.new(0, 256, 1, -(UiTheme.safe.top + UiTheme.safe.bottom))
 	card.Visible = false
 	card.Active = true
-	card.BackgroundColor3 = UiTheme.color.panel
-	card.BackgroundTransparency = 0.04
+	card.BackgroundColor3 = UiTheme.color.paper
+	card.BackgroundTransparency = 0
 	card.BorderSizePixel = 0
 	card.ZIndex = 6
 	card.Parent = parent
-	corner(card, 16)
+	corner(card, 2)
 	local outline = Instance.new("UIStroke")
-	outline.Color = UiTheme.color.stroke
+	outline.Color = UiTheme.color.ink
 	outline.Thickness = 1.5
-	outline.Transparency = 0.25
+	outline.Transparency = 0
 	outline.Parent = card
 
 	local scroll = Instance.new("ScrollingFrame")
@@ -95,7 +96,7 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 		label.LayoutOrder = order
 		label.FontFace = UiTheme.font.bold
 		label.TextSize = 12
-		label.TextColor3 = UiTheme.color.magenta
+		label.TextColor3 = UiTheme.color.inkMuted
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.Text = text
 		label.Size = UDim2.new(1, 0, 0, 16)
@@ -108,7 +109,7 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 	title.LayoutOrder = 1
 	title.FontFace = UiTheme.font.heavy
 	title.TextSize = 18
-	title.TextColor3 = UiTheme.color.text
+	title.TextColor3 = UiTheme.color.ink
 	title.TextXAlignment = Enum.TextXAlignment.Left
 	title.TextTruncate = Enum.TextTruncate.AtEnd
 	title.Text = "Shape"
@@ -120,31 +121,35 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 	close.AnchorPoint = Vector2.new(1, 0)
 	close.Position = UDim2.new(1, -12, 0, 10)
 	close.Size = UDim2.fromOffset(52, 26)
-	close.BackgroundColor3 = UiTheme.color.chip
+	close.BackgroundColor3 = UiTheme.color.paperDeep
 	close.BorderSizePixel = 0
 	close.FontFace = UiTheme.font.bold
 	close.TextSize = 13
-	close.TextColor3 = UiTheme.color.text
+	close.TextColor3 = UiTheme.color.ink
 	close.Text = "Done"
 	close.AutoButtonColor = true
 	close.ZIndex = 7
 	close.Parent = card
-	corner(close, 8)
+	corner(close, 2)
 	close.MouseButton1Click:Connect(actions.onClose)
 
 	local deleteButton = Instance.new("TextButton")
 	deleteButton.Name = "Delete"
-	deleteButton.LayoutOrder = 2
-	deleteButton.Size = UDim2.new(1, 0, 0, 36)
-	deleteButton.BackgroundColor3 = UiTheme.color.magenta
+	deleteButton.LayoutOrder = 16
+	deleteButton.Size = UDim2.new(1, 0, 0, 32)
+	deleteButton.BackgroundColor3 = UiTheme.color.paper
 	deleteButton.BorderSizePixel = 0
 	deleteButton.FontFace = UiTheme.font.bold
 	deleteButton.TextSize = 14
-	deleteButton.TextColor3 = UiTheme.color.text
-	deleteButton.Text = "Delete shape"
+	deleteButton.TextColor3 = UiTheme.color.oxblood
+	deleteButton.Text = "Remove mark"
 	deleteButton.AutoButtonColor = true
 	deleteButton.Parent = scroll
-	corner(deleteButton, 10)
+	corner(deleteButton, 2)
+	local deleteStroke = Instance.new("UIStroke")
+	deleteStroke.Color = UiTheme.color.oxblood
+	deleteStroke.Thickness = 1
+	deleteStroke.Parent = deleteButton
 	deleteButton.MouseButton1Click:Connect(actions.onDelete)
 
 	local function toggleRow(caption: string, order: number, callback: (boolean) -> ()): TextButton
@@ -158,7 +163,7 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 		captionLabel.Size = UDim2.new(1, -72, 1, 0)
 		captionLabel.FontFace = UiTheme.font.bold
 		captionLabel.TextSize = 14
-		captionLabel.TextColor3 = UiTheme.color.text
+		captionLabel.TextColor3 = UiTheme.color.ink
 		captionLabel.TextXAlignment = Enum.TextXAlignment.Left
 		captionLabel.Text = caption
 		captionLabel.Parent = row
@@ -166,15 +171,15 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 		button.AnchorPoint = Vector2.new(1, 0.5)
 		button.Position = UDim2.fromScale(1, 0.5)
 		button.Size = UDim2.fromOffset(64, 28)
-		button.BackgroundColor3 = UiTheme.color.chip
+		button.BackgroundColor3 = UiTheme.color.paperDeep
 		button.BorderSizePixel = 0
 		button.FontFace = UiTheme.font.bold
 		button.TextSize = 13
-		button.TextColor3 = UiTheme.color.text
+		button.TextColor3 = UiTheme.color.ink
 		button.Text = "Off"
 		button.AutoButtonColor = true
 		button.Parent = row
-		corner(button, 8)
+		corner(button, 2)
 		button.MouseButton1Click:Connect(function()
 			callback(button.Text ~= "On")
 		end)
@@ -183,7 +188,8 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 
 	local function paintToggle(button: TextButton, enabled: boolean)
 		button.Text = if enabled then "On" else "Off"
-		button.BackgroundColor3 = if enabled then UiTheme.color.magenta else UiTheme.color.chip
+		button.BackgroundColor3 = if enabled then UiTheme.color.ink else UiTheme.color.paperDeep
+		button.TextColor3 = if enabled then UiTheme.color.paper else UiTheme.color.ink
 	end
 
 	local fillButton = toggleRow("Fill", 3, actions.onFill)
@@ -203,7 +209,7 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 		captionLabel.Size = UDim2.new(1, -96, 1, 0)
 		captionLabel.FontFace = UiTheme.font.bold
 		captionLabel.TextSize = 14
-		captionLabel.TextColor3 = UiTheme.color.text
+		captionLabel.TextColor3 = UiTheme.color.ink
 		captionLabel.TextXAlignment = Enum.TextXAlignment.Left
 		captionLabel.Text = caption
 		captionLabel.Parent = row
@@ -212,15 +218,15 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 			button.AnchorPoint = Vector2.new(1, 0.5)
 			button.Position = UDim2.new(1, x, 0.5, 0)
 			button.Size = UDim2.fromOffset(28, 28)
-			button.BackgroundColor3 = UiTheme.color.chip
+			button.BackgroundColor3 = UiTheme.color.paperDeep
 			button.BorderSizePixel = 0
 			button.FontFace = UiTheme.font.bold
 			button.TextSize = 16
-			button.TextColor3 = UiTheme.color.text
+			button.TextColor3 = UiTheme.color.ink
 			button.Text = text
 			button.AutoButtonColor = true
 			button.Parent = row
-			corner(button, 8)
+			corner(button, 2)
 			button.MouseButton1Click:Connect(function()
 				onDelta(delta * step)
 			end)
@@ -234,7 +240,7 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 		value.BackgroundTransparency = 1
 		value.FontFace = UiTheme.font.medium
 		value.TextSize = 13
-		value.TextColor3 = UiTheme.color.text
+		value.TextColor3 = UiTheme.color.ink
 		value.Text = "1"
 		value.Parent = row
 		return value
@@ -261,7 +267,7 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 		captionLabel.Size = UDim2.new(1, -132, 1, 0)
 		captionLabel.FontFace = UiTheme.font.bold
 		captionLabel.TextSize = 14
-		captionLabel.TextColor3 = UiTheme.color.text
+		captionLabel.TextColor3 = UiTheme.color.ink
 		captionLabel.TextXAlignment = Enum.TextXAlignment.Left
 		captionLabel.Text = caption
 		captionLabel.Parent = row
@@ -270,15 +276,15 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 			button.AnchorPoint = Vector2.new(1, 0.5)
 			button.Position = UDim2.new(1, x, 0.5, 0)
 			button.Size = UDim2.fromOffset(62, 28)
-			button.BackgroundColor3 = UiTheme.color.chip
+			button.BackgroundColor3 = UiTheme.color.paperDeep
 			button.BorderSizePixel = 0
 			button.FontFace = UiTheme.font.bold
 			button.TextSize = 12
-			button.TextColor3 = UiTheme.color.text
+			button.TextColor3 = UiTheme.color.ink
 			button.Text = text
 			button.AutoButtonColor = true
 			button.Parent = row
-			corner(button, 8)
+			corner(button, 2)
 			button.MouseButton1Click:Connect(callback)
 		end
 		side(right, 0, onRight)
@@ -306,11 +312,13 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 	local inkRow = Instance.new("Frame")
 	inkRow.BackgroundTransparency = 1
 	inkRow.LayoutOrder = 12
-	inkRow.Size = UDim2.new(1, 0, 0, 32)
+	inkRow.AutomaticSize = Enum.AutomaticSize.Y
+	inkRow.Size = UDim2.fromScale(1, 0)
 	inkRow.Parent = scroll
 	local inkLayout = Instance.new("UIListLayout")
 	inkLayout.FillDirection = Enum.FillDirection.Horizontal
 	inkLayout.Padding = UDim.new(0, 6)
+	inkLayout.Wraps = true
 	inkLayout.Parent = inkRow
 
 	heading("LINE", 13)
@@ -318,24 +326,29 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 	local lineRow = Instance.new("Frame")
 	lineRow.BackgroundTransparency = 1
 	lineRow.LayoutOrder = 14
-	lineRow.Size = UDim2.new(1, 0, 0, 32)
+	lineRow.AutomaticSize = Enum.AutomaticSize.Y
+	lineRow.Size = UDim2.fromScale(1, 0)
 	lineRow.Parent = scroll
 	local lineLayout = Instance.new("UIListLayout")
 	lineLayout.FillDirection = Enum.FillDirection.Horizontal
 	lineLayout.Padding = UDim.new(0, 6)
+	lineLayout.Wraps = true
 	lineLayout.Parent = lineRow
+
+	local inkButtons: { { button: TextButton, id: string } } = {}
 
 	local function swatch(rowParent: Instance, strokes: { [string]: UIStroke }, callback: (Rgb) -> ())
 		for _, ink in InkColors.all do
 			local button = Instance.new("TextButton")
 			button.Name = ink.id
+			table.insert(inkButtons, { button = button, id = ink.id })
 			button.Text = ""
 			button.AutoButtonColor = false
 			button.BackgroundColor3 = InkColors.toColor3(ink)
 			button.BorderSizePixel = 0
 			button.Size = UDim2.fromOffset(26, 26)
 			button.Parent = rowParent
-			corner(button, 13)
+			corner(button, 2)
 			local ring = Instance.new("UIStroke")
 			ring.Color = UiTheme.color.ink
 			ring.Thickness = 1
@@ -354,16 +367,23 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 	local duplicate = Instance.new("TextButton")
 	duplicate.LayoutOrder = 15
 	duplicate.Size = UDim2.new(1, 0, 0, 32)
-	duplicate.BackgroundColor3 = UiTheme.color.chip
+	duplicate.BackgroundColor3 = UiTheme.color.ink
 	duplicate.BorderSizePixel = 0
 	duplicate.FontFace = UiTheme.font.bold
 	duplicate.TextSize = 14
-	duplicate.TextColor3 = UiTheme.color.text
+	duplicate.TextColor3 = UiTheme.color.paper
 	duplicate.Text = "Duplicate"
 	duplicate.AutoButtonColor = true
 	duplicate.Parent = scroll
-	corner(duplicate, 10)
+	corner(duplicate, 2)
 	duplicate.MouseButton1Click:Connect(actions.onDuplicate)
+
+	local function paintOwnership()
+		for _, entry in inkButtons do
+			local owned = PlayerData.ownsInk(entry.id)
+			entry.button.BackgroundTransparency = if owned then 0 else 0.55
+		end
+	end
 
 	local function paintSwatches(strokes: { [string]: UIStroke }, color: Rgb)
 		for _, ink in InkColors.all do
@@ -385,6 +405,7 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 			opacityValue.Text = `{math.floor(state.opacity * 100 + 0.5)}%`
 			paintSwatches(fillSwatches, state.color)
 			paintSwatches(lineSwatches, state.line)
+			paintOwnership()
 		end,
 		hide = function()
 			card.Visible = false

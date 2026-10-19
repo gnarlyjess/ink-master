@@ -29,11 +29,26 @@
         },
         "CastVote": {
           "$className": "RemoteEvent"
+        },
+        "ProfileUpdated": {
+          "$className": "RemoteEvent"
+        },
+        "ProfileAction": {
+          "$className": "RemoteEvent"
+        },
+        "ProfileNotice": {
+          "$className": "RemoteEvent"
+        },
+        "RoundRewards": {
+          "$className": "RemoteEvent"
         }
       }
     },
     "ServerScriptService": {
       "$path": "src/server"
+    },
+    "MaterialService": {
+      "$path": "src/materials"
     },
     "StarterPlayer": {
       "StarterPlayerScripts": {

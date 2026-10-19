@@ -11,6 +11,11 @@ export type Entry = {
 	userId: number,
 	name: string,
 	design: DesignDocument.TattooDesign,
+	-- Equipped cosmetic ids ("" for none). The client looks them up in the catalogue.
+	title: string,
+	frame: string,
+	confetti: string,
+	emote: string,
 }
 
 export type Place = {
@@ -54,6 +59,13 @@ end
 local function readName(value: any): string?
 	if typeof(value) ~= "string" or value == "" or #value > 30 then
 		return nil
+	end
+	return value
+end
+
+local function readItemId(value: any): string
+	if typeof(value) ~= "string" or #value > 48 then
+		return ""
 	end
 	return value
 end
@@ -114,6 +126,10 @@ function CeremonyTypes.read(payload: any): CeremonySnapshot?
 			userId = userId,
 			name = name,
 			design = design,
+			title = readItemId(item.title),
+			frame = readItemId(item.frame),
+			confetti = readItemId(item.confetti),
+			emote = readItemId(item.emote),
 		})
 	end
 

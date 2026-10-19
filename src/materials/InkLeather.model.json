@@ -1,0 +1,11 @@
+{
+  "className": "MaterialVariant",
+  "properties": {
+    "BaseMaterial": "Leather",
+    "StudsPerTile": 3.0,
+    "ColorMap": "rbxassetid://127063919476973",
+    "NormalMap": "rbxassetid://88341042309281",
+    "RoughnessMap": "rbxassetid://128270195382816",
+    "MetalnessMap": "rbxassetid://75021709628055"
+  }
+}
