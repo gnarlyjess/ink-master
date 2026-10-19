@@ -68,6 +68,7 @@ type PartSpec = {
 }
 
 local built = false
+local shopPads: { SpawnLocation } = {}
 
 local function applyBase(part: BasePart, spec: PartSpec)
 	part.Name = spec.name
@@ -421,7 +422,6 @@ local function buildShell(lobby: Model)
 			color = PALETTE.glass,
 			material = Enum.Material.Glass,
 			parent = shell,
-			collide = false,
 			transparency = 0.42,
 			reflectance = 0.16,
 			castShadow = false,
@@ -882,8 +882,8 @@ local function buildEntrance(lobby: Model)
 	local intoRoom = Vector3.new(0, 0, 1)
 	local towardStreet = Vector3.new(0, 0, -1)
 
-	buildWordmark(entrance, Vector3.new(0, 15.05, -HALF_D - 1.25), towardStreet, 18.5, 1.7, "INK MASTERS")
-	buildWordmark(entrance, Vector3.new(0, 12.15, -HALF_D + 0.95), intoRoom, 10.5, 1.15, "INK MASTERS")
+	buildWordmark(entrance, Vector3.new(0, 15.05, -HALF_D - 1.25), towardStreet, 14.5, 1.7, "INK-OFF")
+	buildWordmark(entrance, Vector3.new(0, 12.15, -HALF_D + 0.95), intoRoom, 8.5, 1.15, "INK-OFF")
 	buildWordmark(
 		entrance,
 		Vector3.new(-8.6, 5.6, -HALF_D - 0.72),
@@ -1041,21 +1041,21 @@ local function buildEntrance(lobby: Model)
 	buildWordmark(entrance, Vector3.new(14, 10.2, -HALF_D - 8), towardStreet, 3.4, 2.4, "INK", true)
 
 	local function doorLeaf(sign: number)
-		local hingeX = sign * 4.55
-		local leafWidth = 4.15
-		local leafX = hingeX + sign * (leafWidth / 2 - 0.15)
+		local leafWidth = DOOR_HALF + 0.08
+		local leafX = sign * DOOR_HALF / 2
+		local leafHeight = DOOR_HEIGHT - FLOOR_TOP
 		makePart({
 			name = "DoorLeaf",
-			size = Vector3.new(leafWidth, 7.6, 0.12),
-			cframe = CFrame.new(leafX, FLOOR_TOP + 3.85, -HALF_D + 0.72),
+			size = Vector3.new(leafWidth, leafHeight, 0.28),
+			cframe = CFrame.new(leafX, FLOOR_TOP + leafHeight / 2, -HALF_D),
 			color = PALETTE.woodDark,
 			material = Enum.Material.Wood,
 			parent = entrance,
 		})
 		makePart({
 			name = "DoorGlass",
-			size = Vector3.new(leafWidth - 0.85, 3.1, 0.05),
-			cframe = CFrame.new(leafX, FLOOR_TOP + 5.15, -HALF_D + 0.8),
+			size = Vector3.new(leafWidth - 0.9, 3.2, 0.06),
+			cframe = CFrame.new(leafX, FLOOR_TOP + leafHeight - 2.15, -HALF_D + 0.02),
 			color = PALETTE.glass,
 			material = Enum.Material.Glass,
 			parent = entrance,
@@ -1066,7 +1066,7 @@ local function buildEntrance(lobby: Model)
 		makePart({
 			name = "DoorPull",
 			size = Vector3.new(0.08, 1.15, 0.08),
-			cframe = CFrame.new(hingeX + sign * 0.35, FLOOR_TOP + 4.1, -HALF_D + 0.88),
+			cframe = CFrame.new(sign * 0.55, FLOOR_TOP + 4.1, -HALF_D + 0.22),
 			color = PALETTE.brass,
 			material = Enum.Material.Metal,
 			parent = entrance,
@@ -1336,6 +1336,7 @@ function Lobby.build()
 	buildStreet(lobby)
 	Interior.build(lobby)
 	local pads = buildSpawns(lobby)
+	shopPads = pads
 
 	lobby.Parent = Workspace
 	ParlourProps.dress(lobby)
@@ -1350,6 +1351,10 @@ function Lobby.build()
 	end
 
 	print(`{PREFIX} Shop open | spawn inside the parlour`)
+end
+
+function Lobby.returnToShop()
+	placeExistingCharacters(shopPads)
 end
 
 return Lobby

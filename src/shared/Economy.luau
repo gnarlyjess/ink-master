@@ -83,13 +83,19 @@ function Economy.levelInfo(totalXp: number): LevelInfo
 	return { level = level, into = 0, need = 0, maxed = true }
 end
 
--- Coins for every level, plus a few milestone items that cannot be bought.
+-- Coins for every level, plus milestone cosmetics that cannot be bought.
 local MILESTONES: { [number]: string } = {
+	[2] = "title:steady",
 	[3] = "title:rookie",
 	[4] = "pack:geometry",
-	[5] = "confetti:aqua",
+	[5] = "title:liner",
+	[6] = "pack:starter_tools",
+	[7] = "title:collector",
 	[8] = "frame:rose",
+	[9] = "title:needle",
 	[10] = "title:legend",
+	[11] = "confetti:aqua",
+	[12] = "title:parlour",
 	[15] = "confetti:stars",
 	[20] = "title:master",
 	[25] = "frame:midnight",

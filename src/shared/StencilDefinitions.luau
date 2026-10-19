@@ -100,6 +100,26 @@ local catalogue: { StencilDefinition } = {
 	{ id = "wave", name = "Wave", category = "shapes", shape = "wave" },
 	{ id = "zigzag", name = "Zigzag", category = "shapes", shape = "zigzag" },
 	{ id = "blob", name = "Blob", category = "shapes", shape = "blob" },
+	-- Extra shop packs (also kept in legacy for old designs).
+	{ id = "ring", name = "Ring", category = "shapes", shape = "ring" },
+	{ id = "pill", name = "Pill", category = "shapes", shape = "pill" },
+	{ id = "slash", name = "Slash", category = "shapes", shape = "slash" },
+	{ id = "saltire", name = "X", category = "shapes", shape = "saltire" },
+	{ id = "plus", name = "Plus", category = "shapes", shape = "plus" },
+	{ id = "arrow", name = "Arrow", category = "shapes", shape = "arrow" },
+	{ id = "target", name = "Target", category = "shapes", shape = "target" },
+	{ id = "half", name = "Half", category = "shapes", shape = "half" },
+	{ id = "spark", name = "Spark", category = "shapes", shape = "spark" },
+	{ id = "burst", name = "Burst", category = "shapes", shape = "burst" },
+	{ id = "banner", name = "Banner", category = "shapes", shape = "banner" },
+	{ id = "heart", name = "Heart solid", category = "shapes", shape = "heart" },
+	{ id = "bolt", name = "Bolt solid", category = "shapes", shape = "bolt" },
+	{ id = "drop", name = "Drop solid", category = "shapes", shape = "drop" },
+	{ id = "chevron", name = "Chevron", category = "shapes", shape = "chevron" },
+	{ id = "steps", name = "Steps", category = "shapes", shape = "steps" },
+	{ id = "band", name = "Bar", category = "shapes", shape = "band" },
+	{ id = "disc", name = "Dot", category = "shapes", shape = "disc" },
+	{ id = "corner", name = "Corner", category = "shapes", shape = "corner" },
 }
 
 -- Older marks still resolve. They are not shown in the shape panel.

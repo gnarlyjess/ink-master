@@ -33,6 +33,8 @@ export type CeremonySnapshot = {
 	phase: Phase,
 	secondsEach: number,
 	showcaseStart: number?,
+	-- Server time the current phase ends, when it has a clock.
+	phaseEnds: number?,
 	yourVote: number,
 	yourTotal: number,
 	entries: { Entry },
@@ -102,6 +104,10 @@ function CeremonyTypes.read(payload: any): CeremonySnapshot?
 	if payload.showcaseStart ~= nil and showcaseStart == nil then
 		return nil
 	end
+	local phaseEnds = readFinite(payload.phaseEnds)
+	if payload.phaseEnds ~= nil and phaseEnds == nil then
+		return nil
+	end
 
 	if typeof(payload.entries) ~= "table" or typeof(payload.places) ~= "table" then
 		return nil
@@ -168,6 +174,7 @@ function CeremonyTypes.read(payload: any): CeremonySnapshot?
 		phase = knownPhase,
 		secondsEach = secondsEach,
 		showcaseStart = showcaseStart,
+		phaseEnds = phaseEnds,
 		yourVote = yourVote,
 		yourTotal = yourTotal,
 		entries = entries,

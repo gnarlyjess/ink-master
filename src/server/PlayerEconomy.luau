@@ -68,11 +68,17 @@ local function changed(player: Player)
 	end
 end
 
-function PlayerEconomy.notify(player: Player, kind: string, text: string)
+function PlayerEconomy.notify(player: Player, kind: string, text: string, extra: { [string]: any }?)
 	if player.Parent ~= Players then
 		return
 	end
-	Remotes.ProfileNotice:FireClient(player, { kind = kind, text = text })
+	local payload: { [string]: any } = { kind = kind, text = text }
+	if extra ~= nil then
+		for key, value in extra do
+			payload[key] = value
+		end
+	end
+	Remotes.ProfileNotice:FireClient(player, payload)
 end
 
 function PlayerEconomy.getLevel(data: ProfileData): number
@@ -297,6 +303,11 @@ function PlayerEconomy.claimLogin(player: Player): (boolean, string)
 	giveCoins(data, coins)
 	checkAchievements(player, data)
 	changed(player)
+	PlayerEconomy.notify(player, "login", `Day {streak} reward: +{coins} coins`, {
+		title = "Claimed",
+		coins = coins,
+		day = streak,
+	})
 	return true, `Day {streak} reward: +{coins} coins`
 end
 
@@ -406,7 +417,10 @@ function PlayerEconomy.welcome(player: Player)
 		return
 	end
 	data.welcomed = true
-	PlayerEconomy.notify(player, "info", `Welcome to Ink Masters! You start with {data.coins} coins.`)
+	PlayerEconomy.notify(player, "welcome", "Welcome to Ink-Off, here are some coins to start!", {
+		title = "Welcome",
+		coins = data.coins,
+	})
 	changed(player)
 end
 

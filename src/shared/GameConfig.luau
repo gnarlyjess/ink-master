@@ -23,7 +23,7 @@ local LIVE_TIMERS: { [string]: number } = {
 	TattooCreation = 180,
 	Submission = 5,
 	Showcase = LIVE_SHOWCASE_SLICE,
-	Voting = 25,
+	Voting = 10,
 	Results = 18,
 	Cleanup = 4,
 }
@@ -35,7 +35,7 @@ local DEV_TIMERS: { [string]: number } = {
 	Submission = 10,
 	Showcase = DEV_SHOWCASE_SLICE,
 	Voting = 10,
-	Results = 10,
+	Results = 14,
 	Cleanup = 2,
 }
 

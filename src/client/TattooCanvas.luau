@@ -24,8 +24,13 @@ type BodyRegion = BodyRegions.BodyRegion
 
 local leftExtra = 0
 local stage: Frame? = nil
+local overridePosition: UDim2? = nil
+local overrideSize: UDim2? = nil
 
 local function stageFrame(): (UDim2, UDim2)
+	if overridePosition ~= nil and overrideSize ~= nil then
+		return overridePosition, overrideSize
+	end
 	local left = UiTheme.safe.side + leftExtra
 	local position = UDim2.fromOffset(left, UiTheme.safe.top)
 	local size =
@@ -65,9 +70,19 @@ function TattooCanvas.setMargins(extra: number)
 	applyStage()
 end
 
+-- Ceremony pins the tattoo to a pane. nil, nil restores the editor layout.
+function TattooCanvas.setStageOverride(position: UDim2?, size: UDim2?)
+	overridePosition = position
+	overrideSize = size
+	applyStage()
+end
+
 local photoLayer: GuiObject? = nil
+local canvasDim: Frame? = nil
 local surfacePad: GuiObject? = nil
 local captionLabel: TextLabel? = nil
+local viewTools: GuiObject? = nil
+local presentedCaption: string? = nil
 local zoomReadout: TextLabel? = nil
 local elementFrames: { [number]: GuiObject } = {}
 local shownDesign: TattooDesign? = nil
@@ -179,7 +194,9 @@ local function destroyCanvas()
 	viewWindow = nil
 	stage = nil
 	photoLayer = nil
+	canvasDim = nil
 	captionLabel = nil
+	viewTools = nil
 	zoomReadout = nil
 	photoCharacter = nil
 	photoRegionId = nil
@@ -357,7 +374,7 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	photo.Name = "InkMastersCanvas"
 	photo.ResetOnSpawn = false
 	photo.IgnoreGuiInset = true
-	photo.DisplayOrder = 15
+	photo.DisplayOrder = if presentedCaption ~= nil then 37 else 15
 	photo.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	photo.Parent = playerGui
 	photoGui = photo
@@ -369,7 +386,9 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	dim.BackgroundColor3 = Color3.new(0, 0, 0)
 	dim.BackgroundTransparency = 0.55
 	dim.BorderSizePixel = 0
+	dim.Visible = presentedCaption == nil
 	dim.Parent = photo
+	canvasDim = dim
 
 	local board = Instance.new("Frame")
 	board.Name = "Board"
@@ -381,7 +400,7 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	board.ClipsDescendants = true
 	board.Parent = photo
 	stage = board
-	corner(board, 2)
+	corner(board, if presentedCaption ~= nil then 18 else 2)
 	local boardStroke = Instance.new("UIStroke")
 	boardStroke.Color = UiTheme.color.gold
 	boardStroke.Thickness = 1
@@ -425,15 +444,18 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	caption.FontFace = UiTheme.font.bold
 	caption.TextSize = 14
 	caption.TextColor3 = UiTheme.color.gold
-	caption.Text = string.upper(region.label)
+	caption.Text = presentedCaption or string.upper(region.label)
 	caption.TextXAlignment = Enum.TextXAlignment.Left
-	caption.Size = UDim2.fromOffset(180, 26)
+	caption.AutomaticSize = Enum.AutomaticSize.X
+	caption.Size = UDim2.fromOffset(0, 26)
 	caption.Position = UDim2.fromOffset(12, 12)
 	caption.ZIndex = 5
+	caption.Visible = presentedCaption == nil
 	caption.Parent = board
 	corner(caption, 2)
 	local captionPad = Instance.new("UIPadding")
 	captionPad.PaddingLeft = UDim.new(0, 10)
+	captionPad.PaddingRight = UDim.new(0, 10)
 	captionPad.Parent = caption
 	captionLabel = caption
 
@@ -442,7 +464,7 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	ink.Name = "InkMastersInk"
 	ink.ResetOnSpawn = false
 	ink.IgnoreGuiInset = true
-	ink.DisplayOrder = 17
+	ink.DisplayOrder = if presentedCaption ~= nil then 38 else 17
 	ink.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	ink.Parent = playerGui
 	inkGui = ink
@@ -479,7 +501,9 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	tools.Size = UDim2.fromOffset(248, 36)
 	tools.BackgroundTransparency = 1
 	tools.ZIndex = 10
+	tools.Visible = presentedCaption == nil
 	tools.Parent = window
+	viewTools = tools
 	local toolRow = Instance.new("UIListLayout")
 	toolRow.FillDirection = Enum.FillDirection.Horizontal
 	toolRow.HorizontalAlignment = Enum.HorizontalAlignment.Right
@@ -1067,17 +1091,20 @@ local function handleIcon(kind: HandleMode): EditableImage?
 	if cached ~= nil then
 		return cached
 	end
+	local iconPixels = rasterIcon(kind)
 	local created: EditableImage? = nil
 	local ok = pcall(function()
 		created = AssetService:CreateEditableImage({
 			Size = Vector2.new(ICON, ICON),
 		})
+		if created ~= nil then
+			created:WritePixelsBuffer(Vector2.zero, Vector2.new(ICON, ICON), iconPixels)
+		end
 	end)
 	if not ok or created == nil then
 		handleIconsUnavailable = true
 		return nil
 	end
-	created:WritePixelsBuffer(Vector2.zero, Vector2.new(ICON, ICON), rasterIcon(kind))
 	handleIcons[kind] = created
 	return created
 end
@@ -1222,7 +1249,7 @@ function TattooCanvas.show(character: Model, design: TattooDesign, selectedIndex
 		return
 	end
 	if captionLabel ~= nil then
-		captionLabel.Text = string.upper(region.label)
+		captionLabel.Text = presentedCaption or string.upper(region.label)
 	end
 	if photoGui ~= nil and photoCharacter == character and photoRegionId == region.id and surfacePad ~= nil then
 		TattooCanvas.render(design, selectedIndex)
@@ -1271,6 +1298,114 @@ function TattooCanvas.clear()
 	shownDesign = nil
 	shownSelection = nil
 	destroyCanvas()
+end
+
+-- Showcase mode: only the tattoo, no limb label, zoom tools, or world dim.
+-- nil goes back to the editor look.
+function TattooCanvas.setPresentation(caption: string?)
+	presentedCaption = caption
+	local presenting = caption ~= nil
+	if photoGui ~= nil then
+		photoGui.DisplayOrder = if presenting then 37 else 15
+	end
+	if inkGui ~= nil then
+		inkGui.DisplayOrder = if presenting then 38 else 17
+	end
+	if canvasDim ~= nil then
+		canvasDim.Visible = not presenting
+	end
+	if captionLabel ~= nil then
+		captionLabel.Visible = not presenting
+		local region = if shownDesign ~= nil then BodyRegions.get(shownDesign.region) else nil
+		captionLabel.Text = caption or (if region ~= nil then string.upper(region.label) else captionLabel.Text)
+	end
+	if viewTools ~= nil then
+		viewTools.Visible = not presenting
+	end
+end
+
+-- Width over height of the stage. Marks are stored against this shape, so snapshots copy it.
+function TattooCanvas.stageAspect(): number
+	local camera = Workspace.CurrentCamera
+	local view = if camera ~= nil then camera.ViewportSize else Vector2.new(1280, 720)
+	local _, size = stageFrame()
+	local width = size.X.Scale * view.X + size.X.Offset
+	local height = size.Y.Scale * view.Y + size.Y.Offset
+	if width <= 1 or height <= 1 then
+		return 4 / 3
+	end
+	return width / height
+end
+
+-- A still photo of a finished tattoo, sized to fit inside parent.
+function TattooCanvas.snapshot(parent: GuiObject, character: Model, design: TattooDesign): Frame?
+	local region = BodyRegions.get(design.region) or BodyRegions.get("LeftForearm")
+	if region == nil then
+		return nil
+	end
+	local aspect = TattooCanvas.stageAspect()
+
+	local holder = Instance.new("Frame")
+	holder.Name = "Snapshot"
+	holder.AnchorPoint = Vector2.new(0.5, 0.5)
+	holder.Position = UDim2.fromScale(0.5, 0.5)
+	holder.Size = UDim2.fromScale(1, 1)
+	holder.BackgroundTransparency = 1
+	holder.ClipsDescendants = true
+	holder.ZIndex = parent.ZIndex + 1
+	holder.Parent = parent
+	local ratio = Instance.new("UIAspectRatioConstraint")
+	ratio.AspectRatio = aspect
+	ratio.Parent = holder
+
+	local viewport = Instance.new("ViewportFrame")
+	viewport.Name = "Photo"
+	viewport.Size = UDim2.fromScale(1, 1)
+	viewport.BackgroundColor3 = Color3.fromRGB(54, 42, 44)
+	viewport.BorderSizePixel = 0
+	viewport.Ambient = Color3.fromRGB(120, 104, 96)
+	viewport.LightColor = Color3.fromRGB(255, 214, 180)
+	viewport.LightDirection = Vector3.new(-0.35, -1, -0.45)
+	viewport.ZIndex = holder.ZIndex
+	viewport.Parent = holder
+
+	local clone = prepareClone(character)
+	paintBare(clone, avatarSkin(character))
+	if findPart(clone, region) ~= nil then
+		local world = Instance.new("WorldModel")
+		world.Parent = viewport
+		clone.Parent = world
+		framePart(viewport, clone, region)
+	else
+		clone:Destroy()
+	end
+
+	local marks = Instance.new("Frame")
+	marks.Name = "Marks"
+	marks.Size = UDim2.fromScale(1, 1)
+	marks.BackgroundTransparency = 1
+	marks.ZIndex = holder.ZIndex + 1
+	marks.Parent = holder
+	for index, element: DesignElement in design.elements do
+		local stencil = StencilDefinitions.get(element.stencilId)
+		local mark = Instance.new("Frame")
+		mark.AnchorPoint = Vector2.new(0.5, 0.5)
+		mark.Position = UDim2.fromScale(element.x, element.y)
+		mark.Size = UDim2.fromScale(element.scale, element.scale * aspect)
+		mark.Rotation = element.rotation
+		mark.BackgroundTransparency = 1
+		mark.ZIndex = marks.ZIndex + index
+		mark.Parent = marks
+		local shape = if stencil ~= nil then stencil.shape else "disc"
+		StencilView.drawMark(mark, shape, InkColors.toColor3(element.color), InkColors.toColor3(element.line), {
+			fill = element.fill,
+			outline = element.outline,
+			thickness = element.thickness,
+			opacity = element.opacity,
+			flip = element.flip,
+		})
+	end
+	return holder
 end
 
 function TattooCanvas.setCameraLocked(_locked: boolean)

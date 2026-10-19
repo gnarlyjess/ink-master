@@ -2,6 +2,7 @@
 
 -- Lobby card for the round clock. This script only renders the server snapshot.
 
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -46,8 +47,8 @@ type HudRefs = {
 }
 
 local PREFIX = "[InkMasters]"
-local CARD_WIDTH = 540
-local CHIP_WIDTH = 230
+local CARD_WIDTH = 420
+local CHIP_WIDTH = 160
 
 local PRESENTATION: { [string]: Presentation } = {
 	WaitingForPlayers = {
@@ -217,22 +218,22 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 
 	if snapshot.state == "WaitingForPlayers" then
 		refs.heroCaption.Text = "TO START"
-		refs.heroValue.TextSize = 60
+		refs.heroValue.TextSize = 44
 		refs.heroValue.Text = `{formatCount(snapshot.playerCount)} / {formatCount(snapshot.minPlayers)}`
 		refs.secondaryTime.Visible = false
 	elseif snapshot.state == "ThemeReveal" then
 		refs.heroCaption.Text = "THIS ROUND"
-		refs.heroValue.TextSize = 36
+		refs.heroValue.TextSize = 32
 		refs.heroValue.Text = snapshot.themeName or "Theme"
 		refs.secondaryTime.Visible = true
 	elseif snapshot.state == "Submission" then
 		refs.heroCaption.Text = "PENCILS DOWN"
-		refs.heroValue.TextSize = 48
+		refs.heroValue.TextSize = 36
 		refs.heroValue.Text = "Time's up!"
 		refs.secondaryTime.Visible = true
 	else
 		refs.heroCaption.Text = "TIME LEFT"
-		refs.heroValue.TextSize = 60
+		refs.heroValue.TextSize = 44
 		refs.secondaryTime.Visible = false
 	end
 
@@ -248,7 +249,8 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 		or snapshot.state == "Voting"
 		or snapshot.state == "Results"
 	refs.card.Visible = not designing and not inLobby and not snapshot.paused and not ceremony
-	refs.banner.Visible = designing or inLobby or snapshot.paused or snapshot.devMode
+	-- The ceremony owns the screen. Keep the pause chip only while the lobby is paused.
+	refs.banner.Visible = (designing or inLobby or snapshot.paused or snapshot.devMode) and not ceremony
 	refs.pauseButton.Visible = snapshot.devMode
 	refs.pauseButton.Text = if snapshot.paused then "Resume" else "Pause"
 	refs.bannerTime.TextColor3 = accent
@@ -288,7 +290,8 @@ local function buildHud(parent: Instance): HudRefs
 
 	local holder = newFrame("CardHolder")
 	holder.AnchorPoint = Vector2.new(0.5, 0)
-	holder.Position = UDim2.new(0.5, 0, 0, 68)
+	local top = math.max(UiTheme.safe.top, GuiService:GetGuiInset().Y + 12)
+	holder.Position = UDim2.new(0.5, 0, 0, top + 56)
 	holder.Size = UDim2.fromOffset(CARD_WIDTH, 0)
 	holder.AutomaticSize = Enum.AutomaticSize.Y
 	holder.Visible = false
@@ -321,9 +324,10 @@ local function buildHud(parent: Instance): HudRefs
 	gradient.Rotation = 100
 	gradient.Parent = card
 
+	-- Top rule only — a left strip makes centred copy look off-centre.
 	local accent = newFrame("Accent")
 	accent.BackgroundColor3 = UiTheme.color.magenta
-	accent.Size = UDim2.new(0, 6, 1, 0)
+	accent.Size = UDim2.new(1, 0, 0, 3)
 	accent.ZIndex = 3
 	accent.Parent = card
 	local accentGradient = Instance.new("UIGradient")
@@ -331,13 +335,12 @@ local function buildHud(parent: Instance): HudRefs
 		ColorSequenceKeypoint.new(0, UiTheme.color.magenta),
 		ColorSequenceKeypoint.new(1, UiTheme.color.gold),
 	})
-	accentGradient.Rotation = 90
 	accentGradient.Parent = accent
 
-	local badge = createLabel("DevBadge", 12, UiTheme.font.bold, UiTheme.color.ink, false)
+	local badge = createLabel("DevBadge", 11, UiTheme.font.bold, UiTheme.color.ink, false)
 	badge.AnchorPoint = Vector2.new(1, 0)
-	badge.Position = UDim2.new(1, -14, 0, 14)
-	badge.Size = UDim2.fromOffset(52, 22)
+	badge.Position = UDim2.new(1, -12, 0, 10)
+	badge.Size = UDim2.fromOffset(44, 18)
 	badge.AutomaticSize = Enum.AutomaticSize.None
 	badge.BackgroundColor3 = UiTheme.color.gold
 	badge.BackgroundTransparency = 0
@@ -345,33 +348,31 @@ local function buildHud(parent: Instance): HudRefs
 	badge.ZIndex = 5
 	badge.Visible = false
 	badge.Parent = holder
-	addCorner(badge, 8)
+	addCorner(badge, 6)
 
 	local content = newFrame("Content")
 	content.Size = UDim2.fromScale(1, 0)
 	content.AutomaticSize = Enum.AutomaticSize.Y
 	content.ZIndex = 4
 	content.Parent = holder
-	addPadding(content, 22, 28, 20, 28)
-	addList(content, Enum.FillDirection.Vertical, 8)
+	addPadding(content, 16, 22, 14, 22)
+	addList(content, Enum.FillDirection.Vertical, 4)
 
-	local eyebrow = createLabel("Eyebrow", 12, UiTheme.font.bold, UiTheme.color.magenta, false)
+	local eyebrow = createLabel("Eyebrow", 11, UiTheme.font.bold, UiTheme.color.magenta, false)
 	eyebrow.Text = "TATTOO COMPETITION"
 	eyebrow.Parent = content
 
 	local titleRow = newFrame("Wordmark")
-	titleRow.AutomaticSize = Enum.AutomaticSize.XY
+	titleRow.Size = UDim2.fromScale(1, 0)
+	titleRow.AutomaticSize = Enum.AutomaticSize.Y
 	titleRow.Parent = content
-	addList(titleRow, Enum.FillDirection.Horizontal, 8)
+	addList(titleRow, Enum.FillDirection.Horizontal, 0).HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-	local ink = createLabel("Ink", 32, UiTheme.font.heavy, UiTheme.color.text, true)
-	ink.Text = "INK"
-	ink.Parent = titleRow
-	local masters = createLabel("Masters", 32, UiTheme.font.heavy, UiTheme.color.magenta, true)
-	masters.Text = "MASTERS"
-	masters.Parent = titleRow
+	local wordmarkLabel = createLabel("Title", 28, UiTheme.font.heavy, UiTheme.color.magenta, true)
+	wordmarkLabel.Text = "INK-OFF"
+	wordmarkLabel.Parent = titleRow
 
-	local roundLabel = createLabel("Round", 14, UiTheme.font.medium, UiTheme.color.muted, false)
+	local roundLabel = createLabel("Round", 13, UiTheme.font.medium, UiTheme.color.muted, false)
 	roundLabel.Text = "Lobby"
 	roundLabel.Parent = content
 
@@ -381,32 +382,32 @@ local function buildHud(parent: Instance): HudRefs
 	pill.AutomaticSize = Enum.AutomaticSize.XY
 	pill.Parent = content
 	addCorner(pill, 999)
-	addPadding(pill, 6, 14, 6, 14)
+	addPadding(pill, 4, 12, 4, 12)
 	local pillStroke = addStroke(pill, UiTheme.color.muted, 1, 0.35)
-	local pillLabel = createLabel("State", 14, UiTheme.font.bold, UiTheme.color.muted, true)
+	local pillLabel = createLabel("State", 13, UiTheme.font.bold, UiTheme.color.muted, true)
 	pillLabel.Text = "Connecting"
 	pillLabel.Parent = pill
 
-	local heroCaption = createLabel("HeroCaption", 12, UiTheme.font.bold, UiTheme.color.muted, false)
+	local heroCaption = createLabel("HeroCaption", 11, UiTheme.font.bold, UiTheme.color.muted, false)
 	heroCaption.Text = "STUDIO"
 	heroCaption.Parent = content
 
-	local heroValue = createLabel("HeroValue", 60, UiTheme.font.heavy, UiTheme.color.text, false)
+	local heroValue = createLabel("HeroValue", 44, UiTheme.font.heavy, UiTheme.color.text, false)
 	heroValue.Text = "—"
 	heroValue.Parent = content
 
-	local secondaryTime = createLabel("SecondaryTime", 18, UiTheme.font.bold, UiTheme.color.gold, false)
+	local secondaryTime = createLabel("SecondaryTime", 15, UiTheme.font.bold, UiTheme.color.gold, false)
 	secondaryTime.Visible = false
 	secondaryTime.Parent = content
 
-	local subtitle = createLabel("Subtitle", 16, UiTheme.font.medium, UiTheme.color.text, false)
+	local subtitle = createLabel("Subtitle", 14, UiTheme.font.medium, UiTheme.color.text, false)
 	subtitle.Text = "Joining the studio..."
 	subtitle.Parent = content
 
 	local track = newFrame("CountdownTrack")
 	track.BackgroundColor3 = UiTheme.color.track
 	track.BackgroundTransparency = 0
-	track.Size = UDim2.new(1, 0, 0, 4)
+	track.Size = UDim2.new(1, 0, 0, 3)
 	track.Visible = false
 	track.ClipsDescendants = true
 	track.Parent = content
@@ -420,14 +421,14 @@ local function buildHud(parent: Instance): HudRefs
 	local divider = newFrame("Divider")
 	divider.BackgroundColor3 = UiTheme.color.stroke
 	divider.BackgroundTransparency = 0.35
-	divider.Size = UDim2.new(1, 0, 0, 1)
+	divider.Size = UDim2.new(0.55, 0, 0, 1)
 	divider.Parent = content
 
 	local chipRow = newFrame("Meta")
 	chipRow.Size = UDim2.fromScale(1, 0)
 	chipRow.AutomaticSize = Enum.AutomaticSize.Y
 	chipRow.Parent = content
-	addList(chipRow, Enum.FillDirection.Horizontal, 12)
+	addList(chipRow, Enum.FillDirection.Horizontal, 10).HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 	local function createChip(name: string, caption: string): (Frame, TextLabel)
 		local chip = newFrame(name)
@@ -436,14 +437,14 @@ local function buildHud(parent: Instance): HudRefs
 		chip.Size = UDim2.fromOffset(CHIP_WIDTH, 0)
 		chip.AutomaticSize = Enum.AutomaticSize.Y
 		chip.Parent = chipRow
-		addCorner(chip, 12)
-		addPadding(chip, 10, 8, 10, 8)
-		addList(chip, Enum.FillDirection.Vertical, 2)
+		addCorner(chip, 10)
+		addPadding(chip, 8, 10, 8, 10)
+		addList(chip, Enum.FillDirection.Vertical, 1)
 
-		local captionLabel = createLabel(name .. "Caption", 11, UiTheme.font.bold, UiTheme.color.muted, false)
+		local captionLabel = createLabel(name .. "Caption", 10, UiTheme.font.bold, UiTheme.color.muted, false)
 		captionLabel.Text = caption
 		captionLabel.Parent = chip
-		local valueLabel = createLabel(name .. "Value", 18, UiTheme.font.heavy, UiTheme.color.text, false)
+		local valueLabel = createLabel(name .. "Value", 16, UiTheme.font.heavy, UiTheme.color.text, false)
 		valueLabel.Text = "—"
 		valueLabel.Parent = chip
 		return chip, valueLabel
@@ -452,9 +453,10 @@ local function buildHud(parent: Instance): HudRefs
 	local artistsChip, artistsValue = createChip("Artists", "ARTISTS")
 	local themeChip, themeValue = createChip("Theme", "THEME")
 
+	-- Banner text stays centred; Pause sits outside so it never shifts the copy.
 	local banner = newFrame("Banner")
 	banner.AnchorPoint = Vector2.new(0.5, 0)
-	banner.Position = UDim2.new(0.5, 0, 0, 12)
+	banner.Position = UDim2.new(0.5, 0, 0, top)
 	banner.AutomaticSize = Enum.AutomaticSize.XY
 	banner.BackgroundColor3 = UiTheme.color.panel
 	banner.BackgroundTransparency = 0.12
@@ -463,8 +465,8 @@ local function buildHud(parent: Instance): HudRefs
 	banner.Parent = screenGui
 	addCorner(banner, 999)
 	addStroke(banner, UiTheme.color.stroke, 1, 0.35)
-	addPadding(banner, 8, 16, 8, 16)
-	addList(banner, Enum.FillDirection.Horizontal, 14)
+	addPadding(banner, 7, 18, 7, 18)
+	addList(banner, Enum.FillDirection.Horizontal, 12).HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 	local bannerState = createLabel("BannerState", 14, UiTheme.font.bold, UiTheme.color.aqua, true)
 	bannerState.Text = "Lobby"
@@ -487,10 +489,19 @@ local function buildHud(parent: Instance): HudRefs
 	pauseButton.Text = "Pause"
 	pauseButton.AutomaticSize = Enum.AutomaticSize.XY
 	pauseButton.Size = UDim2.fromOffset(0, 0)
+	pauseButton.AnchorPoint = Vector2.new(0, 0.5)
+	pauseButton.Position = UDim2.new(0.5, 0, 0, top + 16)
 	pauseButton.Visible = false
-	pauseButton.Parent = banner
+	pauseButton.ZIndex = 7
+	pauseButton.Parent = screenGui
 	addCorner(pauseButton, 999)
 	addPadding(pauseButton, 4, 12, 4, 12)
+
+	-- Keep Pause tucked just to the right of the centred banner.
+	banner:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		pauseButton.Position = UDim2.new(0.5, math.floor(banner.AbsoluteSize.X * 0.5) + 10, 0, top + 16)
+	end)
+	pauseButton.Position = UDim2.new(0.5, math.floor(banner.AbsoluteSize.X * 0.5) + 10, 0, top + 16)
 
 	return {
 		badge = badge,

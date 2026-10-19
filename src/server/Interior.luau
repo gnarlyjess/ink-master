@@ -531,17 +531,30 @@ local function plant(
 			local shade = Color3.fromRGB(46, 72, 44):Lerp(Color3.fromRGB(96, 116, 64), rng:NextNumber(0, 0.5))
 			ellipsoid(group, "Blade", Vector3.new(0.32, h, 0.07), cf, "leaf", noShadow(shade))
 		end
+	elseif kind == "fern" then
+		for i = 1, 14 do
+			local yaw = i * 0.48 + rng:NextNumber(-0.1, 0.1)
+			local lean = rng:NextNumber(0.35, 1.05)
+			local length = crown * rng:NextNumber(0.55, 1)
+			local frond = CFrame.new(top)
+				* CFrame.Angles(0, yaw, 0)
+				* CFrame.Angles(lean, 0, 0)
+				* CFrame.new(0, length * 0.28, length * 0.22)
+			local shade = Color3.fromRGB(48, 92, 46):Lerp(Color3.fromRGB(110, 140, 62), rng:NextNumber(0, 0.7))
+			ellipsoid(group, "Frond", Vector3.new(0.28, 0.04, length), frond, "leaf", noShadow(shade))
+		end
 	elseif kind == "trailing" then
-		for _ = 1, 16 do
+		for _ = 1, 24 do
 			local yaw = rng:NextNumber(0, math.pi * 2)
 			local drop = rng:NextNumber(0, crown)
-			local reach = potDiameter / 2 + 0.05 + drop * 0.08
+			local reach = potDiameter / 2 + 0.05 + drop * 0.1
 			local spot = top + Vector3.new(math.cos(yaw) * reach, 0.1 - drop, math.sin(yaw) * reach)
 			local shade = Color3.fromRGB(70, 104, 54):Lerp(Color3.fromRGB(122, 140, 70), rng:NextNumber(0, 0.5))
+			local size = rng:NextNumber(0.85, 1.25)
 			ellipsoid(
 				group,
 				"Leaf",
-				Vector3.new(0.32, 0.05, 0.4),
+				Vector3.new(0.42 * size, 0.05, 0.62 * size),
 				CFrame.new(spot) * CFrame.Angles(rng:NextNumber(-1.2, 1.2), yaw, 0.6),
 				"leaf",
 				noShadow(shade)
@@ -1198,7 +1211,7 @@ local function buildReception(root: Instance)
 		{ transparency = 1, shadow = false }
 	)
 	local wordmark =
-		Surfaces.label(sign, Enum.NormalId.Front, "INK MASTERS", Color3.fromRGB(196, 160, 102), Enum.Font.Bodoni, 48, 0)
+		Surfaces.label(sign, Enum.NormalId.Front, "Ink-Off", Color3.fromRGB(196, 160, 102), Enum.Font.Bodoni, 48, 0)
 	wordmark.TextStrokeTransparency = 0.6
 	wordmark.TextStrokeColor3 = Color3.fromRGB(60, 40, 20)
 	local tagline = P(
@@ -1919,6 +1932,346 @@ local function buildDetails(root: Instance)
 	})
 end
 
+-- Blender plants live in ServerStorage.ParlourImport (MeshParts authored in Blender).
+-- Floor and sill plants sit on their pot base. Hanging vines are seated by the pot rim,
+-- because the foliage is modelled below the pot. Procedural pots remain the fallback.
+local POT_FINISH: { [string]: { key: string, tint: Color3 } } = {
+	PlantFig = { key = "stone", tint = Color3.fromRGB(196, 188, 178) },
+	PlantSnake = { key = "plaster", tint = Color3.fromRGB(255, 250, 242) },
+	PlantFern = { key = "rubber", tint = Color3.fromRGB(176, 104, 68) },
+	PlantHang = { key = "plaster", tint = Color3.fromRGB(255, 252, 246) },
+	PlantSucculent = { key = "plaster", tint = Color3.fromRGB(255, 252, 246) },
+}
+
+local PLANT_SPECIES = { "PlantFig", "PlantSnake", "PlantFern", "PlantHang", "PlantSucculent" }
+
+local PIECE_COLOR: { [string]: Color3 } = {
+	FigPot = Color3.fromRGB(62, 58, 54),
+	FigStems = Color3.fromRGB(112, 84, 54),
+	FigFoliage = Color3.fromRGB(46, 90, 38),
+	SnakePot = Color3.fromRGB(214, 206, 192),
+	SnakeFoliage = Color3.fromRGB(52, 92, 48),
+	FernPot = Color3.fromRGB(176, 104, 68),
+	FernStems = Color3.fromRGB(78, 108, 52),
+	FernFoliage = Color3.fromRGB(64, 118, 52),
+	HangPot = Color3.fromRGB(236, 232, 224),
+	HangStems = Color3.fromRGB(86, 118, 58),
+	HangFoliage = Color3.fromRGB(58, 110, 48),
+	SucculentPot = Color3.fromRGB(236, 232, 224),
+	SucculentFoliage = Color3.fromRGB(92, 128, 102),
+}
+
+-- Reject MeshParts that lost their geometry (SourceType.None draws as a solid box).
+local function meshHasSurface(part: MeshPart): boolean
+	local ok, sourceType = pcall(function()
+		return (part.MeshContent :: any).SourceType
+	end)
+	if not ok or sourceType == nil then
+		-- Some Studio builds expose MeshContent late; a MeshPart with real Size is enough.
+		return part.Size.Magnitude > 0.01
+	end
+	return sourceType ~= Enum.ContentSourceType.None
+end
+
+local function modelHasSurface(model: Instance): boolean
+	if not model:IsA("Model") then
+		return false
+	end
+	local found = false
+	for _, part in model:GetDescendants() do
+		if part:IsA("MeshPart") then
+			found = true
+			if not meshHasSurface(part) then
+				return false
+			end
+		end
+	end
+	return found
+end
+
+-- Bake the Blender meshes into this session so clients actually receive them.
+-- Roblox only allows this when Allow Mesh / Image APIs is on.
+local function ensureBlenderPlants()
+	local AssetService = game:GetService("AssetService")
+	local apiOk = pcall(function()
+		local probe = AssetService:CreateEditableMesh()
+		probe:Destroy()
+	end)
+	if not apiOk then
+		warn("[InkMasters] Blender plants need Allow Mesh / Image APIs, in Experience Settings, Security")
+		return
+	end
+
+	local folder = ServerStorage:FindFirstChild("ParlourImport")
+	if folder == nil then
+		folder = Instance.new("Folder")
+		folder.Name = "ParlourImport"
+		folder.Parent = ServerStorage
+	end
+
+	local meshApi: any = nil
+	local dataModule = script.Parent:FindFirstChild("PlantMesh")
+	if dataModule ~= nil and dataModule:IsA("ModuleScript") then
+		local loaded, data = pcall(require, dataModule)
+		if loaded then
+			meshApi = data
+		end
+	end
+	local HttpService = game:GetService("HttpService")
+	for _, species in PLANT_SPECIES do
+		local existing = folder:FindFirstChild(species)
+		if existing ~= nil and modelHasSurface(existing) then
+			continue
+		end
+		if existing ~= nil then
+			existing:Destroy()
+		end
+		local body: string? = nil
+		if meshApi ~= nil and type(meshApi.get) == "function" then
+			local okBody, packed = pcall(meshApi.get, species)
+			if okBody and type(packed) == "string" then
+				body = packed
+			end
+		end
+		if body == nil and HttpService.HttpEnabled then
+			local fetched, remote = pcall(function()
+				return HttpService:GetAsync(`http://127.0.0.1:8766/blender-out/plants/{species}.json`, true)
+			end)
+			if fetched and type(remote) == "string" then
+				body = remote
+			end
+		end
+		if body == nil then
+			warn(`[InkMasters] Could not load {species}`)
+			continue
+		end
+		local decoded, pieces = pcall(function()
+			return HttpService:JSONDecode(body)
+		end)
+		if not decoded or type(pieces) ~= "table" then
+			warn(`[InkMasters] {species} mesh data was not readable`)
+			continue
+		end
+		local model = Instance.new("Model")
+		model.Name = species
+		local built = true
+		for _, piece in pieces do
+			local minv = Vector3.new(math.huge, math.huge, math.huge)
+			local maxv = Vector3.new(-math.huge, -math.huge, -math.huge)
+			for _, vertex in piece.verts do
+				minv =
+					Vector3.new(math.min(minv.X, vertex[1]), math.min(minv.Y, vertex[2]), math.min(minv.Z, vertex[3]))
+				maxv =
+					Vector3.new(math.max(maxv.X, vertex[1]), math.max(maxv.Y, vertex[2]), math.max(maxv.Z, vertex[3]))
+			end
+			local center = (minv + maxv) * 0.5
+			local editable = AssetService:CreateEditableMesh()
+			local ids = table.create(#piece.verts)
+			for index, vertex in piece.verts do
+				ids[index] =
+					editable:AddVertex(Vector3.new(vertex[1] - center.X, vertex[2] - center.Y, vertex[3] - center.Z))
+			end
+			for _, face in piece.faces do
+				editable:AddTriangle(ids[face[1] + 1], ids[face[2] + 1], ids[face[3] + 1])
+			end
+			local bakedOk, result, content = pcall(function()
+				return AssetService:CreateDataModelContentAsync(Content.fromObject(editable))
+			end)
+			editable:Destroy()
+			if not bakedOk or result ~= Enum.CreateContentResult.Success then
+				warn(`[InkMasters] {piece.name} could not be baked: {result}`)
+				built = false
+				break
+			end
+			local created, meshPart = pcall(function()
+				return AssetService:CreateMeshPartAsync(content, {
+					CollisionFidelity = Enum.CollisionFidelity.Box,
+					RenderFidelity = Enum.RenderFidelity.Precise,
+				})
+			end)
+			if not created or meshPart == nil then
+				warn(`[InkMasters] {piece.name} mesh failed: {meshPart}`)
+				built = false
+				break
+			end
+			meshPart.Name = piece.name
+			meshPart.Anchored = true
+			meshPart.CanCollide = false
+			meshPart.CanTouch = false
+			meshPart.CanQuery = false
+			meshPart.CastShadow = true
+			meshPart.Reflectance = 0
+			meshPart.Material = Enum.Material.Plastic
+			meshPart.Color = PIECE_COLOR[piece.name] or Color3.fromRGB(54, 38, 26)
+			meshPart.DoubleSided = string.find(piece.name, "Foliage") ~= nil
+			meshPart.CFrame = CFrame.new(center)
+			meshPart.Parent = model
+			task.wait(0.05)
+		end
+		if built and modelHasSurface(model) then
+			model.Parent = folder
+		else
+			model:Destroy()
+		end
+		task.wait(0.2)
+	end
+end
+
+local function placeMeshPlant(
+	parent: Instance,
+	species: string,
+	anchor: Vector3,
+	targetHeight: number,
+	yaw: number,
+	seatTop: boolean
+): boolean
+	local import = ServerStorage:FindFirstChild("ParlourImport")
+	local src = import and import:FindFirstChild(species)
+	if src == nil or not modelHasSurface(src) then
+		return false
+	end
+	local copy = src:Clone()
+	local pot = POT_FINISH[species]
+	for _, part in copy:GetDescendants() do
+		if part:IsA("BasePart") then
+			part.Anchored = true
+			part.CanCollide = false
+			part.CanTouch = false
+			part.CanQuery = false
+			part.CastShadow = true
+			if string.find(part.Name, "Foliage") then
+				part.DoubleSided = true
+				Surfaces.apply(part, "rubber", part.Color)
+			elseif string.find(part.Name, "Stem") then
+				Surfaces.apply(part, "walnut", Color3.fromRGB(255, 232, 206))
+			elseif string.find(part.Name, "Soil") then
+				Surfaces.apply(part, "ground", Color3.fromRGB(72, 50, 34))
+			elseif pot ~= nil and string.find(part.Name, "Pot") then
+				Surfaces.apply(part, pot.key, pot.tint)
+			end
+		end
+	end
+	local y0, y1 = extents(copy, Vector3.yAxis)
+	local height = y1 - y0
+	if height > 0.05 and targetHeight > 0 then
+		copy:ScaleTo(copy:GetScale() * (targetHeight / height))
+	end
+	copy:PivotTo(copy:GetPivot() * CFrame.Angles(0, yaw, 0))
+	y0, y1 = extents(copy, Vector3.yAxis)
+	local x0, x1 = extents(copy, Vector3.xAxis)
+	local z0, z1 = extents(copy, Vector3.zAxis)
+	local deltaY = if seatTop then anchor.Y - y1 else anchor.Y - y0
+	copy:PivotTo(copy:GetPivot() + Vector3.new(anchor.X - (x0 + x1) / 2, deltaY, anchor.Z - (z0 + z1) / 2))
+	copy.Name = "Plant"
+	copy:SetAttribute("Species", species)
+	copy.Parent = parent
+	return true
+end
+
+-- Pots on the floor, the window sills, the walls, and hanging from the ceiling.
+-- The door, the spawn pads, and the four stations stay clear.
+local function needsPlantBake(): boolean
+	local folder = ServerStorage:FindFirstChild("ParlourImport")
+	if folder == nil then
+		return true
+	end
+	for _, species in PLANT_SPECIES do
+		local model = folder:FindFirstChild(species)
+		if model == nil or not modelHasSurface(model) then
+			return true
+		end
+	end
+	return false
+end
+
+local function buildGreenery(root: Instance)
+	-- Prefer meshes already baked into ServerStorage.ParlourImport.
+	-- Only rebuild missing species; baking every plant at lobby load can crash Studio.
+	if needsPlantBake() then
+		local baked, bakeErr = pcall(ensureBlenderPlants)
+		if not baked then
+			warn(`[InkMasters] Blender plants could not be prepared: {bakeErr}`)
+		end
+	end
+	local green = Surfaces.folder(root, "Greenery")
+	local cream = Color3.fromRGB(226, 220, 208)
+	local clay = Color3.fromRGB(138, 74, 52)
+
+	local function suspend(x: number, z: number, seed: number)
+		-- Rim sits high enough that the trailing leaves clear a standing player.
+		local rimY = 12.05
+		P(
+			green,
+			"Hanger",
+			Vector3.new(0.045, CEILING_Y - rimY, 0.045),
+			CFrame.new(x, (CEILING_Y + rimY) / 2, z),
+			"paint",
+			noShadow(INK)
+		)
+		local yaw = math.rad((seed * 47) % 360)
+		if not placeMeshPlant(green, "PlantHang", Vector3.new(x, rimY, z), 4.05, yaw, true) then
+			plant(green, Vector3.new(x, 10.4, z), 0.72, 0.5, "paint", cream, 4.2, "trailing", seed)
+		end
+	end
+
+	local function wallPot(side: number, z: number, y: number, seed: number)
+		local shelf = wallAt(sideWall(side, 0, z), 0, y, 0.55)
+		P(green, "WallBracket", Vector3.new(1.15, 0.1, 0.7), shelf, "powder", noShadow())
+		local sit = shelf.Position + shelf.LookVector * 0.35 + Vector3.new(0, 0.06, 0)
+		local species = if z > 10 then "PlantSucculent" else "PlantFern"
+		local height = if species == "PlantSucculent" then 0.72 else 1.25
+		local yaw = math.rad((seed * 29) % 360)
+		if not placeMeshPlant(green, species, sit, height, yaw, false) then
+			plant(green, shelf.Position + Vector3.new(0, 0.05, 0), 0.7, 0.45, "paint", clay, 1.5, "trailing", seed)
+		end
+	end
+
+	for _, spot in { { -8, -20 }, { 8, -20 }, { -9, 7 }, { 9, 7 }, { -7, 22 }, { 7, 22 }, { -18, -8 }, { 18, 14 } } do
+		suspend(spot[1], spot[2], 40 + math.abs(spot[1]) + math.abs(spot[2]))
+	end
+
+	for _, side in { -1, 1 } do
+		for _, z in { -6, 6, 19 } do
+			wallPot(side, z, 8.6, 80 + side * 10 + z)
+		end
+	end
+
+	-- Species and whole-plant height. Corners get the tall fiddle-leaf; the aisle stays open.
+	local floorPots = {
+		{ Vector3.new(-29.5, FLOOR_TOP, -23.4), "PlantFig", 5.3, 31 },
+		{ Vector3.new(30.2, FLOOR_TOP, -22.8), "PlantFern", 3.1, 32 },
+		{ Vector3.new(-18.5, FLOOR_TOP, -23.8), "PlantSnake", 3.3, 33 },
+		{ Vector3.new(16.5, FLOOR_TOP, -23.2), "PlantFern", 2.4, 34 },
+		{ Vector3.new(-14.5, FLOOR_TOP, -5.2), "PlantSnake", 2.9, 35 },
+		{ Vector3.new(14.5, FLOOR_TOP, -5.2), "PlantFern", 2.2, 36 },
+		{ Vector3.new(-15.5, FLOOR_TOP, 23.4), "PlantFig", 4.1, 37 },
+		{ Vector3.new(15.5, FLOOR_TOP, 23.4), "PlantSnake", 3.2, 38 },
+		{ Vector3.new(-30.5, FLOOR_TOP, 8), "PlantSnake", 3.0, 39 },
+		{ Vector3.new(30.5, FLOOR_TOP, 10), "PlantFern", 2.7, 41 },
+		{ Vector3.new(-31.2, FLOOR_TOP, 22.6), "PlantFern", 2.5, 42 },
+		{ Vector3.new(31.2, FLOOR_TOP, 22.8), "PlantFig", 4.4, 43 },
+	}
+	for _, spot in floorPots do
+		local at = spot[1] :: Vector3
+		local species = spot[2] :: string
+		local height = spot[3] :: number
+		local seed = spot[4] :: number
+		local yaw = math.rad((seed * 53) % 360)
+		if not placeMeshPlant(green, species, at, height, yaw, false) then
+			local kind = if species == "PlantFig" then "fig" elseif species == "PlantSnake" then "snake" else "fern"
+			plant(green, at, 1.1, 1.0, "paint", cream, height * 0.7, kind, seed)
+		end
+	end
+
+	for _, x in { -15.2, -19.6, -24.2, 15.2, 19.6, 24.2 } do
+		local at = Vector3.new(x, 3.97, -26.28)
+		local seed = 100 + math.floor(x)
+		if not placeMeshPlant(green, "PlantSucculent", at, 0.68, math.rad((seed * 41) % 360), false) then
+			plant(green, at, 0.55, 0.4, "paint", cream, 0.45, "succulent", seed)
+		end
+	end
+end
+
 function Interior.build(lobby: Model)
 	local root = Surfaces.folder(lobby, "Interior")
 	restyle(lobby)
@@ -1952,6 +2305,9 @@ function Interior.build(lobby: Model)
 		end,
 		details = function()
 			buildDetails(root)
+		end,
+		greenery = function()
+			buildGreenery(root)
 		end,
 	}
 	-- A failure in one dressing step must never stop the lobby (and the game) from loading.

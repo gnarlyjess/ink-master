@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Catalogue = require(ReplicatedStorage.Shared.Catalogue)
 local ProfileTypes = require(ReplicatedStorage.Shared.ProfileTypes)
 local StencilDefinitions = require(ReplicatedStorage.Shared.StencilDefinitions)
+local UiAssets = require(ReplicatedStorage.Shared.UiAssets)
 local FrameDress = require(script.Parent.FrameDress)
 local PlayerData = require(script.Parent.PlayerData)
 local Sfx = require(script.Parent.Sfx)
@@ -31,13 +32,15 @@ type Card = {
 type IndexChip = {
 	id: string,
 	button: TextButton,
+	label: TextLabel,
 	bar: Frame,
 }
 
-local CARD_WIDTH = 168
-local CARD_HEIGHT = 196
+local CARD_WIDTH = 140
+local CARD_HEIGHT = 168
 local CONFIRM_SECONDS = 3
-local WIDE_AT = 760
+local WIDE_AT = 700
+local TRAY_HEIGHT = 80
 
 local ShopTab = {}
 
@@ -67,38 +70,123 @@ local function clearDrawn(area: Frame)
 	end
 end
 
-local function paintPreview(area: Frame, item: Item)
+local function paintInkCup(area: Frame, accent: Color3, large: boolean)
+	-- Plastic tattoo ink cup viewed from slightly above: cream rim + wall, colour fills the centre.
+	local scale = if large then 0.9 else 0.82
+	local pot = Instance.new("Frame")
+	pot.Name = "InkPot"
+	pot.BackgroundTransparency = 1
+	pot.AnchorPoint = Vector2.new(0.5, 0.5)
+	pot.Position = UDim2.fromScale(0.5, 0.5)
+	pot.Size = UDim2.fromScale(scale, scale)
+	pot.Parent = area
+	local ratio = Instance.new("UIAspectRatioConstraint")
+	ratio.AspectRatio = 0.82
+	ratio.Parent = pot
+
+	local shade = UiKit.frame(pot, Color3.fromRGB(28, 24, 22), 0.8)
+	shade.AnchorPoint = Vector2.new(0.5, 1)
+	shade.Position = UDim2.fromScale(0.5, 0.98)
+	shade.Size = UDim2.fromScale(0.58, 0.06)
+	UiKit.corner(shade, 999)
+
+	local shell = UiKit.frame(pot, Color3.fromRGB(250, 244, 234), 0)
+	shell.AnchorPoint = Vector2.new(0.5, 0.5)
+	shell.Position = UDim2.fromScale(0.5, 0.54)
+	shell.Size = UDim2.fromScale(0.7, 0.72)
+	UiKit.corner(shell, 9)
+	UiKit.stroke(shell, Color3.fromRGB(140, 126, 110), 1.5, 0.3)
+
+	local ink = UiKit.frame(shell, accent, 0)
+	ink.Name = "Ink"
+	ink.AnchorPoint = Vector2.new(0.5, 0.5)
+	ink.Position = UDim2.fromScale(0.5, 0.54)
+	ink.Size = UDim2.fromScale(0.8, 0.78)
+	UiKit.corner(ink, 7)
+	UiKit.stroke(ink, Color3.new(0, 0, 0), 1, 0.4)
+
+	local gloss = UiKit.frame(ink, Color3.new(1, 1, 1), 0.58)
+	gloss.AnchorPoint = Vector2.new(0.5, 0.5)
+	gloss.Position = UDim2.fromScale(0.35, 0.32)
+	gloss.Size = UDim2.fromScale(0.2, 0.26)
+	UiKit.corner(gloss, 999)
+
+	local rim = UiKit.frame(pot, Color3.fromRGB(252, 246, 236), 0)
+	rim.AnchorPoint = Vector2.new(0.5, 0.5)
+	rim.Position = UDim2.fromScale(0.5, 0.22)
+	rim.Size = UDim2.fromScale(0.84, 0.16)
+	UiKit.corner(rim, 999)
+	UiKit.stroke(rim, Color3.fromRGB(118, 106, 90), 1.5, 0.15)
+
+	local hole = UiKit.frame(rim, accent:Lerp(Color3.new(0, 0, 0), 0.2), 0)
+	hole.AnchorPoint = Vector2.new(0.5, 0.5)
+	hole.Position = UDim2.fromScale(0.5, 0.55)
+	hole.Size = UDim2.fromScale(0.58, 0.42)
+	UiKit.corner(hole, 999)
+end
+
+local function paintPackShapes(area: Frame, item: Item, large: boolean)
+	local sheet = Instance.new("ImageLabel")
+	sheet.Name = "Sheet"
+	sheet.BackgroundTransparency = 1
+	sheet.BorderSizePixel = 0
+	sheet.Size = UDim2.fromScale(1, 1)
+	sheet.ScaleType = Enum.ScaleType.Fit
+	sheet.Image = UiAssets.shapePack
+	sheet.ImageTransparency = 0.12
+	sheet.ZIndex = 1
+	sheet.Parent = area
+
+	local stencils = item.stencils or {}
+	local shown = math.min(4, #stencils)
+	local cols = if shown <= 1 then 1 elseif shown == 2 then 2 else 2
+	local rows = math.ceil(shown / cols)
+	local cell = if large then 0.34 else 0.36
+	local gapX = if large then 0.1 else 0.08
+	local gapY = if large then 0.08 else 0.06
+	local totalW = cols * cell + (cols - 1) * gapX
+	local totalH = rows * cell + (rows - 1) * gapY
+	local originX = 0.5 - totalW / 2
+	local originY = 0.5 - totalH / 2
+
+	for indexBar = 1, shown do
+		local definition = StencilDefinitions.get(stencils[indexBar] or "")
+		if definition == nil then
+			continue
+		end
+		local col = (indexBar - 1) % cols
+		local row = math.floor((indexBar - 1) / cols)
+		local holder = Instance.new("Frame")
+		holder.Name = `Shape{indexBar}`
+		holder.BackgroundColor3 = UiTheme.color.paper
+		holder.BackgroundTransparency = 0.08
+		holder.BorderSizePixel = 0
+		holder.AnchorPoint = Vector2.new(0, 0)
+		holder.Position = UDim2.fromScale(originX + col * (cell + gapX), originY + row * (cell + gapY))
+		holder.Size = UDim2.fromScale(cell, cell)
+		holder.ZIndex = 2
+		holder.Parent = area
+		UiKit.corner(holder, 2)
+		UiKit.stroke(holder, UiTheme.color.ink, 1, 0.75)
+		local pad = Instance.new("UIPadding")
+		pad.PaddingTop = UDim.new(0.12, 0)
+		pad.PaddingBottom = UDim.new(0.12, 0)
+		pad.PaddingLeft = UDim.new(0.12, 0)
+		pad.PaddingRight = UDim.new(0.12, 0)
+		pad.Parent = holder
+		StencilView.draw(holder, definition.shape, UiTheme.color.ink)
+	end
+end
+
+local function paintPreview(area: Frame, item: Item, large: boolean?)
 	clearDrawn(area)
+	local big = large == true
 	local accent = if item.accent ~= nil then Catalogue.toColor3(item.accent) else UiTheme.color.ink
 
 	if item.category == "ink" then
-		local disc = UiKit.frame(area, accent, 0)
-		disc.AnchorPoint = Vector2.new(0.5, 0.5)
-		disc.Position = UDim2.fromScale(0.5, 0.48)
-		disc.Size = UDim2.fromScale(0.42, 0.62)
-		local ratio = Instance.new("UIAspectRatioConstraint")
-		ratio.AspectRatio = 1
-		ratio.Parent = disc
-		UiKit.corner(disc, 999)
-		UiKit.stroke(disc, UiTheme.color.ink, 2, 0.35)
+		paintInkCup(area, accent, big)
 	elseif item.category == "pack" then
-		local stencils = item.stencils or {}
-		local shown = math.min(3, #stencils)
-		for indexBar = 1, shown do
-			local definition = StencilDefinitions.get(stencils[indexBar] or "")
-			if definition ~= nil then
-				local holder = Instance.new("Frame")
-				holder.BackgroundTransparency = 1
-				holder.AnchorPoint = Vector2.new(0.5, 0.5)
-				holder.Position = UDim2.fromScale(indexBar / (shown + 1), 0.5)
-				holder.Size = UDim2.fromScale(0.34, 0.7)
-				holder.Parent = area
-				local ratio = Instance.new("UIAspectRatioConstraint")
-				ratio.AspectRatio = 1
-				ratio.Parent = holder
-				StencilView.draw(holder, definition.shape, UiTheme.color.ink)
-			end
-		end
+		paintPackShapes(area, item, big)
 	elseif item.category == "title" then
 		local text = UiKit.label(area, item.text or item.name, 22, UiTheme.font.heavy, accent)
 		text.Size = UDim2.fromScale(1, 1)
@@ -167,8 +255,8 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 	local sheet = UiKit.frame(parent, UiTheme.color.paper, 0)
 	sheet.Name = "Sheet"
 	sheet.Size = UDim2.fromScale(1, 1)
-	UiKit.corner(sheet, 2)
-	UiKit.stroke(sheet, UiTheme.color.ink, 1.5, 0)
+	UiKit.corner(sheet, 10)
+	UiKit.stroke(sheet, UiTheme.color.gold, 1.5, 0.55)
 
 	local indexBar = Instance.new("ScrollingFrame")
 	indexBar.Name = "Index"
@@ -189,10 +277,14 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 	scroll.BackgroundTransparency = 1
 	scroll.BorderSizePixel = 0
 	scroll.CanvasSize = UDim2.fromOffset(0, 0)
-	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	scroll.ScrollBarThickness = 4
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.None
+	scroll.ScrollBarThickness = 8
 	scroll.ScrollBarImageColor3 = UiTheme.color.inkMuted
 	scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+	scroll.Active = true
+	scroll.ScrollingEnabled = true
+	scroll.VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar
+	scroll.ClipsDescendants = true
 	scroll.Parent = sheet
 	local grid = Instance.new("UIGridLayout")
 	grid.CellSize = UDim2.fromOffset(CARD_WIDTH, CARD_HEIGHT)
@@ -205,9 +297,10 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 	detail.Name = "Plate"
 	UiKit.stroke(detail, UiTheme.color.ink, 1.5, 0)
 
-	local detailPreview = UiKit.frame(detail, UiTheme.color.paperDeep, 0)
+	local detailPreview = UiKit.frame(detail, UiTheme.color.paper, 0)
 	detailPreview.Name = "Art"
-	UiKit.corner(detailPreview, 2)
+	UiKit.corner(detailPreview, 4)
+	UiKit.stroke(detailPreview, UiTheme.color.paperDeep, 1, 0.55)
 
 	local kicker = UiKit.label(detail, "INK", 11, UiTheme.font.bold, UiTheme.color.oxblood)
 	kicker.Name = "Kicker"
@@ -236,57 +329,65 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 			return
 		end
 		wide = width >= WIDE_AT
+		-- Selection info lives in a bottom tray so the colour / pack grid stays tall.
 		indexBarLayout.FillDirection = if wide then Enum.FillDirection.Vertical else Enum.FillDirection.Horizontal
 		indexBar.AutomaticCanvasSize = if wide then Enum.AutomaticSize.Y else Enum.AutomaticSize.X
 		indexBar.ScrollingDirection = if wide then Enum.ScrollingDirection.Y else Enum.ScrollingDirection.X
 		if wide then
 			indexBar.Position = UDim2.fromOffset(0, 0)
-			indexBar.Size = UDim2.new(0, 156, 1, 0)
-			detail.Position = UDim2.new(1, -268, 0, 12)
-			detail.Size = UDim2.new(0, 256, 1, -24)
-			scroll.Position = UDim2.fromOffset(168, 12)
-			scroll.Size = UDim2.new(1, -448, 1, -20)
-			detailPreview.Position = UDim2.fromOffset(14, 14)
-			detailPreview.Size = UDim2.new(1, -28, 0, 168)
-			kicker.Position = UDim2.fromOffset(14, 192)
-			kicker.Size = UDim2.new(1, -28, 0, 16)
-			detailName.Position = UDim2.fromOffset(14, 210)
-			detailName.Size = UDim2.new(1, -28, 0, 52)
-			detailCopy.Position = UDim2.fromOffset(14, 264)
-			detailCopy.Size = UDim2.new(1, -28, 0, 72)
-			detailCopy.Visible = true
-			detailMeta.Position = UDim2.fromOffset(14, 340)
-			detailMeta.Size = UDim2.new(1, -28, 0, 18)
-			action.Position = UDim2.new(0, 14, 1, -56)
-			action.Size = UDim2.new(1, -28, 0, 40)
+			indexBar.Size = UDim2.new(0, 148, 1, -(TRAY_HEIGHT + 12))
+			scroll.Position = UDim2.fromOffset(160, 10)
+			scroll.Size = UDim2.new(1, -172, 1, -(TRAY_HEIGHT + 22))
 		else
 			indexBar.Position = UDim2.fromOffset(8, 8)
 			indexBar.Size = UDim2.new(1, -16, 0, 36)
-			detail.Position = UDim2.fromOffset(8, 50)
-			detail.Size = UDim2.new(1, -16, 0, 132)
-			scroll.Position = UDim2.fromOffset(8, 190)
-			scroll.Size = UDim2.new(1, -16, 1, -198)
-			detailPreview.Position = UDim2.fromOffset(10, 10)
-			detailPreview.Size = UDim2.fromOffset(112, 112)
-			kicker.Position = UDim2.fromOffset(134, 12)
-			kicker.Size = UDim2.new(1, -250, 0, 16)
-			detailName.Position = UDim2.fromOffset(134, 28)
-			detailName.Size = UDim2.new(1, -250, 0, 44)
-			detailCopy.Position = UDim2.fromOffset(134, 74)
-			detailCopy.Size = UDim2.new(1, -250, 0, 36)
-			detailCopy.Visible = false
-			detailMeta.Visible = false
-			action.Position = UDim2.new(1, -122, 1, -46)
-			action.Size = UDim2.fromOffset(108, 34)
+			scroll.Position = UDim2.fromOffset(8, 50)
+			scroll.Size = UDim2.new(1, -16, 1, -(TRAY_HEIGHT + 58))
 		end
-		detailMeta.Visible = wide
+		detail.Position = UDim2.new(0, if wide then 12 else 8, 1, -(TRAY_HEIGHT + 8))
+		detail.Size = UDim2.new(1, if wide then -24 else -16, 0, TRAY_HEIGHT)
+		detailPreview.Position = UDim2.fromOffset(12, 10)
+		detailPreview.Size = UDim2.fromOffset(TRAY_HEIGHT - 20, TRAY_HEIGHT - 20)
+		local textLeft = TRAY_HEIGHT + 8
+		local textRight = 132
+		kicker.Position = UDim2.fromOffset(textLeft, 6)
+		kicker.Size = UDim2.new(1, -(textLeft + textRight), 0, 12)
+		kicker.TextXAlignment = Enum.TextXAlignment.Left
+		detailName.Position = UDim2.fromOffset(textLeft, 18)
+		detailName.Size = UDim2.new(1, -(textLeft + textRight), 0, 22)
+		detailName.TextXAlignment = Enum.TextXAlignment.Left
+		detailName.TextTruncate = Enum.TextTruncate.AtEnd
+		detailCopy.Position = UDim2.fromOffset(textLeft, 40)
+		detailCopy.Size = UDim2.new(1, -(textLeft + textRight), 0, 16)
+		detailCopy.TextXAlignment = Enum.TextXAlignment.Left
+		detailCopy.TextTruncate = Enum.TextTruncate.AtEnd
+		detailCopy.Visible = true
+		detailMeta.Position = UDim2.fromOffset(textLeft, 58)
+		detailMeta.Size = UDim2.new(1, -(textLeft + textRight), 0, 14)
+		detailMeta.TextXAlignment = Enum.TextXAlignment.Left
+		detailMeta.Visible = true
+		action.Position = UDim2.new(1, -120, 0.5, -18)
+		action.Size = UDim2.fromOffset(108, 36)
+		local cols = math.max(1, math.floor((scroll.AbsoluteSize.X + 12) / (CARD_WIDTH + 12)))
+		grid.FillDirectionMaxCells = cols
+		scroll.CanvasSize = UDim2.fromOffset(0, grid.AbsoluteContentSize.Y + 16)
 		for _, chip in chips do
 			chip.button.Size = if wide then UDim2.new(1, -8, 0, 34) else UDim2.fromOffset(0, 28)
 			chip.button.AutomaticSize = if wide then Enum.AutomaticSize.None else Enum.AutomaticSize.X
-			chip.button.TextXAlignment = if wide then Enum.TextXAlignment.Left else Enum.TextXAlignment.Center
-			chip.bar.Size = if wide then UDim2.fromOffset(3, 16) else UDim2.new(1, -12, 0, 2)
-			chip.bar.Position = if wide then UDim2.new(0, 0, 0.5, -8) else UDim2.new(0, 6, 1, -2)
+			chip.bar.Size = UDim2.new(1, -16, 0, 2)
+			chip.bar.Position = UDim2.new(0, 8, 1, -3)
 			chip.bar.AnchorPoint = Vector2.zero
+			if wide then
+				chip.label.AutomaticSize = Enum.AutomaticSize.None
+				chip.label.Position = UDim2.fromOffset(10, 0)
+				chip.label.Size = UDim2.new(1, -16, 1, -4)
+				chip.label.TextXAlignment = Enum.TextXAlignment.Left
+			else
+				chip.label.Position = UDim2.fromOffset(10, 0)
+				chip.label.Size = UDim2.fromOffset(0, 24)
+				chip.label.TextXAlignment = Enum.TextXAlignment.Center
+				chip.label.AutomaticSize = Enum.AutomaticSize.X
+			end
 		end
 	end
 
@@ -325,8 +426,8 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 
 		for _, chip in chips do
 			local on = chip.id == filter
-			chip.button.TextColor3 = if on then UiTheme.color.ink else UiTheme.color.inkMuted
-			chip.button.FontFace = if on then UiTheme.font.heavy else UiTheme.font.medium
+			chip.label.TextColor3 = if on then UiTheme.color.ink else UiTheme.color.inkMuted
+			chip.label.FontFace = if on then UiTheme.font.heavy else UiTheme.font.medium
 			chip.bar.Visible = on
 		end
 
@@ -382,7 +483,7 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 		local item = focus.item
 		if paintedId ~= item.id then
 			paintedId = item.id
-			paintPreview(detailPreview, item)
+			paintPreview(detailPreview, item, true)
 		end
 		kicker.Text = string.upper(categoryName(item.category))
 		detailName.Text = item.name
@@ -506,27 +607,34 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 		PlayerData.send("buy", item.id, nil)
 	end
 
-	local function addChip(id: string, label: string, order: number)
+	local function addChip(id: string, labelText: string, order: number)
 		local chip = Instance.new("TextButton")
 		chip.Name = id
 		chip.BackgroundTransparency = 1
 		chip.AutoButtonColor = false
 		chip.BorderSizePixel = 0
-		chip.FontFace = UiTheme.font.medium
-		chip.TextSize = 15
-		chip.TextColor3 = UiTheme.color.inkMuted
-		chip.TextXAlignment = Enum.TextXAlignment.Left
-		chip.Text = label
+		chip.Text = ""
 		chip.LayoutOrder = order
 		chip.Size = UDim2.new(1, -8, 0, 34)
 		chip.Parent = indexBar
-		UiKit.padding(chip, 0, 8, 0, 14)
+
+		-- Underline indicator — never overlaps the label (left bars fight TextButton layout).
 		local bar = UiKit.frame(chip, UiTheme.color.gold, 0)
 		bar.Name = "Bar"
-		bar.Size = UDim2.fromOffset(3, 16)
-		bar.Position = UDim2.new(0, 0, 0.5, -8)
+		bar.Size = UDim2.new(1, -16, 0, 2)
+		bar.Position = UDim2.new(0, 8, 1, -3)
 		bar.Visible = false
-		local entry: IndexChip = { id = id, button = chip, bar = bar }
+		bar.ZIndex = 2
+
+		local label = UiKit.label(chip, labelText, 15, UiTheme.font.medium, UiTheme.color.inkMuted)
+		label.Name = "Label"
+		label.Position = UDim2.fromOffset(10, 0)
+		label.Size = UDim2.new(1, -16, 1, -4)
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.TextTruncate = Enum.TextTruncate.AtEnd
+		label.ZIndex = 1
+
+		local entry: IndexChip = { id = id, button = chip, label = label, bar = bar }
 		table.insert(chips, entry)
 		chip.MouseButton1Click:Connect(function()
 			filter = id
@@ -557,22 +665,26 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 		UiKit.corner(frame, 2)
 		local outline = UiKit.stroke(frame, UiTheme.color.paperDeep, 1, 0)
 
-		local art = UiKit.frame(frame, UiTheme.color.paperDeep, 0)
+		local art = UiKit.frame(frame, UiTheme.color.paper, 0)
 		art.Name = "Art"
 		art.Position = UDim2.fromOffset(8, 8)
-		art.Size = UDim2.new(1, -16, 0, 112)
-		UiKit.corner(art, 2)
-		paintPreview(art, item)
+		art.Size = UDim2.new(1, -16, 0, 96)
+		UiKit.corner(art, 4)
+		UiKit.stroke(art, UiTheme.color.paperDeep, 1, 0.55)
+		paintPreview(art, item, false)
 
-		local name = UiKit.label(frame, item.name, 15, UiTheme.font.heavy, UiTheme.color.ink)
-		name.Position = UDim2.fromOffset(10, 126)
-		name.Size = UDim2.new(1, -20, 0, 36)
-		name.TextWrapped = true
-		name.TextYAlignment = Enum.TextYAlignment.Top
+		local name = UiKit.label(frame, item.name, 14, UiTheme.font.heavy, UiTheme.color.ink)
+		name.Position = UDim2.fromOffset(8, 108)
+		name.Size = UDim2.new(1, -16, 0, 20)
+		name.TextXAlignment = Enum.TextXAlignment.Center
+		name.TextTruncate = Enum.TextTruncate.AtEnd
+		name.TextYAlignment = Enum.TextYAlignment.Center
 
-		local meta = UiKit.label(frame, "", 13, UiTheme.font.bold, UiTheme.color.inkMuted)
-		meta.Position = UDim2.fromOffset(10, 164)
-		meta.Size = UDim2.new(1, -20, 0, 18)
+		local meta = UiKit.label(frame, "", 12, UiTheme.font.bold, UiTheme.color.inkMuted)
+		meta.Position = UDim2.fromOffset(8, 128)
+		meta.Size = UDim2.new(1, -16, 0, 18)
+		meta.TextXAlignment = Enum.TextXAlignment.Center
+		meta.TextTruncate = Enum.TextTruncate.AtEnd
 
 		local bar = UiKit.frame(frame, UiTheme.color.gold, 0)
 		bar.Name = "Select"
@@ -621,6 +733,9 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 	end)
 
 	sheet:GetPropertyChangedSignal("AbsoluteSize"):Connect(layout)
+	grid:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+		scroll.CanvasSize = UDim2.fromOffset(0, grid.AbsoluteContentSize.Y + 16)
+	end)
 	task.defer(layout)
 
 	local first = Catalogue.all[1]

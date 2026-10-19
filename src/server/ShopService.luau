@@ -167,7 +167,10 @@ local function onAction(player: Player, payload: any)
 		return
 	end
 
-	PlayerEconomy.notify(player, if ok then "ok" else "error", message)
+	-- claimLogin already fires a "login" fanfare notice on success.
+	if not (kind == "claimLogin" and ok) then
+		PlayerEconomy.notify(player, if ok then "ok" else "error", message)
+	end
 	if not ok then
 		-- Re-send so a stale screen corrects itself.
 		push(player)

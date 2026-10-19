@@ -646,13 +646,15 @@ local function silhouette(shape: string): EditableImage?
 		created = AssetService:CreateEditableImage({
 			Size = Vector2.new(SIZE, SIZE),
 		})
+		if created ~= nil then
+			created:WritePixelsBuffer(Vector2.zero, Vector2.new(SIZE, SIZE), raster(inside))
+		end
 	end)
 	if not ok or created == nil then
 		unavailable = true
 		warn("[InkMasters] Clean stencils need Allow Mesh / Image APIs, in Experience Settings, Security")
 		return nil
 	end
-	created:WritePixelsBuffer(Vector2.zero, Vector2.new(SIZE, SIZE), raster(inside))
 	images[shape] = created
 	return created
 end
@@ -678,13 +680,15 @@ local function solidSilhouette(shape: string): EditableImage?
 		created = AssetService:CreateEditableImage({
 			Size = Vector2.new(SIZE, SIZE),
 		})
+		if created ~= nil then
+			created:WritePixelsBuffer(Vector2.zero, Vector2.new(SIZE, SIZE), raster(inside))
+		end
 	end)
 	if not ok or created == nil then
 		unavailable = true
 		warn("[InkMasters] Clean stencils need Allow Mesh / Image APIs, in Experience Settings, Security")
 		return nil
 	end
-	created:WritePixelsBuffer(Vector2.zero, Vector2.new(SIZE, SIZE), raster(inside))
 	images[key] = created
 	return created
 end
@@ -844,19 +848,22 @@ local function styledImage(shape: string, kind: "fill" | "line", pixels: number,
 	if mask == nil then
 		return nil
 	end
+	local gridKey = if filled then `{shape}:solid` else shape
+	local pixelsBuffer = rasterGrid(gridFor(gridKey, mask), kind, pixels)
 	local created: EditableImage? = nil
 	local ok = pcall(function()
 		created = AssetService:CreateEditableImage({
 			Size = Vector2.new(SIZE, SIZE),
 		})
+		if created ~= nil then
+			created:WritePixelsBuffer(Vector2.zero, Vector2.new(SIZE, SIZE), pixelsBuffer)
+		end
 	end)
 	if not ok or created == nil then
 		unavailable = true
 		warn("[InkMasters] Clean stencils need Allow Mesh / Image APIs, in Experience Settings, Security")
 		return nil
 	end
-	local gridKey = if filled then `{shape}:solid` else shape
-	created:WritePixelsBuffer(Vector2.zero, Vector2.new(SIZE, SIZE), rasterGrid(gridFor(gridKey, mask), kind, pixels))
 	styled[key] = created
 	return created
 end

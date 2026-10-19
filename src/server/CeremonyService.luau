@@ -16,6 +16,7 @@ local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local RoundManager = require(script.Parent.RoundManager)
 local RoundRewards = require(script.Parent.RoundRewards)
 local RoundTypes = require(ReplicatedStorage.Shared.RoundTypes)
+local WinnerStage = require(script.Parent.WinnerStage)
 
 type RoundState = RoundTypes.RoundState
 type LockedDesign = DesignService.LockedDesign
@@ -35,6 +36,8 @@ local VOTE_COOLDOWN_SECONDS = 0.3
 local phase = "Idle"
 local revision = 0
 local showcaseStart: number? = nil
+local phaseEnds: number? = nil
+local staged = false
 local votes: { [number]: number } = {}
 local places: { PlaceRow } = {}
 local talliedRound = 0
@@ -105,6 +108,7 @@ local function broadcast()
 			phase = phase,
 			secondsEach = GameConfig.getShowcaseSlice(),
 			showcaseStart = showcaseStart,
+			phaseEnds = phaseEnds,
 			yourVote = choice,
 			yourTotal = PlayerEconomy.getCoins(player),
 			entries = entries,
@@ -213,6 +217,20 @@ local function onVote(player: Player, target: any)
 	broadcast()
 end
 
+local function endsIn(seconds: number?): number?
+	if seconds == nil or seconds <= 0 then
+		return nil
+	end
+	return Workspace:GetServerTimeNow() + seconds
+end
+
+local function leaveStage()
+	if staged then
+		staged = false
+		WinnerStage.release()
+	end
+end
+
 local function prepare(state: RoundState): number?
 	local roundId = RoundManager.getRoundId()
 	if state == "Intermission" or state == "WaitingForPlayers" or state == "Cleanup" then
@@ -223,36 +241,54 @@ local function prepare(state: RoundState): number?
 			talliedRound = 0
 			showcaseStart = nil
 		end
+		leaveStage()
 		phase = "Idle"
+		phaseEnds = nil
 		broadcast()
 		return nil
 	end
 	if state == "Submission" then
 		DesignService.capture(roundId, RoundManager.getContestants())
 		phase = "TimeUp"
+		phaseEnds = endsIn(GameConfig.getDuration(state))
 		broadcast()
 		return nil
 	end
 	if state == "Showcase" then
 		DesignService.lock(roundId)
 		showcaseStart = Workspace:GetServerTimeNow()
-		phase = "Showcase"
-		broadcast()
 		local count = math.max(1, #DesignService.getLocked())
-		return count * GameConfig.getShowcaseSlice()
+		local duration = count * GameConfig.getShowcaseSlice()
+		staged = true
+		WinnerStage.gather()
+		phase = "Showcase"
+		phaseEnds = endsIn(duration)
+		broadcast()
+		return duration
 	end
 	if state == "Voting" then
 		phase = "Voting"
+		phaseEnds = endsIn(GameConfig.getDuration(state))
 		broadcast()
 		return nil
 	end
 	if state == "Results" then
 		tally()
+		if staged then
+			local podium = {}
+			for _, place in places do
+				table.insert(podium, place.userId)
+			end
+			WinnerStage.crown(podium)
+		end
 		phase = "Party"
+		phaseEnds = endsIn(GameConfig.getDuration(state))
 		broadcast()
 		return nil
 	end
+	leaveStage()
 	phase = "Idle"
+	phaseEnds = nil
 	broadcast()
 	return nil
 end

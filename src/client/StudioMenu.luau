@@ -4,11 +4,14 @@
 -- It only displays the server's profile and forwards button presses.
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 local PlayerData = require(script.Parent.PlayerData)
 local ProfileTab = require(script.Parent.ProfileTab)
+local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local RewardsTab = require(script.Parent.RewardsTab)
+local RoundTypes = require(ReplicatedStorage.Shared.RoundTypes)
 local Sfx = require(script.Parent.Sfx)
 local ShopTab = require(script.Parent.ShopTab)
 local UiKit = require(script.Parent.UiKit)
@@ -42,15 +45,17 @@ function StudioMenu.start()
 	bar.AnchorPoint = Vector2.new(0, 1)
 	bar.Position = UDim2.new(0, UiTheme.safe.side, 1, -UiTheme.safe.side)
 	bar.AutomaticSize = Enum.AutomaticSize.X
-	bar.Size = UDim2.fromOffset(0, 48)
-	UiKit.stroke(bar, UiTheme.color.gold, 1, 0)
-	UiKit.padding(bar, 6, 10, 6, 10)
+	bar.Size = UDim2.fromOffset(0, 52)
+	UiKit.corner(bar, 12)
+	UiKit.stroke(bar, UiTheme.color.gold, 1.5, 0.05)
+	UiKit.padding(bar, 8, 12, 8, 12)
 	local barRow = UiKit.list(bar, Enum.FillDirection.Horizontal, 10)
 	barRow.VerticalAlignment = Enum.VerticalAlignment.Center
 
-	local openButton = UiKit.button(bar, "STUDIO", 14, UiTheme.color.ink, UiTheme.color.gold, 2)
+	local openButton = UiKit.button(bar, "Shop", 14, UiTheme.color.ink, UiTheme.color.gold, 8)
 	openButton.LayoutOrder = 1
-	openButton.Size = UDim2.fromOffset(96, 34)
+	openButton.Size = UDim2.fromOffset(88, 34)
+	UiKit.stroke(openButton, Color3.fromRGB(150, 110, 50), 1, 0.35)
 
 	local coinPip = UiKit.frame(bar, UiTheme.color.gold, 0)
 	coinPip.LayoutOrder = 2
@@ -77,32 +82,54 @@ function StudioMenu.start()
 	panel.AnchorPoint = Vector2.new(0.5, 0.5)
 	panel.Position = UDim2.new(0.5, 0, 0.5, -8)
 	panel.Size = UDim2.new(0.9, 0, 1, -88)
-	UiKit.stroke(panel, UiTheme.color.gold, 1, 0.15)
+	UiKit.corner(panel, 14)
+	UiKit.stroke(panel, UiTheme.color.gold, 2, 0.08)
 	local limit = Instance.new("UISizeConstraint")
 	limit.MaxSize = Vector2.new(1180, 820)
 	limit.Parent = panel
 
-	local kicker = UiKit.label(panel, "INK MASTERS", 11, UiTheme.font.bold, UiTheme.color.gold)
-	kicker.Position = UDim2.fromOffset(22, 14)
+	-- Flash-sheet crop marks in the corners.
+	local function crop(x: number, y: number, ox: number, oy: number)
+		local mark = Instance.new("Frame")
+		mark.BackgroundTransparency = 1
+		mark.AnchorPoint = Vector2.new(0.5, 0.5)
+		mark.Position = UDim2.new(x, ox, y, oy)
+		mark.Size = UDim2.fromOffset(16, 16)
+		mark.Parent = panel
+		local h = UiKit.frame(mark, UiTheme.color.gold, 0.15)
+		h.Size = UDim2.fromOffset(16, 2)
+		h.Position = UDim2.fromOffset(0, if oy < 0 then 14 else 0)
+		local v = UiKit.frame(mark, UiTheme.color.gold, 0.15)
+		v.Size = UDim2.fromOffset(2, 16)
+		v.Position = UDim2.fromOffset(if ox < 0 then 14 else 0, 0)
+	end
+	crop(0, 0, 18, 18)
+	crop(1, 0, -18, 18)
+	crop(0, 1, 18, -18)
+	crop(1, 1, -18, -18)
+
+	local kicker = UiKit.label(panel, "INK-OFF", 11, UiTheme.font.bold, UiTheme.color.gold)
+	kicker.Position = UDim2.fromOffset(28, 12)
 	kicker.Size = UDim2.fromOffset(220, 14)
 
-	local title = UiKit.label(panel, "Studio", 28, UiTheme.font.heavy, UiTheme.color.paper)
-	title.Position = UDim2.fromOffset(22, 26)
-	title.Size = UDim2.fromOffset(220, 34)
+	local title = UiKit.label(panel, "Shop", 24, UiTheme.font.heavy, UiTheme.color.paper)
+	title.Position = UDim2.fromOffset(28, 24)
+	title.Size = UDim2.fromOffset(220, 28)
 
-	local close = UiKit.button(panel, "Close", 14, UiTheme.color.paper, UiTheme.color.chip, 2)
+	local close = UiKit.button(panel, "Close", 14, UiTheme.color.paper, UiTheme.color.chip, 8)
 	close.AnchorPoint = Vector2.new(1, 0)
-	close.Position = UDim2.new(1, -16, 0, 18)
-	close.Size = UDim2.fromOffset(84, 32)
+	close.Position = UDim2.new(1, -20, 0, 16)
+	close.Size = UDim2.fromOffset(88, 32)
+	UiKit.stroke(close, UiTheme.color.stroke, 1, 0.35)
 
-	local rule = UiKit.frame(panel, UiTheme.color.gold, 0)
-	rule.Position = UDim2.fromOffset(22, 68)
-	rule.Size = UDim2.new(1, -44, 0, 1)
+	local rule = UiKit.frame(panel, UiTheme.color.gold, 0.2)
+	rule.Position = UDim2.fromOffset(28, 56)
+	rule.Size = UDim2.new(1, -56, 0, 1)
 
 	local tabRow = Instance.new("Frame")
 	tabRow.BackgroundTransparency = 1
-	tabRow.Position = UDim2.fromOffset(22, 76)
-	tabRow.Size = UDim2.new(1, -44, 0, 32)
+	tabRow.Position = UDim2.fromOffset(22, 58)
+	tabRow.Size = UDim2.new(1, -44, 0, 28)
 	tabRow.Parent = panel
 	local tabLayout = UiKit.list(tabRow, Enum.FillDirection.Horizontal, 18)
 	tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
@@ -110,8 +137,8 @@ function StudioMenu.start()
 	local body = Instance.new("Frame")
 	body.Name = "Body"
 	body.BackgroundTransparency = 1
-	body.Position = UDim2.fromOffset(18, 116)
-	body.Size = UDim2.new(1, -36, 1, -132)
+	body.Position = UDim2.fromOffset(18, 90)
+	body.Size = UDim2.new(1, -36, 1, -106)
 	body.Parent = panel
 
 	local pages: { [string]: Frame } = {}
@@ -140,7 +167,7 @@ function StudioMenu.start()
 	local rewards = RewardsTab.build(rewardsPage)
 	local profile = ProfileTab.build(profilePage)
 
-	local loading = UiKit.label(body, "Loading your studio…", 18, UiTheme.font.bold, UiTheme.color.muted)
+	local loading = UiKit.label(body, "Loading the shop…", 18, UiTheme.font.bold, UiTheme.color.muted)
 	loading.Size = UDim2.fromScale(1, 1)
 	loading.TextXAlignment = Enum.TextXAlignment.Center
 
@@ -202,9 +229,13 @@ function StudioMenu.start()
 	local function setOpen(open: boolean)
 		dim.Visible = open
 		if open then
-			panel.Position = UDim2.new(0.5, 0, 0.54, -8)
-			TweenService:Create(panel, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			dim.BackgroundTransparency = 1
+			panel.Position = UDim2.new(0.5, 0, 0.58, -8)
+			panel.Size = UDim2.new(0.84, 0, 0.9, -88)
+			TweenService:Create(dim, TweenInfo.new(0.2), { BackgroundTransparency = 0.45 }):Play()
+			TweenService:Create(panel, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
 				Position = UDim2.new(0.5, 0, 0.5, -8),
+				Size = UDim2.new(0.9, 0, 1, -88),
 			}):Play()
 			refresh()
 		end
@@ -222,6 +253,21 @@ function StudioMenu.start()
 	PlayerData.changed:Connect(refresh)
 	show("Shop")
 	refresh()
+
+	Remotes.RoundStateUpdated.OnClientEvent:Connect(function(payload: any)
+		local snapshot = RoundTypes.readSnapshot(payload)
+		if snapshot == nil then
+			return
+		end
+		local ceremony = snapshot.state == "Submission"
+			or snapshot.state == "Showcase"
+			or snapshot.state == "Voting"
+			or snapshot.state == "Results"
+		bar.Visible = not ceremony
+		if ceremony then
+			setOpen(false)
+		end
+	end)
 end
 
 return StudioMenu

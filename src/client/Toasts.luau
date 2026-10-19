@@ -1,13 +1,14 @@
 --!strict
 
 -- Small messages along the bottom of the screen: purchases, rewards, level-ups, and errors.
--- The server sends the real ones. Local code uses Toasts.show for hints like "that ink is locked".
+-- Big moments (welcome, daily ink, level-up) go through Fanfare instead.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local Fanfare = require(script.Parent.Fanfare)
 local PlayerData = require(script.Parent.PlayerData)
 local Sfx = require(script.Parent.Sfx)
 local UiKit = require(script.Parent.UiKit)
@@ -41,7 +42,6 @@ function Toasts.show(text: string, kind: string)
 		return
 	end
 
-	-- Drop the oldest when the stack is full.
 	local live = {}
 	for _, child in holder:GetChildren() do
 		if child:IsA("Frame") then
@@ -62,13 +62,29 @@ function Toasts.show(text: string, kind: string)
 	toast.LayoutOrder = order
 	toast.AutomaticSize = Enum.AutomaticSize.XY
 	toast.Size = UDim2.fromOffset(0, 0)
+	toast.BackgroundTransparency = 1
 	UiKit.corner(toast, 12)
-	UiKit.stroke(toast, accent, 1.5, 0.2)
+	local stroke = UiKit.stroke(toast, accent, 1.5, 0.2)
+	stroke.Transparency = 1
 	UiKit.padding(toast, 10, 16, 10, 16)
+
+	local pip = UiKit.frame(toast, accent, 0)
+	pip.Size = UDim2.fromOffset(6, 6)
+	pip.LayoutOrder = 0
+	pip.Rotation = 45
+	UiKit.list(toast, Enum.FillDirection.Horizontal, 10).VerticalAlignment = Enum.VerticalAlignment.Center
 
 	local label = UiKit.label(toast, text, 16, UiTheme.font.bold, UiTheme.color.text)
 	label.AutomaticSize = Enum.AutomaticSize.XY
 	label.Size = UDim2.fromOffset(0, 0)
+	label.LayoutOrder = 1
+	label.TextTransparency = 1
+
+	TweenService:Create(toast, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		BackgroundTransparency = 0.04,
+	}):Play()
+	TweenService:Create(stroke, TweenInfo.new(0.22), { Transparency = 0.2 }):Play()
+	TweenService:Create(label, TweenInfo.new(0.22), { TextTransparency = 0 }):Play()
 
 	if kind == "error" then
 		Sfx.play("error")
@@ -90,6 +106,61 @@ function Toasts.show(text: string, kind: string)
 	end)
 end
 
+local function routeNotice(payload: any)
+	if typeof(payload) ~= "table" or typeof(payload.text) ~= "string" or typeof(payload.kind) ~= "string" then
+		return
+	end
+	if #payload.text > 140 then
+		return
+	end
+
+	local kind = payload.kind
+	if kind == "welcome" then
+		Fanfare.show({
+			kind = "welcome",
+			title = if typeof(payload.text) == "string" and payload.text ~= ""
+				then payload.text
+				else "Welcome to Ink-Off, here are some coins to start!",
+			coins = if typeof(payload.coins) == "number" then payload.coins else nil,
+		})
+		return
+	end
+	if kind == "login" then
+		-- Skip if the auto daily prompt already claimed; still show a quick celebration.
+		Fanfare.show({
+			kind = "login",
+			title = if typeof(payload.title) == "string" then payload.title else "Daily ink",
+			subtitle = if typeof(payload.day) == "number" then `Day {payload.day}` else nil,
+			detail = payload.text,
+			coins = if typeof(payload.coins) == "number" then payload.coins else nil,
+		})
+		return
+	end
+	if kind == "level" then
+		Fanfare.show({
+			kind = "level",
+			title = "Level up",
+			detail = payload.text,
+			coins = if typeof(payload.coins) == "number" then payload.coins else nil,
+		})
+		return
+	end
+	if kind == "achievement" then
+		Fanfare.show({
+			kind = "achievement",
+			title = "Unlocked",
+			detail = payload.text,
+		})
+		return
+	end
+
+	local view = PlayerData.get()
+	if kind == "info" and view ~= nil and not view.settings.hints then
+		return
+	end
+	Toasts.show(payload.text, kind)
+end
+
 function Toasts.start()
 	if started then
 		return
@@ -105,13 +176,13 @@ function Toasts.start()
 		existing:Destroy()
 	end
 
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "InkMastersToasts"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = true
-	gui.DisplayOrder = 60
-	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	gui.Parent = playerGui
+	local screen = Instance.new("ScreenGui")
+	screen.Name = "InkMastersToasts"
+	screen.ResetOnSpawn = false
+	screen.IgnoreGuiInset = true
+	screen.DisplayOrder = 60
+	screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	screen.Parent = playerGui
 
 	local holder = Instance.new("Frame")
 	holder.Name = "Stack"
@@ -120,25 +191,13 @@ function Toasts.start()
 	holder.Size = UDim2.fromOffset(520, 0)
 	holder.AutomaticSize = Enum.AutomaticSize.Y
 	holder.BackgroundTransparency = 1
-	holder.Parent = gui
+	holder.Parent = screen
 	local layout = UiKit.list(holder, Enum.FillDirection.Vertical, 8)
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
 	stack = holder
 
-	Remotes.ProfileNotice.OnClientEvent:Connect(function(payload: any)
-		if typeof(payload) ~= "table" or typeof(payload.text) ~= "string" or typeof(payload.kind) ~= "string" then
-			return
-		end
-		if #payload.text > 140 then
-			return
-		end
-		local view = PlayerData.get()
-		if payload.kind == "info" and view ~= nil and not view.settings.hints then
-			return
-		end
-		Toasts.show(payload.text, payload.kind)
-	end)
+	Remotes.ProfileNotice.OnClientEvent:Connect(routeNotice)
 end
 
 return Toasts

@@ -130,7 +130,7 @@ local function earnedPack(id: string, name: string, description: string, unlockT
 end
 
 -- Free shapes stay out of every pack: circle, square, triangle, line, heart, star.
-earnedPack("geometry", "Geometry", "Rectangle, oval, diamond, hex, drop, and arc.", "Reach level 4", {
+earnedPack("geometry", "Geometry desk", "Rectangle, oval, diamond, hex, drop, and arc.", "Reach level 4", {
 	"rect",
 	"ovalline",
 	"gem",
@@ -138,14 +138,14 @@ earnedPack("geometry", "Geometry", "Rectangle, oval, diamond, hex, drop, and arc
 	"dropline",
 	"arc",
 })
-pack("motion", "Motion", "Arrow, cross, wave, zigzag, and blob.", 280, 2, {
+pack("motion", "Motion set", "Arrow, cross, wave, zigzag, and blob.", 280, 2, {
 	"pointer",
 	"crossline",
 	"wave",
 	"zigzag",
 	"blob",
 })
-pack("garden", "Sky and garden", "Moon, sun, flower, cloud, and leaf shapes.", 350, 2, {
+pack("garden", "Sky & garden", "Moon, sun, flower, cloud, and leaf.", 350, 2, {
 	"moon",
 	"sun",
 	"flower",
@@ -160,25 +160,44 @@ pack("flash", "Bold flash", "Bolts, bursts, sparks, banners, and steps.", 400, 3
 	"chevronline",
 	"stepline",
 })
-pack("crest", "Royal crest", "A crown, a shield, and a watching eye.", 500, 5, {
+pack("crest", "Royal crest", "Crown, shield, and a watching eye.", 500, 5, {
 	"crown",
 	"shield",
 	"eye",
 })
-
-local function title(id: string, name: string, text: string, description: string, price: number, level: number)
-	table.insert(items, {
-		id = `title:{id}`,
-		name = name,
-		description = description,
-		category = "title",
-		price = price,
-		level = level,
-		earned = false,
-		text = text,
-		accent = rgb(242, 196, 122),
-	})
-end
+pack("marks", "Shop marks", "Ring, X, plus, arrow, and saltire cuts.", 320, 2, {
+	"ring",
+	"saltire",
+	"plus",
+	"arrow",
+	"slash",
+})
+pack("signal", "Signal pack", "Target, half-moon, spark, burst, and banner.", 380, 3, {
+	"target",
+	"half",
+	"spark",
+	"burst",
+	"banner",
+})
+pack("classic", "Classic flash", "Heart, bolt, drop, chevron, and steps.", 420, 4, {
+	"heart",
+	"bolt",
+	"drop",
+	"chevron",
+	"steps",
+})
+earnedPack(
+	"starter_tools",
+	"Needle tray",
+	"Bar, pill, disc, and corner — the liner's starter kit.",
+	"Reach level 6",
+	{
+		"band",
+		"pill",
+		"disc",
+		"corner",
+	}
+)
 
 local function earnedTitle(id: string, name: string, text: string, description: string, unlockText: string)
 	table.insert(items, {
@@ -195,13 +214,14 @@ local function earnedTitle(id: string, name: string, text: string, description: 
 	})
 end
 
-title("steady", "Steady Hand", "Steady Hand", "Shown over your head and in the display case.", 200, 1)
-title("liner", "Line Wizard", "Line Wizard", "For artists who love a clean line.", 250, 2)
-title("collector", "Flash Collector", "Flash Collector", "A shelf full of shapes.", 400, 4)
-title("needle", "Needle Hand", "Needle Hand", "Quick, bold, and confident.", 600, 6)
-title("parlour", "Parlour Regular", "Parlour Regular", "You practically live here.", 1200, 12)
+-- Titles are earned on the level track (or by wins). None of them are for sale.
+earnedTitle("steady", "Steady Hand", "Steady Hand", "Shown over your head and in the display case.", "Reach level 2")
 earnedTitle("rookie", "Ink Rookie", "Ink Rookie", "Your first milestone title.", "Reach level 3")
+earnedTitle("liner", "Line Wizard", "Line Wizard", "For artists who love a clean line.", "Reach level 5")
+earnedTitle("collector", "Flash Collector", "Flash Collector", "A shelf full of shapes.", "Reach level 7")
+earnedTitle("needle", "Needle Hand", "Needle Hand", "Quick, bold, and confident.", "Reach level 9")
 earnedTitle("legend", "Parlour Legend", "Parlour Legend", "Known by every artist in the shop.", "Reach level 10")
+earnedTitle("parlour", "Parlour Regular", "Parlour Regular", "You practically live here.", "Reach level 12")
 earnedTitle("master", "Ink Master", "Ink Master", "The shop's own title.", "Reach level 20")
 earnedTitle("icon", "Living Icon", "Living Icon", "The top of the level track.", "Reach level 30")
 earnedTitle("gold", "Gold Needle", "Gold Needle", "Awarded for winning five rounds.", "Win 5 rounds")
@@ -242,7 +262,14 @@ local function frame(
 	})
 end
 
-local function earnedFrame(id: string, name: string, description: string, unlockText: string, accent: Rgb, style: string)
+local function earnedFrame(
+	id: string,
+	name: string,
+	description: string,
+	unlockText: string,
+	accent: Rgb,
+	style: string
+)
 	if FRAME_STYLES[style] ~= true then
 		error(`[InkMasters] Frame {id} has unknown style {style}`)
 	end
@@ -312,7 +339,7 @@ table.insert(items, {
 	price = 0,
 	level = 1,
 	earned = true,
-	unlockText = "Reach level 5",
+	unlockText = "Reach level 11",
 	palette = { rgb(120, 230, 214), rgb(255, 255, 255), rgb(60, 170, 190) },
 })
 table.insert(items, {
