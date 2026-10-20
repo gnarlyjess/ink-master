@@ -9,6 +9,7 @@ local TweenService = game:GetService("TweenService")
 
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Fanfare = require(script.Parent.Fanfare)
+local Juice = require(script.Parent.Juice)
 local PlayerData = require(script.Parent.PlayerData)
 local Sfx = require(script.Parent.Sfx)
 local UiKit = require(script.Parent.UiKit)
@@ -18,12 +19,12 @@ local MAX_VISIBLE = 4
 local LIFETIME_SECONDS = 3.6
 
 local KIND_COLOR: { [string]: Color3 } = {
-	ok = UiTheme.color.aqua,
+	ok = UiTheme.color.lime,
 	item = UiTheme.color.violet,
-	level = UiTheme.color.gold,
-	achievement = UiTheme.color.gold,
-	error = UiTheme.color.magenta,
-	info = UiTheme.color.muted,
+	level = UiTheme.color.sunshine,
+	achievement = UiTheme.color.hotPink,
+	error = UiTheme.color.coral,
+	info = UiTheme.color.electric,
 }
 
 local function parentOf(instance: Instance): Instance?
@@ -57,34 +58,42 @@ function Toasts.show(text: string, kind: string)
 
 	order += 1
 	local accent = KIND_COLOR[kind] or UiTheme.color.muted
-	local toast = UiKit.frame(holder, UiTheme.color.panel, 0.04)
+	local toast = UiKit.frame(holder, UiTheme.color.panel, 1)
 	toast.Name = "Toast"
 	toast.LayoutOrder = order
 	toast.AutomaticSize = Enum.AutomaticSize.XY
 	toast.Size = UDim2.fromOffset(0, 0)
-	toast.BackgroundTransparency = 1
-	UiKit.corner(toast, 12)
-	local stroke = UiKit.stroke(toast, accent, 1.5, 0.2)
-	stroke.Transparency = 1
-	UiKit.padding(toast, 10, 16, 10, 16)
+	UiKit.corner(toast, 14)
+	local stroke = UiKit.stroke(toast, accent, 2.5, 1)
+	UiKit.padding(toast, 11, 18, 11, 18)
 
 	local pip = UiKit.frame(toast, accent, 0)
-	pip.Size = UDim2.fromOffset(6, 6)
+	pip.Size = UDim2.fromOffset(10, 10)
 	pip.LayoutOrder = 0
 	pip.Rotation = 45
 	UiKit.list(toast, Enum.FillDirection.Horizontal, 10).VerticalAlignment = Enum.VerticalAlignment.Center
 
-	local label = UiKit.label(toast, text, 16, UiTheme.font.bold, UiTheme.color.text)
+	local label = UiKit.label(toast, text, 16, UiTheme.font.heavy, UiTheme.color.text)
 	label.AutomaticSize = Enum.AutomaticSize.XY
 	label.Size = UDim2.fromOffset(0, 0)
 	label.LayoutOrder = 1
 	label.TextTransparency = 1
+	label.TextStrokeTransparency = 0.85
+	label.TextStrokeColor3 = accent
 
-	TweenService:Create(toast, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		BackgroundTransparency = 0.04,
+	local scale = Instance.new("UIScale")
+	scale.Scale = 0.7
+	scale.Parent = toast
+
+	TweenService:Create(toast, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		BackgroundTransparency = 0.02,
 	}):Play()
-	TweenService:Create(stroke, TweenInfo.new(0.22), { Transparency = 0.2 }):Play()
-	TweenService:Create(label, TweenInfo.new(0.22), { TextTransparency = 0 }):Play()
+	TweenService:Create(stroke, TweenInfo.new(0.28), { Transparency = 0.05 }):Play()
+	TweenService:Create(label, TweenInfo.new(0.28), { TextTransparency = 0 }):Play()
+	TweenService:Create(scale, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		Scale = 1,
+	}):Play()
+	Juice.punch(pip, 1.4)
 
 	if kind == "error" then
 		Sfx.play("error")
@@ -99,6 +108,7 @@ function Toasts.show(text: string, kind: string)
 			return
 		end
 		local fade = TweenService:Create(toast, TweenInfo.new(0.3), { BackgroundTransparency = 1 })
+		TweenService:Create(scale, TweenInfo.new(0.3), { Scale = 0.85 }):Play()
 		fade:Play()
 		label.TextTransparency = 0.4
 		task.wait(0.3)
@@ -120,7 +130,8 @@ local function routeNotice(payload: any)
 			kind = "welcome",
 			title = if typeof(payload.text) == "string" and payload.text ~= ""
 				then payload.text
-				else "Welcome to Ink-Off, here are some coins to start!",
+				else "Welcome to Ink-Off!",
+			subtitle = "Starter coins unlocked",
 			coins = if typeof(payload.coins) == "number" then payload.coins else nil,
 		})
 		return
@@ -129,7 +140,7 @@ local function routeNotice(payload: any)
 		-- Skip if the auto daily prompt already claimed; still show a quick celebration.
 		Fanfare.show({
 			kind = "login",
-			title = if typeof(payload.title) == "string" then payload.title else "Daily ink",
+			title = if typeof(payload.title) == "string" then payload.title else "Daily ink!",
 			subtitle = if typeof(payload.day) == "number" then `Day {payload.day}` else nil,
 			detail = payload.text,
 			coins = if typeof(payload.coins) == "number" then payload.coins else nil,
@@ -139,7 +150,7 @@ local function routeNotice(payload: any)
 	if kind == "level" then
 		Fanfare.show({
 			kind = "level",
-			title = "Level up",
+			title = "Level up!",
 			detail = payload.text,
 			coins = if typeof(payload.coins) == "number" then payload.coins else nil,
 		})
@@ -148,7 +159,7 @@ local function routeNotice(payload: any)
 	if kind == "achievement" then
 		Fanfare.show({
 			kind = "achievement",
-			title = "Unlocked",
+			title = "Unlocked!",
 			detail = payload.text,
 		})
 		return

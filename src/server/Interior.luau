@@ -7,6 +7,7 @@
 
 local ServerStorage = game:GetService("ServerStorage")
 
+local Bathroom = require(script.Parent.Bathroom)
 local Surfaces = require(script.Parent.Surfaces)
 
 local P = Surfaces.part
@@ -17,7 +18,9 @@ local Interior = {}
 
 local CEILING_Y = 16.2
 local FLOOR_TOP = 0.4
-local HALF_W = 34
+-- Must match Lobby.luau. Design coords were authored for half-width 34.
+local DESIGN_HALF_W = 34
+local HALF_W = 28
 local HALF_D = 27
 local WALL = 1
 
@@ -26,6 +29,10 @@ local RIGHT_FACE = HALF_W - WALL / 2
 local BACK_FACE = HALF_D - WALL / 2 - 0.18
 local WORK_Z = -6.5
 local WORK_TOP = FLOOR_TOP + 0.04
+
+local function sx(x: number): number
+	return x * HALF_W / DESIGN_HALF_W
+end
 
 local ART = {
 	tiger = "rbxassetid://78543816327515",
@@ -51,10 +58,10 @@ local DARK_METAL = Color3.fromRGB(96, 96, 100)
 local LEAF_GREEN = Color3.fromRGB(58, 86, 50)
 
 local STATIONS = {
-	{ index = 1, origin = Vector3.new(-23, FLOOR_TOP, 3), yaw = 0 },
-	{ index = 2, origin = Vector3.new(-23, FLOOR_TOP, 16), yaw = 0 },
-	{ index = 3, origin = Vector3.new(23, FLOOR_TOP, 3), yaw = math.pi },
-	{ index = 4, origin = Vector3.new(23, FLOOR_TOP, 16), yaw = math.pi },
+	{ index = 1, origin = Vector3.new(sx(-23), FLOOR_TOP, 3), yaw = 0 },
+	{ index = 2, origin = Vector3.new(sx(-23), FLOOR_TOP, 16), yaw = 0 },
+	{ index = 3, origin = Vector3.new(sx(23), FLOOR_TOP, 3), yaw = math.pi },
+	{ index = 4, origin = Vector3.new(sx(23), FLOOR_TOP, 16), yaw = math.pi },
 }
 
 local function noShadow(tint: Color3?): Surfaces.Opts
@@ -177,7 +184,7 @@ local function buildFloorZones(root: Instance)
 		{ collide = true }
 	)
 	local joint = Color3.fromRGB(64, 62, 60)
-	for _, x in { -11.5, 11.5 } do
+	for _, x in { sx(-11.5), sx(11.5) } do
 		P(
 			floors,
 			"SawCut",
@@ -304,66 +311,70 @@ local function buildCeiling(root: Instance)
 		)
 	end
 
-	-- Galvanised supply duct, off-centre so the ceiling doesn't mirror the floor plan.
-	local ductX, ductY, ductZ0, ductZ1 = -10, 14.1, -25.4, 26
-	P(
-		ceiling,
-		"Duct",
-		Vector3.new(ductZ1 - ductZ0, 1.5, 1.5),
-		CFrame.new(ductX, ductY, (ductZ0 + ductZ1) / 2) * CFrame.Angles(0, math.pi / 2, 0),
-		"steel",
-		{ shape = Enum.PartType.Cylinder, tint = Color3.fromRGB(196, 198, 200) }
-	)
-	for _, z in { -22, -8, 8, 23 } do
+	-- Galvanised supply ducts: one over the lounge bays, one over the work side by the restroom.
+	local ductY, ductZ0, ductZ1 = 14.1, -25.4, 26
+	local function runDuct(ductX: number, hangers: { number }, outlets: { number })
 		P(
 			ceiling,
-			"DuctBand",
-			Vector3.new(0.12, 1.56, 1.56),
-			CFrame.new(ductX, ductY, z) * CFrame.Angles(0, math.pi / 2, 0),
+			"Duct",
+			Vector3.new(ductZ1 - ductZ0, 1.5, 1.5),
+			CFrame.new(ductX, ductY, (ductZ0 + ductZ1) / 2) * CFrame.Angles(0, math.pi / 2, 0),
 			"steel",
-			{
-				shape = Enum.PartType.Cylinder,
-				tint = Color3.fromRGB(150, 152, 154),
-				shadow = false,
-			}
+			{ shape = Enum.PartType.Cylinder, tint = Color3.fromRGB(196, 198, 200) }
 		)
-		P(
-			ceiling,
-			"DuctHanger",
-			Vector3.new(0.06, CEILING_Y - ductY, 0.12),
-			CFrame.new(ductX + 0.78, (CEILING_Y + ductY) / 2, z),
-			"steel",
-			noShadow()
-		)
-		P(
-			ceiling,
-			"DuctHanger",
-			Vector3.new(0.06, CEILING_Y - ductY, 0.12),
-			CFrame.new(ductX - 0.78, (CEILING_Y + ductY) / 2, z),
-			"steel",
-			noShadow()
-		)
+		for _, z in hangers do
+			P(
+				ceiling,
+				"DuctBand",
+				Vector3.new(0.12, 1.56, 1.56),
+				CFrame.new(ductX, ductY, z) * CFrame.Angles(0, math.pi / 2, 0),
+				"steel",
+				{
+					shape = Enum.PartType.Cylinder,
+					tint = Color3.fromRGB(150, 152, 154),
+					shadow = false,
+				}
+			)
+			P(
+				ceiling,
+				"DuctHanger",
+				Vector3.new(0.06, CEILING_Y - ductY, 0.12),
+				CFrame.new(ductX + 0.78, (CEILING_Y + ductY) / 2, z),
+				"steel",
+				noShadow()
+			)
+			P(
+				ceiling,
+				"DuctHanger",
+				Vector3.new(0.06, CEILING_Y - ductY, 0.12),
+				CFrame.new(ductX - 0.78, (CEILING_Y + ductY) / 2, z),
+				"steel",
+				noShadow()
+			)
+		end
+		for _, z in outlets do
+			post(
+				ceiling,
+				"Diffuser",
+				0.35,
+				1.0,
+				Vector3.new(ductX, ductY - 1.05, z),
+				"steel",
+				noShadow(Color3.fromRGB(170, 172, 174))
+			)
+			post(
+				ceiling,
+				"DiffuserGrille",
+				0.02,
+				0.92,
+				Vector3.new(ductX, ductY - 1.07, z),
+				"paint",
+				noShadow(Color3.fromRGB(40, 40, 42))
+			)
+		end
 	end
-	for _, z in { -17, 0, 15 } do
-		post(
-			ceiling,
-			"Diffuser",
-			0.35,
-			1.0,
-			Vector3.new(ductX, ductY - 1.05, z),
-			"steel",
-			noShadow(Color3.fromRGB(170, 172, 174))
-		)
-		post(
-			ceiling,
-			"DiffuserGrille",
-			0.02,
-			0.92,
-			Vector3.new(ductX, ductY - 1.07, z),
-			"paint",
-			noShadow(Color3.fromRGB(40, 40, 42))
-		)
-	end
+	runDuct(-10, { -22, -8, 8, 23 }, { -17, 0, 15 })
+	runDuct(10, { -22, -8, 8, 23 }, { -12, 4, 18 })
 
 	-- Linear pendants across the aisle, so from the door they read as horizontal bands
 	-- instead of stripes pointing at the theme board.
@@ -384,7 +395,7 @@ local function buildCeiling(root: Instance)
 	end
 
 	local smoke = Color3.fromRGB(232, 232, 228)
-	for _, spot in { Vector3.new(-14, 0, -6), Vector3.new(14, 0, 9), Vector3.new(-4, 0, 21) } do
+	for _, spot in { Vector3.new(sx(-14), 0, -6), Vector3.new(sx(14), 0, 9), Vector3.new(sx(-4), 0, 21) } do
 		post(
 			ceiling,
 			"SmokeDetector",
@@ -583,7 +594,7 @@ end
 local function bayFin(parent: Instance, side: number, z: number)
 	local fin = Surfaces.folder(parent, "BayDivider")
 	local wallX = if side < 0 then LEFT_FACE else RIGHT_FACE
-	local innerX = side * 27.2
+	local innerX = side * sx(27.2)
 	local length = math.abs(wallX - innerX) - 0.1
 	local cx = (wallX + innerX) / 2
 	local height = 7.4
@@ -774,7 +785,7 @@ local function bayKit(
 
 	local gloves = wallAt(wall, -3.4, 7.15, 0.02)
 	P(bay, "GloveRack", Vector3.new(1.7, 1.1, 0.04), gloves, "steel", noShadow())
-	local boxColors = { Color3.fromRGB(92, 70, 150), Color3.fromRGB(48, 82, 152), INK }
+	local boxColors = { Color3.fromRGB(92, 70, 150), Color3.fromRGB(48, 82, 152), Color3.fromRGB(58, 62, 70) }
 	for i, color in boxColors do
 		P(
 			bay,
@@ -834,8 +845,10 @@ end
 
 local function buildBays(root: Instance)
 	local bays = Surfaces.folder(root, "Bays")
+	-- Two screens per side, framing the front station and splitting the pair.
+	-- (A third / back screen used to crowd the restroom door and the left store wall.)
 	for _, side in { -1, 1 } do
-		for _, z in { -3.5, 9.5, 22.5 } do
+		for _, z in { -3.5, 9.5 } do
 			bayFin(bays, side, z)
 		end
 	end
@@ -936,7 +949,7 @@ end
 
 local function buildReception(root: Instance)
 	local desk = Surfaces.folder(root, "Reception")
-	local origin = Vector3.new(24.6, FLOOR_TOP, -16.4)
+	local origin = Vector3.new(sx(24.6), FLOOR_TOP, -16.4)
 	-- Customer side faces the aisle (-X). Local +X runs toward the street, +Z toward the staff.
 	local cf = CFrame.lookAt(origin, origin + Vector3.new(-1, 0, 0))
 	local L = 11
@@ -1140,14 +1153,22 @@ local function buildReception(root: Instance)
 		)
 	end
 	local products = {
-		Color3.fromRGB(22, 22, 24),
+		Color3.fromRGB(64, 72, 86),
 		Color3.fromRGB(232, 226, 214),
-		Color3.fromRGB(22, 22, 24),
-		Color3.fromRGB(122, 40, 40),
+		Color3.fromRGB(92, 58, 48),
+		Color3.fromRGB(148, 52, 56),
 	}
 	for i = 0, 11 do
 		local spot = credenza * CFrame.new(-4.6 + i * 0.36, 3.04, -0.2)
-		post(desk, "Aftercare", 0.55 + (i % 3) * 0.1, 0.26, spot.Position, "paint", noShadow(products[i % 4 + 1]))
+		post(
+			desk,
+			"Aftercare",
+			0.55 + (i % 3) * 0.1,
+			0.26,
+			spot.Position,
+			"glass",
+			{ tint = products[i % 4 + 1], transparency = 0.12, shadow = false }
+		)
 	end
 	P(desk, "Speaker", Vector3.new(0.8, 1.2, 0.7), credenza * CFrame.new(5.6, 3.64, 0), "powder", noShadow())
 	post(
@@ -1272,7 +1293,7 @@ local function buildReception(root: Instance)
 		Surfaces.glow(bulb, WARM, 0.9, 12)
 	end
 
-	plant(desk, Vector3.new(21.4, FLOOR_TOP, -23.6), 1.2, 1.5, "powder", nil, 4.2, "snake", 11)
+	plant(desk, Vector3.new(sx(21.4), FLOOR_TOP, -23.6), 1.2, 1.5, "powder", nil, 4.2, "snake", 11)
 end
 
 ------------------------------------------------------------------------------------------
@@ -1350,29 +1371,29 @@ local function buildLounge(root: Instance)
 	local rug = P(
 		lounge,
 		"Rug",
-		Vector3.new(9.45, 0.04, 12.6),
-		CFrame.new(-27.4, FLOOR_TOP + 0.02, -16.4),
+		Vector3.new(sx(9.45), 0.04, 12.6),
+		CFrame.new(sx(-27.4), FLOOR_TOP + 0.02, -16.4),
 		"fabric",
 		noShadow(Color3.fromRGB(92, 40, 36))
 	)
 	Surfaces.decal(rug, Enum.NormalId.Top, RUG_ART)
 
-	local sofaOrigin = Vector3.new(-31.0, FLOOR_TOP, -16.4)
+	local sofaOrigin = Vector3.new(sx(-31.0), FLOOR_TOP, -16.4)
 	sofa(lounge, CFrame.lookAt(sofaOrigin, sofaOrigin + Vector3.new(1, 0, 0)), 8.4, 3, "leather")
 	for i, z in { -19.2, -13.7 } do
 		ellipsoid(
 			lounge,
 			"Cushion",
 			Vector3.new(0.5, 1.2, 1.35),
-			CFrame.new(-31.7, 2.2, z) * CFrame.Angles(0, 0, -0.25) * CFrame.Angles(i * 0.1, 0, 0),
+			CFrame.new(sx(-31.7), 2.2, z) * CFrame.Angles(0, 0, -0.25) * CFrame.Angles(i * 0.1, 0, 0),
 			"leatherOx"
 		)
 	end
 
-	local chairOrigin = Vector3.new(-22.6, FLOOR_TOP, -22.4)
-	sofa(lounge, CFrame.lookAt(chairOrigin, Vector3.new(-27.5, FLOOR_TOP, -15.8)), 3.4, 1, "leatherOx")
+	local chairOrigin = Vector3.new(sx(-22.6), FLOOR_TOP, -22.4)
+	sofa(lounge, CFrame.lookAt(chairOrigin, Vector3.new(sx(-27.5), FLOOR_TOP, -15.8)), 3.4, 1, "leatherOx")
 
-	local tableCf = CFrame.new(-26.0, FLOOR_TOP, -16.4)
+	local tableCf = CFrame.new(sx(-26.0), FLOOR_TOP, -16.4)
 	for _, x in { -0.95, 0.95 } do
 		for _, z in { -2.3, 2.3 } do
 			P(lounge, "TableLeg", Vector3.new(0.1, 1.36, 0.1), tableCf * CFrame.new(x, 0.68, z), "powder")
@@ -1410,7 +1431,7 @@ local function buildLounge(root: Instance)
 		noShadow(Color3.fromRGB(226, 220, 208))
 	)
 
-	local side = Vector3.new(-31.5, FLOOR_TOP, -10.9)
+	local side = Vector3.new(sx(-31.5), FLOOR_TOP, -10.9)
 	post(lounge, "SideTableFoot", 0.08, 1.1, side, "walnut")
 	post(lounge, "SideTableStem", 1.9, 0.16, side, "walnut")
 	post(lounge, "SideTableTop", 0.1, 1.5, side + Vector3.new(0, 1.9, 0), "walnut", { collide = true })
@@ -1429,7 +1450,7 @@ local function buildLounge(root: Instance)
 	})
 	Surfaces.glow(shade, WARM, 1.1, 12)
 
-	local floorLamp = Vector3.new(-32.3, FLOOR_TOP, -21.9)
+	local floorLamp = Vector3.new(sx(-32.3), FLOOR_TOP, -21.9)
 	post(lounge, "LampFoot", 0.08, 1.0, floorLamp, "powder")
 	post(lounge, "LampStem", 5.6, 0.1, floorLamp, "powder")
 	local drum = post(lounge, "DrumShade", 1.1, 1.7, floorLamp + Vector3.new(0, 5.3, 0), "fabric", {
@@ -1441,7 +1462,7 @@ local function buildLounge(root: Instance)
 
 	plant(
 		lounge,
-		Vector3.new(-31.7, FLOOR_TOP, -24.9),
+		Vector3.new(sx(-31.7), FLOOR_TOP, -24.9),
 		2.0,
 		1.9,
 		"powder",
@@ -1463,11 +1484,11 @@ end
 local function buildBackWall(root: Instance)
 	local back = Surfaces.folder(root, "BackWall")
 
-	artwork(back, backWall(-9.0, 8.3), 4.2, 5.6, ART.tiger, "walnut", true)
-	artwork(back, backWall(-13.7, 9.4), 2.4, 3.2, ART.snake, "powder", false)
-	artwork(back, backWall(-13.7, 6.2), 2.4, 2.4, ART.mandala, "brass", false)
-	artwork(back, backWall(9.2, 8.0), 4.2, 5.6, ART.koi, "powder", true)
-	artwork(back, backWall(13.9, 9.9), 2.4, 3.2, ART.moth, "walnut", false)
+	artwork(back, backWall(sx(-9.0), 8.3), 4.2, 5.6, ART.tiger, "walnut", true)
+	artwork(back, backWall(sx(-13.7), 9.4), 2.4, 3.2, ART.snake, "powder", false)
+	artwork(back, backWall(sx(-13.7), 6.2), 2.4, 2.4, ART.mandala, "brass", false)
+	artwork(back, backWall(sx(9.2), 8.0), 4.2, 5.6, ART.koi, "powder", true)
+	artwork(back, backWall(sx(13.9), 9.9), 2.4, 3.2, ART.moth, "walnut", false)
 
 	local credenza = backWall(0, WORK_TOP)
 	P(back, "Credenza", Vector3.new(9.0, 2.5, 1.4), credenza * CFrame.new(0, 1.25, -0.7), "walnut", { collide = true })
@@ -1539,7 +1560,7 @@ end
 
 local function buildStorage(root: Instance)
 	local store = Surfaces.folder(root, "Storage")
-	local cf = backWall(-24.6, WORK_TOP)
+	local cf = backWall(sx(-24.6), WORK_TOP)
 	local L = 15.8
 	P(store, "Plinth", Vector3.new(L - 0.2, 0.3, 1.6), cf * CFrame.new(0, 0.15, -0.9), "powder")
 	P(store, "Cabinets", Vector3.new(L, 2.9, 1.9), cf * CFrame.new(0, 0.3 + 1.45, -0.95), "walnut", { collide = true })
@@ -1611,8 +1632,15 @@ local function buildStorage(root: Instance)
 		"paint",
 		noShadow(Color3.fromRGB(236, 236, 232))
 	)
-	local binders =
-		{ INK, Color3.fromRGB(110, 34, 36), INK, Color3.fromRGB(70, 76, 60), INK, Color3.fromRGB(196, 186, 166), INK }
+	local binders = {
+		Color3.fromRGB(48, 54, 68),
+		Color3.fromRGB(110, 34, 36),
+		Color3.fromRGB(62, 58, 52),
+		Color3.fromRGB(70, 76, 60),
+		Color3.fromRGB(52, 48, 64),
+		Color3.fromRGB(196, 186, 166),
+		Color3.fromRGB(86, 64, 48),
+	}
 	for i, color in binders do
 		local h = 1.1 + (i % 3) * 0.15
 		P(
@@ -1692,8 +1720,9 @@ end
 
 local function buildWashUp(root: Instance)
 	local wash = Surfaces.folder(root, "WashUp")
-	local cf = backWall(24.6, WORK_TOP)
-	local L = 15.8
+	-- Shortened so the restroom door (x 26 to 30) stays clear.
+	local cf = backWall(sx(20.7), WORK_TOP)
+	local L = 8.0
 	P(
 		wash,
 		"Plinth",
@@ -1728,7 +1757,7 @@ local function buildWashUp(root: Instance)
 	local top = 3.32
 	P(wash, "Splashback", Vector3.new(L + 0.2, 4.4, 0.08), cf * CFrame.new(0, top + 2.2, -0.04), "tile")
 
-	local sinkU = -3.6
+	local sinkU = -1.5
 	P(
 		wash,
 		"Basin",
@@ -1761,7 +1790,7 @@ local function buildWashUp(root: Instance)
 	local soap = cf * CFrame.new(sinkU + 1.9, top + 2.2, -0.28)
 	P(wash, "SoapDispenser", Vector3.new(0.55, 0.9, 0.4), soap, "paint", noShadow(Color3.fromRGB(238, 238, 234)))
 	P(wash, "SoapNozzle", Vector3.new(0.12, 0.12, 0.14), soap * CFrame.new(0, -0.5, -0.1), "steel", noShadow())
-	local towels = cf * CFrame.new(sinkU - 2.2, top + 2.6, -0.3)
+	local towels = cf * CFrame.new(sinkU - 1.55, top + 2.6, -0.3)
 	P(wash, "TowelDispenser", Vector3.new(1.3, 1.5, 0.45), towels, "steel")
 	P(
 		wash,
@@ -1772,7 +1801,7 @@ local function buildWashUp(root: Instance)
 		noShadow(Color3.fromRGB(236, 236, 232))
 	)
 
-	local clave = cf * CFrame.new(3.1, top + 0.55, -1.0)
+	local clave = cf * CFrame.new(1.55, top + 0.55, -1.0)
 	P(wash, "Autoclave", Vector3.new(1.9, 1.1, 1.5), clave, "steel")
 	P(wash, "AutoclaveDoor", Vector3.new(1.2, 0.8, 0.02), clave * CFrame.new(-0.2, 0, -0.76), "powder", noShadow())
 	local display = P(
@@ -1784,9 +1813,9 @@ local function buildWashUp(root: Instance)
 		noShadow(INK)
 	)
 	Surfaces.label(display, Enum.NormalId.Front, "134°C", Color3.fromRGB(90, 230, 140), Enum.Font.Code, 96, 0)
-	P(wash, "Ultrasonic", Vector3.new(1.0, 0.5, 0.7), cf * CFrame.new(0.9, top + 0.25, -1.1), "steel")
+	P(wash, "Ultrasonic", Vector3.new(0.85, 0.5, 0.65), cf * CFrame.new(0.15, top + 0.25, -1.15), "steel")
 	for i = 0, 1 do
-		local bottle = (cf * CFrame.new(5.0 + i * 0.4, top, -1.2)).Position
+		local bottle = (cf * CFrame.new(3.15 + i * 0.32, top, -1.15)).Position
 		post(
 			wash,
 			"SprayBottle",
@@ -1805,32 +1834,19 @@ local function buildWashUp(root: Instance)
 			noShadow(INK)
 		)
 	end
-	for i = 0, 3 do
-		P(
-			wash,
-			"Towel",
-			Vector3.new(1.3, 0.16, 0.9),
-			cf * CFrame.new(6.6, top + 0.08 + i * 0.16, -1.0),
-			"fabric",
-			noShadow(Color3.fromRGB(240, 238, 232))
-		)
-	end
-
 	local shelfCf = cf * CFrame.new(0, 9.1, -0.6)
 	local shelf = P(wash, "OpenShelf", Vector3.new(L, 0.08, 1.2), shelfCf, "steel")
 	Surfaces.wash(shelf, Enum.NormalId.Bottom, NEUTRAL, 1.0, 8, 130, false)
-	for _, u in { -6, 0, 6 } do
+	for _, u in { -2.4, 2.4 } do
 		P(wash, "ShelfBracket", Vector3.new(0.06, 0.5, 1.1), shelfCf * CFrame.new(u, -0.29, 0), "steel", noShadow())
 	end
 	local boxes: { { w: number, h: number, color: Color3 } } = {
 		{ w = 1.0, h = 0.6, color = Color3.fromRGB(92, 70, 150) },
 		{ w = 1.0, h = 0.6, color = Color3.fromRGB(48, 82, 152) },
-		{ w = 1.0, h = 0.6, color = INK },
-		{ w = 1.6, h = 0.9, color = Color3.fromRGB(236, 236, 232) },
-		{ w = 1.2, h = 0.7, color = Color3.fromRGB(200, 186, 160) },
+		{ w = 1.15, h = 0.7, color = Color3.fromRGB(236, 236, 232) },
 		{ w = 1.0, h = 0.5, color = Color3.fromRGB(120, 168, 150) },
 	}
-	local u = -6.6
+	local u = -3.4
 	for _, box in boxes do
 		P(
 			wash,
@@ -1843,7 +1859,7 @@ local function buildWashUp(root: Instance)
 		u += box.w + 0.25
 	end
 
-	local bin = (cf * CFrame.new(7.0, 0, -2.5)).Position
+	local bin = (cf * CFrame.new(-3.2, 0, -2.4)).Position
 	post(wash, "PedalBin", 1.6, 1.0, bin, "steel", { collide = true })
 	post(wash, "BinLid", 0.08, 1.04, bin + Vector3.new(0, 1.6, 0), "powder", noShadow())
 end
@@ -1913,7 +1929,7 @@ local function buildDetails(root: Instance)
 	)
 	Surfaces.label(sign, Enum.NormalId.Front, "FIRE", Color3.fromRGB(250, 250, 250), Enum.Font.GothamBold, 64)
 
-	local sanitiser = Vector3.new(15.2, FLOOR_TOP, -7.6)
+	local sanitiser = Vector3.new(sx(15.2), FLOOR_TOP, -7.6)
 	post(details, "SanitiserBase", 0.06, 1.0, sanitiser, "powder")
 	post(details, "SanitiserPole", 3.4, 0.14, sanitiser, "powder")
 	P(
@@ -1925,7 +1941,7 @@ local function buildDetails(root: Instance)
 		noShadow(Color3.fromRGB(238, 238, 234))
 	)
 
-	ellipsoid(details, "SecurityDome", Vector3.new(0.6, 0.4, 0.6), CFrame.new(31.5, CEILING_Y - 0.1, -24.5), "glass", {
+	ellipsoid(details, "SecurityDome", Vector3.new(0.6, 0.4, 0.6), CFrame.new(sx(31.5), CEILING_Y - 0.1, -24.5), "glass", {
 		tint = Color3.fromRGB(30, 30, 34),
 		transparency = 0.2,
 		shadow = false,
@@ -2227,7 +2243,7 @@ local function buildGreenery(root: Instance)
 	end
 
 	for _, spot in { { -8, -20 }, { 8, -20 }, { -9, 7 }, { 9, 7 }, { -7, 22 }, { 7, 22 }, { -18, -8 }, { 18, 14 } } do
-		suspend(spot[1], spot[2], 40 + math.abs(spot[1]) + math.abs(spot[2]))
+		suspend(sx(spot[1]), spot[2], 40 + math.abs(spot[1]) + math.abs(spot[2]))
 	end
 
 	for _, side in { -1, 1 } do
@@ -2238,18 +2254,18 @@ local function buildGreenery(root: Instance)
 
 	-- Species and whole-plant height. Corners get the tall fiddle-leaf; the aisle stays open.
 	local floorPots = {
-		{ Vector3.new(-29.5, FLOOR_TOP, -23.4), "PlantFig", 5.3, 31 },
-		{ Vector3.new(30.2, FLOOR_TOP, -22.8), "PlantFern", 3.1, 32 },
-		{ Vector3.new(-18.5, FLOOR_TOP, -23.8), "PlantSnake", 3.3, 33 },
-		{ Vector3.new(16.5, FLOOR_TOP, -23.2), "PlantFern", 2.4, 34 },
-		{ Vector3.new(-14.5, FLOOR_TOP, -5.2), "PlantSnake", 2.9, 35 },
-		{ Vector3.new(14.5, FLOOR_TOP, -5.2), "PlantFern", 2.2, 36 },
-		{ Vector3.new(-15.5, FLOOR_TOP, 23.4), "PlantFig", 4.1, 37 },
-		{ Vector3.new(15.5, FLOOR_TOP, 23.4), "PlantSnake", 3.2, 38 },
-		{ Vector3.new(-30.5, FLOOR_TOP, 8), "PlantSnake", 3.0, 39 },
-		{ Vector3.new(30.5, FLOOR_TOP, 10), "PlantFern", 2.7, 41 },
-		{ Vector3.new(-31.2, FLOOR_TOP, 22.6), "PlantFern", 2.5, 42 },
-		{ Vector3.new(31.2, FLOOR_TOP, 22.8), "PlantFig", 4.4, 43 },
+		{ Vector3.new(sx(-29.5), FLOOR_TOP, -23.4), "PlantFig", 5.3, 31 },
+		{ Vector3.new(sx(30.2), FLOOR_TOP, -22.8), "PlantFern", 3.1, 32 },
+		{ Vector3.new(sx(-18.5), FLOOR_TOP, -23.8), "PlantSnake", 3.3, 33 },
+		{ Vector3.new(sx(16.5), FLOOR_TOP, -23.2), "PlantFern", 2.4, 34 },
+		{ Vector3.new(sx(-14.5), FLOOR_TOP, -5.2), "PlantSnake", 2.9, 35 },
+		{ Vector3.new(sx(14.5), FLOOR_TOP, -5.2), "PlantFern", 2.2, 36 },
+		{ Vector3.new(sx(-15.5), FLOOR_TOP, 23.4), "PlantFig", 4.1, 37 },
+		{ Vector3.new(sx(15.5), FLOOR_TOP, 23.4), "PlantSnake", 3.2, 38 },
+		{ Vector3.new(sx(-30.5), FLOOR_TOP, 8), "PlantSnake", 3.0, 39 },
+		{ Vector3.new(sx(30.5), FLOOR_TOP, 10), "PlantFern", 2.7, 41 },
+		{ Vector3.new(sx(-31.2), FLOOR_TOP, 22.6), "PlantFern", 2.5, 42 },
+		{ Vector3.new(sx(32.0), FLOOR_TOP, 21.2), "PlantFig", 4.0, 43 },
 	}
 	for _, spot in floorPots do
 		local at = spot[1] :: Vector3
@@ -2263,8 +2279,16 @@ local function buildGreenery(root: Instance)
 		end
 	end
 
+	-- A small succulent on the restroom vanity, beside the vessel basin.
+	do
+		local at = Vector3.new(sx(32.95), 3.3, 32.7)
+		if not placeMeshPlant(green, "PlantSucculent", at, 0.52, 0.6, false) then
+			plant(green, at, 0.5, 0.35, "paint", cream, 0.4, "succulent", 44)
+		end
+	end
+
 	for _, x in { -15.2, -19.6, -24.2, 15.2, 19.6, 24.2 } do
-		local at = Vector3.new(x, 3.97, -26.28)
+		local at = Vector3.new(sx(x), 3.97, -26.28)
 		local seed = 100 + math.floor(x)
 		if not placeMeshPlant(green, "PlantSucculent", at, 0.68, math.rad((seed * 41) % 360), false) then
 			plant(green, at, 0.55, 0.4, "paint", cream, 0.45, "succulent", seed)
@@ -2302,6 +2326,9 @@ function Interior.build(lobby: Model)
 		end,
 		washUp = function()
 			buildWashUp(root)
+		end,
+		bathroom = function()
+			Bathroom.build(root)
 		end,
 		details = function()
 			buildDetails(root)

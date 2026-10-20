@@ -10,11 +10,14 @@ local GuiService = game:GetService("GuiService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
-local BodyRegions = require(game:GetService("ReplicatedStorage").Shared.BodyRegions)
-local DesignDocument = require(game:GetService("ReplicatedStorage").Shared.DesignDocument)
-local GameConfig = require(game:GetService("ReplicatedStorage").Shared.GameConfig)
-local InkColors = require(game:GetService("ReplicatedStorage").Shared.InkColors)
-local StencilDefinitions = require(game:GetService("ReplicatedStorage").Shared.StencilDefinitions)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local BodyRegions = require(ReplicatedStorage.Shared.BodyRegions)
+local Catalogue = require(ReplicatedStorage.Shared.Catalogue)
+local DesignDocument = require(ReplicatedStorage.Shared.DesignDocument)
+local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
+local InkColors = require(ReplicatedStorage.Shared.InkColors)
+local StencilDefinitions = require(ReplicatedStorage.Shared.StencilDefinitions)
+local FrameDress = require(script.Parent.FrameDress)
 local StencilView = require(script.Parent.StencilView)
 local UiTheme = require(script.Parent.UiTheme)
 
@@ -24,8 +27,31 @@ type BodyRegion = BodyRegions.BodyRegion
 
 local leftExtra = 0
 local stage: Frame? = nil
+local boardStroke: UIStroke? = nil
+local caseFrameId: string? = nil
 local overridePosition: UDim2? = nil
 local overrideSize: UDim2? = nil
+
+local function applyCaseFrame()
+	local board = stage
+	if board == nil then
+		return
+	end
+	FrameDress.clear(board)
+	local stroke = boardStroke
+	local worn = if caseFrameId ~= nil and caseFrameId ~= "" then Catalogue.get(caseFrameId) else nil
+	local accent = if worn ~= nil then worn.accent else nil
+	if worn == nil or accent == nil or worn.category ~= "frame" then
+		if stroke ~= nil then
+			stroke.Transparency = 0.25
+		end
+		return
+	end
+	if stroke ~= nil then
+		stroke.Transparency = 1
+	end
+	FrameDress.mount(board, worn.style or "line", Catalogue.toColor3(accent), 2)
+end
 
 local function stageFrame(): (UDim2, UDim2)
 	if overridePosition ~= nil and overrideSize ~= nil then
@@ -70,6 +96,12 @@ function TattooCanvas.setMargins(extra: number)
 	applyStage()
 end
 
+-- Equipped display-case frame preview around the limb board.
+function TattooCanvas.setCaseFrame(itemId: string?)
+	caseFrameId = if itemId ~= nil and itemId ~= "" then itemId else nil
+	applyCaseFrame()
+end
+
 -- Ceremony pins the tattoo to a pane. nil, nil restores the editor layout.
 function TattooCanvas.setStageOverride(position: UDim2?, size: UDim2?)
 	overridePosition = position
@@ -89,6 +121,7 @@ local shownDesign: TattooDesign? = nil
 local shownSelection: number? = nil
 local photoCharacter: Model? = nil
 local photoRegionId: string? = nil
+local photoClone: Model? = nil
 local skinToneId = "yours"
 local acceptsInput = true
 local viewZoom = 1
@@ -147,6 +180,7 @@ local onBlank: () -> () = function() end
 local onMove: (number, number, number) -> () = function(_index: number, _x: number, _y: number) end
 local onTransform: (number, number, number) -> () = function(_index: number, _rotation: number, _scale: number) end
 local onAdjustStarted: () -> () = function() end
+local onDeleteMark: (number) -> () = function(_index: number) end
 
 type GestureMode = "move" | HandleMode
 
@@ -181,18 +215,32 @@ local function corner(parent: Instance, radius: number)
 	uiCorner.Parent = parent
 end
 
+local function destroyNamedGuis(playerGui: Instance, name: string)
+	for _, child in playerGui:GetChildren() do
+		if child.Name == name then
+			child:Destroy()
+		end
+	end
+end
+
 local function destroyCanvas()
-	if photoGui ~= nil then
+	local player = Players.LocalPlayer
+	local playerGui = if player ~= nil then player:FindFirstChild("PlayerGui") else nil
+	if playerGui ~= nil then
+		-- Sweep duplicates from Main running twice (Client RunContext under StarterPlayerScripts).
+		destroyNamedGuis(playerGui, "InkMastersCanvas")
+		destroyNamedGuis(playerGui, "InkMastersInk")
+	elseif photoGui ~= nil then
 		photoGui:Destroy()
-		photoGui = nil
-	end
-	if inkGui ~= nil then
+	elseif inkGui ~= nil then
 		inkGui:Destroy()
-		inkGui = nil
 	end
+	photoGui = nil
+	inkGui = nil
 	surfacePad = nil
 	viewWindow = nil
 	stage = nil
+	boardStroke = nil
 	photoLayer = nil
 	canvasDim = nil
 	captionLabel = nil
@@ -200,6 +248,7 @@ local function destroyCanvas()
 	zoomReadout = nil
 	photoCharacter = nil
 	photoRegionId = nil
+	photoClone = nil
 	viewZoom = 1
 	viewPan = Vector2.zero
 	panDrag = nil
@@ -276,6 +325,12 @@ end
 local function avatarSkin(character: Model): Color3
 	local colors = character:FindFirstChildOfClass("BodyColors")
 	if colors ~= nil then
+		local ok, value = pcall(function()
+			return colors.LeftLegColor3
+		end)
+		if ok and typeof(value) == "Color3" then
+			return value
+		end
 		return colors.LeftLegColor.Color
 	end
 	local leg = character:FindFirstChild("LeftUpperLeg") or character:FindFirstChild("Left Leg")
@@ -295,8 +350,35 @@ local function toneColor(character: Model): Color3
 end
 
 local function paintBare(clone: Model, color: Color3)
+	local bodyColors = clone:FindFirstChildOfClass("BodyColors")
+	if bodyColors ~= nil then
+		-- Prefer Color3 fields so light tones (e.g. Fair / Yours) don't snap via BrickColor.
+		local ok = pcall(function()
+			bodyColors.HeadColor3 = color
+			bodyColors.LeftArmColor3 = color
+			bodyColors.RightArmColor3 = color
+			bodyColors.LeftLegColor3 = color
+			bodyColors.RightLegColor3 = color
+			bodyColors.TorsoColor3 = color
+		end)
+		if not ok then
+			local brick = BrickColor.new(color)
+			bodyColors.HeadColor = brick
+			bodyColors.LeftArmColor = brick
+			bodyColors.RightArmColor = brick
+			bodyColors.LeftLegColor = brick
+			bodyColors.RightLegColor = brick
+			bodyColors.TorsoColor = brick
+		end
+	end
+
 	for _, descendant in clone:GetDescendants() do
-		if descendant:IsA("BasePart") and BARE_PARTS[descendant.Name] == true then
+		if descendant:IsA("SurfaceAppearance") then
+			local parent = descendant.Parent
+			if parent ~= nil and parent:IsA("BasePart") and BARE_PARTS[parent.Name] == true then
+				descendant:Destroy()
+			end
+		elseif descendant:IsA("BasePart") and BARE_PARTS[descendant.Name] == true then
 			descendant.Color = color
 			descendant.Material = Enum.Material.SmoothPlastic
 			if descendant:IsA("MeshPart") then
@@ -306,11 +388,99 @@ local function paintBare(clone: Model, color: Color3)
 	end
 end
 
+local function findPhotoClone(): Model?
+	if photoClone ~= nil and photoClone.Parent ~= nil then
+		return photoClone
+	end
+	if photoLayer ~= nil then
+		local world = photoLayer:FindFirstChild("PhotoWorld")
+		if world ~= nil then
+			for _, child in world:GetChildren() do
+				if child:IsA("Model") then
+					photoClone = child
+					return child
+				end
+			end
+		end
+	end
+	return nil
+end
+
+local function allPhotoClones(): { Model }
+	local found: { Model } = {}
+	local seen: { [Model]: boolean } = {}
+	local primary = findPhotoClone()
+	if primary ~= nil then
+		seen[primary] = true
+		table.insert(found, primary)
+	end
+	local player = Players.LocalPlayer
+	local playerGui = if player ~= nil then player:FindFirstChild("PlayerGui") else nil
+	if playerGui ~= nil then
+		for _, gui in playerGui:GetChildren() do
+			if gui.Name == "InkMastersCanvas" then
+				for _, world in gui:GetDescendants() do
+					if world.Name == "PhotoWorld" then
+						for _, child in world:GetChildren() do
+							if child:IsA("Model") and seen[child] ~= true then
+								seen[child] = true
+								table.insert(found, child)
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	return found
+end
+
 local function isLeg(region: BodyRegion): boolean
 	return string.find(region.id, "Thigh") ~= nil or string.find(region.id, "Calf") ~= nil
 end
 
-local function framePart(viewport: ViewportFrame, clone: Model, region: BodyRegion)
+-- Thigh / calf photos look from the outside of the leg; a hanging arm covers the
+-- surface. Swing that side's arm forward ~90° so the limb stays clear.
+local function raiseArmForLegShot(clone: Model, region: BodyRegion)
+	if not isLeg(region) then
+		return
+	end
+	local root = clone:FindFirstChild("HumanoidRootPart")
+	if root == nil or not root:IsA("BasePart") then
+		return
+	end
+	local prefix = if region.side == "right" then "Right" else "Left"
+	local upper = clone:FindFirstChild(`{prefix}UpperArm`)
+	local lower = clone:FindFirstChild(`{prefix}LowerArm`)
+	local hand = clone:FindFirstChild(`{prefix}Hand`)
+	if upper == nil or not upper:IsA("BasePart") then
+		return
+	end
+
+	local attachment = upper:FindFirstChild(`{prefix}ShoulderRigAttachment`)
+	local torso = clone:FindFirstChild("UpperTorso")
+	if torso ~= nil and torso:IsA("BasePart") then
+		local torsoAtt = torso:FindFirstChild(`{prefix}ShoulderRigAttachment`)
+		if torsoAtt ~= nil and torsoAtt:IsA("Attachment") then
+			attachment = torsoAtt
+		end
+	end
+	local pivot = if attachment ~= nil and attachment:IsA("Attachment")
+		then attachment.WorldPosition
+		else upper.Position
+
+	-- Flex the arm forward around the character's right axis (hanging → horizontal).
+	local angle = if prefix == "Left" then -math.rad(90) else math.rad(90)
+	local spin = CFrame.fromAxisAngle(root.CFrame.RightVector, angle)
+	local transform = CFrame.new(pivot) * spin * CFrame.new(-pivot)
+	for _, part in { upper, lower, hand } do
+		if part ~= nil and part:IsA("BasePart") then
+			part.CFrame = transform * part.CFrame
+		end
+	end
+end
+
+local function framePart(viewport: ViewportFrame, clone: Model, region: BodyRegion, loose: boolean?)
 	local part = findPart(clone, region)
 	local root = clone:FindFirstChild("HumanoidRootPart")
 	if part == nil then
@@ -341,13 +511,15 @@ local function framePart(viewport: ViewportFrame, clone: Model, region: BodyRegi
 		focus -= part.CFrame.UpVector * part.Size.Y * 0.2
 	end
 
-	local distance = if region.torso then 3.1 else 1.65
-	local fov = if region.torso then 32 else 28
+	-- Showcase / winner thumbs pull back so the limb isn't cropped.
+	local present = loose == true or presentedCaption ~= nil
+	local distance = if region.torso then (if present then 3.6 else 3.1) else (if present then 2.35 else 1.65)
+	local fov = if region.torso then (if present then 36 else 32) else (if present then 34 else 28)
 	if isLeg(region) then
 		local span = math.max(part.Size.Y, part.Size.X, part.Size.Z)
-		fov = 24
+		fov = if present then 28 else 24
 		distance = (span * 1.5 * 0.5) / math.tan(math.rad(fov * 0.5))
-		distance = math.clamp(distance, 2.8, 7.5)
+		distance = math.clamp(distance, if present then 3.2 else 2.8, 7.5)
 	end
 
 	local camera = Instance.new("Camera")
@@ -401,11 +573,12 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	board.Parent = photo
 	stage = board
 	corner(board, if presentedCaption ~= nil then 18 else 2)
-	local boardStroke = Instance.new("UIStroke")
-	boardStroke.Color = UiTheme.color.gold
-	boardStroke.Thickness = 1
-	boardStroke.Transparency = 0.25
-	boardStroke.Parent = board
+	local outline = Instance.new("UIStroke")
+	outline.Color = UiTheme.color.gold
+	outline.Thickness = 1
+	outline.Transparency = 0.25
+	outline.Parent = board
+	boardStroke = outline
 
 	local viewport = Instance.new("ViewportFrame")
 	viewport.Name = "Photo"
@@ -425,15 +598,18 @@ local function buildCanvas(character: Model, region: BodyRegion)
 
 	local clone = prepareClone(character)
 	paintBare(clone, toneColor(character))
+	raiseArmForLegShot(clone, region)
 	if findPart(clone, region) ~= nil then
 		local world = Instance.new("WorldModel")
 		world.Name = "PhotoWorld"
 		world.Parent = viewport
 		clone.Parent = world
 		framePart(viewport, clone, region)
+		photoClone = clone
 	else
 		viewport.Visible = false
 		clone:Destroy()
+		photoClone = nil
 		warn(`[InkMasters] This avatar has no {region.label} to photograph.`)
 	end
 
@@ -498,7 +674,7 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	tools.Name = "ViewTools"
 	tools.AnchorPoint = Vector2.new(0.5, 1)
 	tools.Position = UDim2.new(0.5, 0, 1, -10)
-	tools.Size = UDim2.fromOffset(248, 36)
+	tools.Size = UDim2.fromOffset(140, 36)
 	tools.BackgroundTransparency = 1
 	tools.ZIndex = 10
 	tools.Visible = presentedCaption == nil
@@ -553,17 +729,13 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	photoCharacter = character
 	photoRegionId = region.id
 	applyView()
+	applyCaseFrame()
 
 	viewButton("−", 32, 1, function()
 		zoomAt(1 / 1.2, windowCenter())
 	end)
 	viewButton("+", 32, 3, function()
 		zoomAt(1.2, windowCenter())
-	end)
-	viewButton("Fit", 52, 4, function()
-		viewZoom = 1
-		viewPan = Vector2.zero
-		applyView()
 	end)
 end
 
@@ -686,6 +858,10 @@ function TattooCanvas.setAdjustStarted(callback: () -> ())
 	onAdjustStarted = callback
 end
 
+function TattooCanvas.setDeleteHandler(handler: (number) -> ())
+	onDeleteMark = handler
+end
+
 local function elementCenter(element: DesignElement): Vector2?
 	local topLeft, layer = viewMetrics()
 	if topLeft == nil or layer == nil then
@@ -730,20 +906,28 @@ local function pickFromPointer(screen: Vector2): (HandleMode?, number?)
 	end
 	local scaleIndex: number? = nil
 	local rotateIndex: number? = nil
+	local deleteIndex: number? = nil
 	local moveIndex: number? = nil
 	for _, object in playerGui:GetGuiObjectsAtPosition(screen.X, screen.Y) do
 		local index = markIndexOf(object)
 		if index ~= nil then
 			local onScale = object.Name == "Scale" or object:FindFirstAncestor("Scale") ~= nil
 			local onRotate = object.Name == "Rotate" or object:FindFirstAncestor("Rotate") ~= nil
+			local onDelete = object.Name == "Delete" or object:FindFirstAncestor("Delete") ~= nil
 			if onScale then
 				scaleIndex = index
 			elseif onRotate then
 				rotateIndex = index
+			elseif onDelete then
+				deleteIndex = index
 			elseif moveIndex == nil then
 				moveIndex = index
 			end
 		end
+	end
+	if deleteIndex ~= nil then
+		-- Handled by the delete button click; do not start a drag.
+		return nil, nil
 	end
 	if scaleIndex ~= nil then
 		return "scale", scaleIndex
@@ -1159,6 +1343,37 @@ local function makeHandle(parent: GuiObject, name: string, kind: HandleMode, pos
 	icon.Parent = button
 end
 
+local function makeDeleteHandle(parent: GuiObject, index: number)
+	local button = Instance.new("TextButton")
+	button.Name = "Delete"
+	button.Text = "×"
+	button.FontFace = UiTheme.font.heavy
+	button.TextSize = 18
+	button.TextColor3 = Color3.fromRGB(255, 250, 245)
+	button.AutoButtonColor = false
+	button.AnchorPoint = Vector2.new(0.5, 0.5)
+	button.Position = UDim2.fromScale(0, 0)
+	button.Size = UDim2.fromOffset(28, 28)
+	button.BackgroundColor3 = UiTheme.color.oxblood
+	button.BorderSizePixel = 0
+	button.Active = true
+	button.Selectable = false
+	button.ZIndex = 40
+	button.Parent = parent
+	local uiCorner = Instance.new("UICorner")
+	uiCorner.CornerRadius = UDim.new(1, 0)
+	uiCorner.Parent = button
+	local outline = Instance.new("UIStroke")
+	outline.Color = Color3.fromRGB(255, 250, 245)
+	outline.Thickness = 1
+	outline.Transparency = 0.25
+	outline.Parent = button
+	local shapeIndex = index
+	button.MouseButton1Click:Connect(function()
+		onDeleteMark(shapeIndex)
+	end)
+end
+
 function TattooCanvas.render(design: TattooDesign, selectedIndex: number?)
 	shownDesign = design
 	shownSelection = selectedIndex
@@ -1216,17 +1431,19 @@ function TattooCanvas.render(design: TattooDesign, selectedIndex: number?)
 		stroke.Parent = mark
 
 		local shape = if stencil ~= nil then stencil.shape else "disc"
+		local asset = if stencil ~= nil then stencil.image else nil
 		StencilView.drawMark(mark, shape, InkColors.toColor3(element.color), InkColors.toColor3(element.line), {
 			fill = element.fill,
 			outline = element.outline,
 			thickness = element.thickness,
 			opacity = element.opacity,
 			flip = element.flip,
-		})
+		}, asset)
 
 		if index == selectedIndex then
 			makeHandle(mark, "Scale", "scale", UDim2.fromScale(1, 1), index)
 			makeHandle(mark, "Rotate", "rotate", UDim2.new(0.5, 0, 0, -ROTATE_LIFT), index)
+			makeDeleteHandle(mark, index)
 		end
 
 		elementFrames[index] = mark
@@ -1270,10 +1487,33 @@ function TattooCanvas.avatarTone(character: Model): Color3
 end
 
 function TattooCanvas.setSkin(id: string)
-	if skinToneId == id then
+	skinToneId = id
+	local character = photoCharacter
+	local regionId = photoRegionId
+	-- "Yours" needs a fresh clone from the live avatar so we restore the real
+	-- tone after other swatches wiped textures / BodyColors on the photo.
+	if id == "yours" and character ~= nil and regionId ~= nil then
+		local region = BodyRegions.get(regionId)
+		if region ~= nil then
+			local design = shownDesign
+			local selection = shownSelection
+			buildCanvas(character, region)
+			if design ~= nil then
+				TattooCanvas.render(design, selection)
+			end
+			return
+		end
+	end
+	-- Recolour every limb photo in place. Paint all canvases in case a duplicate
+	-- ScreenGui is still around from a double client start.
+	local color = if character ~= nil then toneColor(character) else nil
+	local clones = allPhotoClones()
+	if color ~= nil and #clones > 0 then
+		for _, clone in clones do
+			paintBare(clone, color)
+		end
 		return
 	end
-	skinToneId = id
 	photoRegionId = nil
 end
 
@@ -1371,11 +1611,12 @@ function TattooCanvas.snapshot(parent: GuiObject, character: Model, design: Tatt
 
 	local clone = prepareClone(character)
 	paintBare(clone, avatarSkin(character))
+	raiseArmForLegShot(clone, region)
 	if findPart(clone, region) ~= nil then
 		local world = Instance.new("WorldModel")
 		world.Parent = viewport
 		clone.Parent = world
-		framePart(viewport, clone, region)
+		framePart(viewport, clone, region, true)
 	else
 		clone:Destroy()
 	end
@@ -1397,13 +1638,14 @@ function TattooCanvas.snapshot(parent: GuiObject, character: Model, design: Tatt
 		mark.ZIndex = marks.ZIndex + index
 		mark.Parent = marks
 		local shape = if stencil ~= nil then stencil.shape else "disc"
+		local asset = if stencil ~= nil then stencil.image else nil
 		StencilView.drawMark(mark, shape, InkColors.toColor3(element.color), InkColors.toColor3(element.line), {
 			fill = element.fill,
 			outline = element.outline,
 			thickness = element.thickness,
 			opacity = element.opacity,
 			flip = element.flip,
-		})
+		}, asset)
 	end
 	return holder
 end

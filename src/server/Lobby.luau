@@ -11,18 +11,27 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local InkColors = require(ReplicatedStorage.Shared.InkColors)
+local LobbyLayout = require(ReplicatedStorage.Shared.LobbyLayout)
 local ParlourProps = require(script.Parent.ParlourProps)
 local Interior = require(script.Parent.Interior)
+local LayoutBake = require(script.Parent.LayoutBake)
 
 local PREFIX = "[InkMasters]"
 
-local ROOM_WIDTH = 68
+-- Was 68; slimmed so the centre aisle feels less empty. Furniture X coords
+-- authored for the old half-width are scaled with sx() below.
+local DESIGN_HALF_W = 34
+local HALF_W = 28
+local ROOM_WIDTH = HALF_W * 2
 local ROOM_DEPTH = 54
 local WALL = 1
 local CEILING_Y = 16.2
 local FLOOR_TOP = 0.4
-local HALF_W = ROOM_WIDTH / 2
 local HALF_D = ROOM_DEPTH / 2
+
+local function sx(x: number): number
+	return x * HALF_W / DESIGN_HALF_W
+end
 local DOOR_HALF = 5
 local DOOR_HEIGHT = 8.5
 
@@ -341,10 +350,11 @@ local function buildShell(lobby: Model)
 		material = Enum.Material.Plaster,
 		parent = shell,
 	})
+	-- Stops short of the restroom door cut into WallBack below.
 	makePart({
 		name = "BrickFeature",
-		size = Vector3.new(ROOM_WIDTH - 2.4, 11.4, 0.16),
-		cframe = CFrame.new(0, 9.15, HALF_D - WALL / 2 - 0.1),
+		size = Vector3.new(ROOM_WIDTH - 10, 11.4, 0.16),
+		cframe = CFrame.new(sx(-3.8), 9.15, HALF_D - WALL / 2 - 0.1),
 		color = Color3.fromRGB(132, 72, 56),
 		material = Enum.Material.Brick,
 		parent = shell,
@@ -360,10 +370,35 @@ local function buildShell(lobby: Model)
 		collide = false,
 	})
 
+	-- Doorway for the restroom in the back-right corner. Bathroom.luau trims this opening.
+	local doorX0 = sx(26)
+	local doorX1 = sx(30)
+	local doorTop = 8.1
+	local wallLeft = -HALF_W - WALL / 2
+	local wallRight = HALF_W + WALL / 2
+	local leftWidth = doorX0 - wallLeft
+	local rightWidth = wallRight - doorX1
+	local lintelHeight = CEILING_Y - doorTop
 	makePart({
 		name = "WallBack",
-		size = Vector3.new(ROOM_WIDTH + WALL, CEILING_Y, WALL),
-		cframe = CFrame.new(0, CEILING_Y / 2, HALF_D),
+		size = Vector3.new(leftWidth, CEILING_Y, WALL),
+		cframe = CFrame.new(wallLeft + leftWidth / 2, CEILING_Y / 2, HALF_D),
+		color = PALETTE.plaster,
+		material = Enum.Material.Plaster,
+		parent = shell,
+	})
+	makePart({
+		name = "WallBack",
+		size = Vector3.new(rightWidth, CEILING_Y, WALL),
+		cframe = CFrame.new(doorX1 + rightWidth / 2, CEILING_Y / 2, HALF_D),
+		color = PALETTE.plaster,
+		material = Enum.Material.Plaster,
+		parent = shell,
+	})
+	makePart({
+		name = "WallBack",
+		size = Vector3.new(doorX1 - doorX0, lintelHeight, WALL),
+		cframe = CFrame.new((doorX0 + doorX1) / 2, doorTop + lintelHeight / 2, HALF_D),
 		color = PALETTE.plaster,
 		material = Enum.Material.Plaster,
 		parent = shell,
@@ -574,10 +609,34 @@ local function buildShell(lobby: Model)
 		CFrame.new(HALF_W + 0.55, CEILING_Y / 2, 0),
 		true
 	)
+	-- Same doorway as WallBack — must use sx() or the brick skin seals the restroom shut.
+	local extDoorX0 = sx(26)
+	local extDoorX1 = sx(30)
+	local extDoorTop = 8.1
+	local extSpan = ROOM_WIDTH + 1.6
+	local extLeft = -extSpan / 2
+	local extRight = extSpan / 2
+	local extHeight = CEILING_Y + 0.35
+	local extZ = HALF_D + 0.55
+	local extLeftWidth = extDoorX0 - extLeft
+	local extRightWidth = extRight - extDoorX1
+	local extLintel = extHeight / 2 + CEILING_Y / 2 - extDoorTop
 	masonry(
 		"ExteriorBack",
-		Vector3.new(ROOM_WIDTH + 1.6, CEILING_Y + 0.35, 0.42),
-		CFrame.new(0, CEILING_Y / 2, HALF_D + 0.55),
+		Vector3.new(extLeftWidth, extHeight, 0.42),
+		CFrame.new(extLeft + extLeftWidth / 2, CEILING_Y / 2, extZ),
+		true
+	)
+	masonry(
+		"ExteriorBack",
+		Vector3.new(extRightWidth, extHeight, 0.42),
+		CFrame.new(extDoorX1 + extRightWidth / 2, CEILING_Y / 2, extZ),
+		true
+	)
+	masonry(
+		"ExteriorBack",
+		Vector3.new(extDoorX1 - extDoorX0, extLintel, 0.42),
+		CFrame.new((extDoorX0 + extDoorX1) / 2, extDoorTop + extLintel / 2, extZ),
 		true
 	)
 	masonry("Pier", Vector3.new(1.35, CEILING_Y + 0.5, 1.05), CFrame.new(-HALF_W + 0.35, CEILING_Y / 2, faceZ), true)
@@ -871,10 +930,11 @@ end
 local function buildStations(lobby: Model)
 	local stations = makeFolder(lobby, "Stations")
 	-- Local +X points at the aisle, so the stool sits toward the middle.
-	buildStation(stations, 1, Vector3.new(-23, FLOOR_TOP, 3), 0)
-	buildStation(stations, 2, Vector3.new(-23, FLOOR_TOP, 16), 0)
-	buildStation(stations, 3, Vector3.new(23, FLOOR_TOP, 3), math.pi)
-	buildStation(stations, 4, Vector3.new(23, FLOOR_TOP, 16), math.pi)
+	local stationX = sx(23)
+	buildStation(stations, 1, Vector3.new(-stationX, FLOOR_TOP, 3), 0)
+	buildStation(stations, 2, Vector3.new(-stationX, FLOOR_TOP, 16), 0)
+	buildStation(stations, 3, Vector3.new(stationX, FLOOR_TOP, 3), math.pi)
+	buildStation(stations, 4, Vector3.new(stationX, FLOOR_TOP, 16), math.pi)
 end
 
 local function buildEntrance(lobby: Model)
@@ -1077,31 +1137,32 @@ local function buildEntrance(lobby: Model)
 	doorLeaf(1)
 end
 
+-- Standing in front of the glowing NeonSign (back wall ~z=26), not by the door.
+local SPAWN_FACE = Vector3.new(0, 0, 1)
+local SPAWN_SPOTS = {
+	Vector3.new(0, FLOOR_TOP + 0.22, 14),
+	Vector3.new(sx(-3.2), FLOOR_TOP + 0.22, 14),
+	Vector3.new(sx(3.2), FLOOR_TOP + 0.22, 14),
+	Vector3.new(sx(-2.4), FLOOR_TOP + 0.22, 11),
+	Vector3.new(sx(2.4), FLOOR_TOP + 0.22, 11),
+	Vector3.new(sx(-2.4), FLOOR_TOP + 0.22, 17),
+	Vector3.new(sx(2.4), FLOOR_TOP + 0.22, 17),
+	Vector3.new(sx(-5.5), FLOOR_TOP + 0.22, 13),
+	Vector3.new(sx(5.5), FLOOR_TOP + 0.22, 13),
+	Vector3.new(0, FLOOR_TOP + 0.22, 10),
+}
+
 local function buildSpawns(lobby: Model): { SpawnLocation }
 	local folder = makeFolder(lobby, "Spawns")
 	local pads: { SpawnLocation } = {}
-	local spots = {
-		Vector3.new(-7.5, FLOOR_TOP + 0.22, -12),
-		Vector3.new(-2.5, FLOOR_TOP + 0.22, -12),
-		Vector3.new(2.5, FLOOR_TOP + 0.22, -12),
-		Vector3.new(7.5, FLOOR_TOP + 0.22, -12),
-		Vector3.new(-6, FLOOR_TOP + 0.22, -8),
-		Vector3.new(-2, FLOOR_TOP + 0.22, -8),
-		Vector3.new(2, FLOOR_TOP + 0.22, -8),
-		Vector3.new(6, FLOOR_TOP + 0.22, -8),
-		Vector3.new(-4, FLOOR_TOP + 0.22, -15.5),
-		Vector3.new(4, FLOOR_TOP + 0.22, -15.5),
-	}
 
-	for index, spot in spots do
+	for index, spot in SPAWN_SPOTS do
 		local pad = Instance.new("SpawnLocation")
 		pad.Name = `ShopSpawn{index}`
 		pad.Anchored = true
 		pad.Size = Vector3.new(3.2, 0.05, 3.2)
-		pad.CFrame = CFrame.lookAt(
-			Vector3.new(spot.X, FLOOR_TOP + 0.1, spot.Z),
-			Vector3.new(spot.X, FLOOR_TOP + 0.1, spot.Z + 8)
-		)
+		local feet = Vector3.new(spot.X, FLOOR_TOP + 0.1, spot.Z)
+		pad.CFrame = CFrame.lookAt(feet, feet + SPAWN_FACE)
 		pad.Color = PALETTE.woodDark
 		pad.Material = Enum.Material.Wood
 		pad.Transparency = 1
@@ -1112,6 +1173,8 @@ local function buildSpawns(lobby: Model): { SpawnLocation }
 		pad.Neutral = true
 		pad.Duration = 0
 		pad.Enabled = true
+		-- Prefer the room-centre pad so joiners face the glowing neon.
+		pad.RootPriority = if index == 1 then 100 else math.max(0, 20 - index)
 		pad.AllowTeamChangeOnTouch = false
 		pad.Parent = folder
 		for _, child in pad:GetChildren() do
@@ -1128,17 +1191,52 @@ end
 local function pivotOnto(character: Model, pad: SpawnLocation)
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	local root = character:FindFirstChild("HumanoidRootPart")
+	if root == nil or not root:IsA("BasePart") then
+		return
+	end
 	local hip = 3
 	if humanoid ~= nil then
-		local rootHeight = 2
-		if root ~= nil and root:IsA("BasePart") then
-			rootHeight = root.Size.Y
-		end
-		hip = humanoid.HipHeight + rootHeight / 2
+		hip = humanoid.HipHeight + root.Size.Y / 2
 	end
-	local _, yaw, _ = pad.CFrame:ToOrientation()
 	local feet = pad.Position + Vector3.new(0, pad.Size.Y / 2, 0)
-	character:PivotTo(CFrame.new(feet + Vector3.new(0, hip + 0.15, 0)) * CFrame.Angles(0, yaw, 0))
+	local stand = feet + Vector3.new(0, hip + 0.15, 0)
+	local flatLook = Vector3.new(pad.CFrame.LookVector.X, 0, pad.CFrame.LookVector.Z)
+	if flatLook.Magnitude < 0.05 then
+		flatLook = SPAWN_FACE
+	end
+	character:PivotTo(CFrame.lookAt(stand, stand + flatLook.Unit))
+end
+
+local nextPad = 0
+
+local function nextShopPad(pads: { SpawnLocation }): SpawnLocation?
+	if #pads == 0 then
+		return nil
+	end
+	nextPad += 1
+	return pads[((nextPad - 1) % #pads) + 1]
+end
+
+local function seatCharacter(character: Model, pad: SpawnLocation)
+	-- Asking LoadCharacter here deadlocks Studio on the Connecting card.
+	task.spawn(function()
+		local root = character:WaitForChild("HumanoidRootPart", 8)
+		if root == nil or character.Parent == nil then
+			return
+		end
+		local player = Players:GetPlayerFromCharacter(character)
+		if player ~= nil and not player:HasAppearanceLoaded() then
+			player.CharacterAppearanceLoaded:Wait()
+		end
+		-- Default spawn seating can overwrite us for a beat after CharacterAdded.
+		for _ = 1, 6 do
+			if character.Parent == nil then
+				return
+			end
+			pivotOnto(character, pad)
+			task.wait(0.1)
+		end
+	end)
 end
 
 local function placeExistingCharacters(pads: { SpawnLocation })
@@ -1146,17 +1244,33 @@ local function placeExistingCharacters(pads: { SpawnLocation })
 		return
 	end
 
-	-- Only move people who already spawned. Asking for a new character here
-	-- deadlocks Studio on the Connecting card, because the round never starts.
-	local index = 0
 	for _, player in Players:GetPlayers() do
+		player.RespawnLocation = pads[1]
 		local character = player.Character
 		if character ~= nil then
-			index += 1
-			local pad = pads[((index - 1) % #pads) + 1]
-			pivotOnto(character, pad)
+			local pad = nextShopPad(pads)
+			if pad ~= nil then
+				seatCharacter(character, pad)
+			end
 		end
 	end
+end
+
+local function watchShopSpawns(pads: { SpawnLocation })
+	local function onPlayer(player: Player)
+		player.RespawnLocation = pads[1]
+		player.CharacterAdded:Connect(function(character: Model)
+			local pad = nextShopPad(pads)
+			if pad ~= nil then
+				seatCharacter(character, pad)
+			end
+		end)
+	end
+
+	for _, player in Players:GetPlayers() do
+		onPlayer(player)
+	end
+	Players.PlayerAdded:Connect(onPlayer)
 end
 
 local function buildStreet(lobby: Model)
@@ -1330,16 +1444,20 @@ function Lobby.build()
 	lobby.Name = "Lobby"
 	lobby.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 
+	-- Spawns + join watchers first so a character that loads mid-build still gets seated.
+	local pads = buildSpawns(lobby)
+	shopPads = pads
+	watchShopSpawns(pads)
+
 	buildShell(lobby)
 	buildStations(lobby)
 	buildEntrance(lobby)
 	buildStreet(lobby)
 	Interior.build(lobby)
-	local pads = buildSpawns(lobby)
-	shopPads = pads
 
 	lobby.Parent = Workspace
 	ParlourProps.dress(lobby)
+	local posed = LayoutBake.apply(lobby, LobbyLayout)
 	clearDefaultPlace()
 	placeExistingCharacters(pads)
 
@@ -1350,7 +1468,13 @@ function Lobby.build()
 		warn(`{PREFIX} Shop lights skipped`)
 	end
 
-	print(`{PREFIX} Shop open | spawn inside the parlour`)
+	lobby:SetAttribute("ShopReady", true)
+
+	if posed > 0 then
+		print(`{PREFIX} Shop open | layout poses {posed} | spawn inside the parlour`)
+	else
+		print(`{PREFIX} Shop open | spawn inside the parlour`)
+	end
 end
 
 function Lobby.returnToShop()

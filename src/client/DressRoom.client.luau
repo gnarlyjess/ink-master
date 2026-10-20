@@ -4,6 +4,12 @@
 -- server copies render as the blank checker. This rebuilds them locally from the
 -- mesh buffers stored in ReplicatedStorage.DressBins.
 
+-- Skip the StarterPlayerScripts pass when RunContext is Client (boots twice).
+local Players = game:GetService("Players")
+if not script:IsDescendantOf(Players) then
+	return
+end
+
 local AssetService = game:GetService("AssetService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")

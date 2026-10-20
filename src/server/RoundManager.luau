@@ -223,6 +223,8 @@ function machine.refresh()
 	machine.publishWaiting()
 end
 
+local pausedRemaining: number? = nil
+
 function machine.setPaused(want: boolean)
 	if not GameConfig.DevMode or paused == want then
 		return
@@ -231,20 +233,45 @@ function machine.setPaused(want: boolean)
 	paused = want
 	scheduleToken += 1
 	if paused then
+		-- Freeze the clock but keep the current phase (e.g. stay in design).
+		if endsAt ~= nil then
+			pausedRemaining = math.max(1, endsAt - Workspace:GetServerTimeNow())
+		else
+			pausedRemaining = currentDuration
+		end
 		endsAt = nil
-		currentDuration = nil
 		machine.broadcast(nil)
-		print(`{PREFIX} Dev pause on | lobby held`)
+		print(`{PREFIX} Dev pause on | {currentState} held`)
 		return
 	end
 
 	print(`{PREFIX} Dev pause off | round running`)
 	if not inRound or currentState == "WaitingForPlayers" then
+		pausedRemaining = nil
 		if countPlayers() >= GameConfig.getMinPlayers() then
 			machine.beginRound()
 		else
 			machine.publishWaiting()
 		end
+		return
+	end
+
+	-- Resume the same phase with whatever time was left (or a fresh timer).
+	local remaining = pausedRemaining
+	pausedRemaining = nil
+	if remaining ~= nil and remaining > 0 then
+		local token = scheduleToken
+		local heldState = currentState
+		currentDuration = remaining
+		endsAt = Workspace:GetServerTimeNow() + remaining
+		task.delay(remaining, function()
+			if token ~= scheduleToken or currentState ~= heldState or not inRound or paused then
+				return
+			end
+			machine.advance()
+		end)
+		machine.broadcast(nil)
+		print(`{PREFIX} Resumed {RoundTypes.getLabel(heldState)} | {string.format("%.1f", remaining)}s left`)
 		return
 	end
 

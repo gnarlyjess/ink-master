@@ -113,7 +113,7 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 	title.TextXAlignment = Enum.TextXAlignment.Left
 	title.TextTruncate = Enum.TextTruncate.AtEnd
 	title.Text = "Shape"
-	title.Size = UDim2.new(1, -64, 0, 24)
+	title.Size = UDim2.new(1, -130, 0, 24)
 	title.Parent = scroll
 
 	local close = Instance.new("TextButton")
@@ -135,21 +135,19 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 
 	local deleteButton = Instance.new("TextButton")
 	deleteButton.Name = "Delete"
-	deleteButton.LayoutOrder = 16
-	deleteButton.Size = UDim2.new(1, 0, 0, 32)
-	deleteButton.BackgroundColor3 = UiTheme.color.paper
+	deleteButton.AnchorPoint = Vector2.new(1, 0)
+	deleteButton.Position = UDim2.new(1, -70, 0, 10)
+	deleteButton.Size = UDim2.fromOffset(52, 26)
+	deleteButton.BackgroundColor3 = UiTheme.color.oxblood
 	deleteButton.BorderSizePixel = 0
 	deleteButton.FontFace = UiTheme.font.bold
-	deleteButton.TextSize = 14
-	deleteButton.TextColor3 = UiTheme.color.oxblood
-	deleteButton.Text = "Remove mark"
+	deleteButton.TextSize = 13
+	deleteButton.TextColor3 = Color3.fromRGB(255, 250, 245)
+	deleteButton.Text = "Delete"
 	deleteButton.AutoButtonColor = true
-	deleteButton.Parent = scroll
+	deleteButton.ZIndex = 7
+	deleteButton.Parent = card
 	corner(deleteButton, 2)
-	local deleteStroke = Instance.new("UIStroke")
-	deleteStroke.Color = UiTheme.color.oxblood
-	deleteStroke.Thickness = 1
-	deleteStroke.Parent = deleteButton
 	deleteButton.MouseButton1Click:Connect(actions.onDelete)
 
 	local function toggleRow(caption: string, order: number, callback: (boolean) -> ()): TextButton

@@ -12,10 +12,11 @@ local LIVE_MIN_PLAYERS = 5
 local DEV_MIN_PLAYERS = 1
 local MAX_PLAYERS = 10
 
--- Dev design is 10 seconds for now, so the display case and vote are easy to reach.
--- Live design stays at 3 minutes.
-local LIVE_SHOWCASE_SLICE = 8
-local DEV_SHOWCASE_SLICE = 10
+-- Dev design matches live (3 minutes) so you can actually draw.
+-- Use Pause in the editor if you need to stay longer — it freezes the clock
+-- without closing the tattoo book.
+local LIVE_SHOWCASE_SLICE = 4
+local DEV_SHOWCASE_SLICE = 4
 
 local LIVE_TIMERS: { [string]: number } = {
 	Intermission = 15,
@@ -24,18 +25,18 @@ local LIVE_TIMERS: { [string]: number } = {
 	Submission = 5,
 	Showcase = LIVE_SHOWCASE_SLICE,
 	Voting = 10,
-	Results = 18,
+	Results = 12,
 	Cleanup = 4,
 }
 
 local DEV_TIMERS: { [string]: number } = {
 	Intermission = 5,
 	ThemeReveal = 5,
-	TattooCreation = 10,
+	TattooCreation = 180,
 	Submission = 10,
 	Showcase = DEV_SHOWCASE_SLICE,
 	Voting = 10,
-	Results = 14,
+	Results = 10,
 	Cleanup = 2,
 }
 

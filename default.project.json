@@ -3,6 +3,9 @@
   "emitLegacyScripts": false,
   "tree": {
     "$className": "DataModel",
+    "ReplicatedFirst": {
+      "$path": "src/loading"
+    },
     "ReplicatedStorage": {
       "Shared": {
         "$path": "src/shared"

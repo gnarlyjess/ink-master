@@ -35,16 +35,18 @@ local function renderBoard()
 	local snapshot = latest
 	local themeName = if snapshot ~= nil then snapshot.themeName else nil
 	if snapshot ~= nil and snapshot.showTheme and themeName ~= nil then
-		eyebrow.Text = "TONIGHT"
+		eyebrow.Text = "NEXT THEME COMING UP:"
 		eyebrow.Visible = true
 		title.Text = themeName
-		subtitle.Text = snapshot.themeTagline or "Design to the theme."
+		subtitle.Text = ""
+		subtitle.Visible = false
 		return
 	end
 
 	eyebrow.Text = ""
 	eyebrow.Visible = false
 	title.Text = "Ink-Off"
+	subtitle.Visible = true
 	subtitle.Text = "Walk in. The next theme goes up here."
 end
 

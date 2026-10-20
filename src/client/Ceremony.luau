@@ -16,7 +16,9 @@ local CeremonyTypes = require(ReplicatedStorage.Shared.CeremonyTypes)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Fanfare = require(script.Parent.Fanfare)
 local FrameDress = require(script.Parent.FrameDress)
+local Juice = require(script.Parent.Juice)
 local PlayerData = require(script.Parent.PlayerData)
+local RoundResults = require(script.Parent.RoundResults)
 local Sfx = require(script.Parent.Sfx)
 local TattooCanvas = require(script.Parent.TattooCanvas)
 local UiTheme = require(script.Parent.UiTheme)
@@ -39,13 +41,13 @@ local CARD_H = 292
 local CARD_GAP = 18
 local BOARD_TOP = 188
 local COLLAPSE_SECONDS = 0.55
-local REVEAL_HOLD = 4.4
-local STACK_W = 440
-local STACK_H = 520
+local REVEAL_HOLD = 3.2
+local STACK_W = 420
+local STACK_H = 500
 local RAY_COUNT = 8
-local SPLIT = 0.42
-local HEADER_H = 64
-local PANE_GAP = 18
+local SPLIT = 0.38
+local HEADER_H = 56
+local PANE_GAP = 16
 
 local current: CeremonySnapshot? = nil
 local shownPhase = ""
@@ -113,7 +115,6 @@ local winnerName: TextLabel
 local winnerTag: TextLabel
 local winnerThumb: Frame
 local winnerStats: TextLabel
-local runnerRow: Frame
 local yourLine: TextLabel
 
 local emoteRoot: Frame
@@ -542,11 +543,10 @@ local function presentShowcase(snapshot: CeremonySnapshot)
 	local title = titleOf(entry)
 	artistTitle.Text = title
 	artistTitle.Visible = title ~= ""
-	local marks = #entry.design.elements
-	local markWord = if marks == 1 then "mark" else "marks"
-	artistFooter.Text = if index < count
-		then `{marks} {markWord}  ·  next up soon`
-		else `{marks} {markWord}  ·  vote next`
+	if title ~= "" then
+		Juice.dressTitle(artistTitle)
+	end
+	artistFooter.Text = if index < count then "Next up soon" else "Vote next"
 	applyFrame(entry)
 	mountAvatar(entry.userId)
 	showDesign(entry)
@@ -633,6 +633,9 @@ local function makeCard(entry: Entry, order: number, row: Frame): Card
 	tag.Size = UDim2.new(1, -20, 0, 14)
 	tag.TextTruncate = Enum.TextTruncate.AtEnd
 	tag.ZIndex = 13
+	if title ~= "" then
+		Juice.dressTitle(tag, 0.7)
+	end
 
 	local thumb = Instance.new("Frame")
 	thumb.Name = "Thumb"
@@ -815,41 +818,21 @@ local function collapseBoard(token: number, done: () -> ())
 	end)
 end
 
-local function fillRunners(snapshot: CeremonySnapshot)
-	for _, child in runnerRow:GetChildren() do
-		if child:IsA("GuiObject") then
-			child:Destroy()
-		end
-	end
-	for _, place in snapshot.places do
-		if place.place > 1 then
-			local chip =
-				text(runnerRow, `{placeWord(place.place)}  {place.name}`, 14, UiTheme.font.bold, UiTheme.color.text)
-			chip.AutomaticSize = Enum.AutomaticSize.X
-			chip.Size = UDim2.fromOffset(0, 30)
-			chip.BackgroundTransparency = 0
-			chip.BackgroundColor3 = UiTheme.color.chip
-			chip.LayoutOrder = place.place
-			chip.ZIndex = 23
-			corner(chip, 999)
-			local pad = Instance.new("UIPadding")
-			pad.PaddingLeft = UDim.new(0, 12)
-			pad.PaddingRight = UDim.new(0, 12)
-			pad.Parent = chip
-		end
-	end
-end
-
 local function fillYourLine(snapshot: CeremonySnapshot)
 	local mine = localUserId()
+	local winner = snapshot.places[1]
+	if winner ~= nil and winner.userId == mine then
+		yourLine.Visible = false
+		return
+	end
+	yourLine.Visible = true
 	for _, place in snapshot.places do
 		if place.userId == mine then
-			yourLine.Text =
-				`You placed {placeWord(place.place)}  ·  +{place.awarded} coins  ·  {snapshot.yourTotal} total`
+			yourLine.Text = `You placed {placeWord(place.place)}`
 			return
 		end
 	end
-	yourLine.Text = `You have {snapshot.yourTotal} coins.`
+	yourLine.Visible = false
 end
 
 local function fillWinner(snapshot: CeremonySnapshot)
@@ -870,8 +853,11 @@ local function fillWinner(snapshot: CeremonySnapshot)
 	winnerName.Text = winner.name
 	local title = titleOf(entry)
 	winnerTag.Text = if title ~= "" then title else "Best tattoo this round"
+	if title ~= "" then
+		Juice.dressTitle(winnerTag)
+	end
 	local voteWord = if winner.votes == 1 then "vote" else "votes"
-	winnerStats.Text = `{winner.votes} {voteWord}  ·  +{winner.awarded} coins`
+	winnerStats.Text = `{winner.votes} {voteWord}`
 	local character = modelFor(entry.userId)
 	if character ~= nil then
 		TattooCanvas.snapshot(winnerThumb, character, entry.design)
@@ -884,16 +870,11 @@ local function settleReveal(token: number)
 	if token ~= revealToken then
 		return
 	end
-	local area = screen.AbsoluteSize
-	local small = 0.55
-	tween(stack, 0.7, {
-		Position = UDim2.fromOffset(24 + STACK_W * small / 2, area.Y / 2 + 10),
-	}, Enum.EasingStyle.Quint)
-	tween(stackScale, 0.7, { Scale = small }, Enum.EasingStyle.Quint)
-	tween(dim, 0.7, { BackgroundTransparency = 1 })
+	-- Soft fade of rays only — keep the winner card centered and big.
 	for _, ray in rays do
 		tween(ray, 0.5, { BackgroundTransparency = 1 })
 	end
+	tween(dim, 0.6, { BackgroundTransparency = 0.55 })
 	takeCamera()
 end
 
@@ -902,11 +883,10 @@ local function startReveal(snapshot: CeremonySnapshot, token: number)
 		return
 	end
 	fillWinner(snapshot)
-	fillRunners(snapshot)
 	fillYourLine(snapshot)
 	revealRoot.Visible = true
 	dim.Visible = true
-	dim.BackgroundTransparency = 0.3
+	dim.BackgroundTransparency = 0.25
 	stack.Position = UDim2.fromScale(0.5, 0.5)
 	stackScale.Scale = 1
 	for _, ray in rays do
@@ -934,7 +914,6 @@ end
 
 local function presentParty(snapshot: CeremonySnapshot, entering: boolean, fromVoting: boolean)
 	if not entering then
-		fillYourLine(snapshot)
 		return
 	end
 	revealToken += 1
@@ -960,6 +939,7 @@ local function present(snapshot: CeremonySnapshot)
 
 	screen.Enabled = snapshot.phase ~= "Idle"
 	Fanfare.setHold("ceremony", snapshot.phase ~= "Idle")
+	RoundResults.setHold(snapshot.phase ~= "Idle")
 	timeUp.Visible = snapshot.phase == "TimeUp"
 
 	if snapshot.phase ~= "Showcase" then
@@ -990,7 +970,7 @@ local function present(snapshot: CeremonySnapshot)
 	end
 	if snapshot.phase == "Showcase" then
 		dim.Visible = true
-		dim.BackgroundTransparency = 0
+		dim.BackgroundTransparency = 0.35
 		presentShowcase(snapshot)
 		return
 	end
@@ -1224,14 +1204,16 @@ local function buildVoteBoard()
 	rowsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	rowsLayout.Parent = board
 
-	screen:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+	local function onResize()
 		if artistGui.Enabled then
 			layoutShowcase()
 		end
 		if #cards > 0 then
 			layoutBoard()
 		end
-	end)
+	end
+	screen:GetPropertyChangedSignal("AbsoluteSize"):Connect(onResize)
+	artistGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(onResize)
 end
 
 local function buildEmote(parent: Instance)
@@ -1376,30 +1358,16 @@ local function buildReveal()
 	winnerThumb = Instance.new("Frame")
 	winnerThumb.Name = "Thumb"
 	winnerThumb.Position = UDim2.fromOffset(16, 84)
-	winnerThumb.Size = UDim2.new(1, -32, 0, 250)
+	winnerThumb.Size = UDim2.new(1, -32, 0, 290)
 	winnerThumb.BackgroundColor3 = UiTheme.color.ink
 	winnerThumb.ClipsDescendants = true
 	winnerThumb.ZIndex = 23
 	winnerThumb.Parent = winnerCard
 
 	winnerStats = text(winnerCard, "", 18, UiTheme.font.bold, UiTheme.color.gold)
-	winnerStats.Position = UDim2.fromOffset(16, 342)
+	winnerStats.Position = UDim2.fromOffset(16, 386)
 	winnerStats.Size = UDim2.new(1, -32, 0, 24)
 	winnerStats.ZIndex = 23
-
-	runnerRow = Instance.new("Frame")
-	runnerRow.Name = "Runners"
-	runnerRow.Position = UDim2.fromOffset(16, 372)
-	runnerRow.Size = UDim2.new(1, -32, 0, 30)
-	runnerRow.BackgroundTransparency = 1
-	runnerRow.ZIndex = 23
-	runnerRow.Parent = winnerCard
-	local runnerLayout = Instance.new("UIListLayout")
-	runnerLayout.FillDirection = Enum.FillDirection.Horizontal
-	runnerLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	runnerLayout.Padding = UDim.new(0, 8)
-	runnerLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	runnerLayout.Parent = runnerRow
 
 	buildEmote(stack)
 
@@ -1410,6 +1378,7 @@ local function buildReveal()
 	yourLine.AutomaticSize = Enum.AutomaticSize.X
 	yourLine.BackgroundColor3 = UiTheme.color.ink
 	yourLine.BackgroundTransparency = 0.2
+	yourLine.Visible = false
 	yourLine.ZIndex = 24
 	corner(yourLine, 999)
 	local linePad = Instance.new("UIPadding")

@@ -60,7 +60,7 @@ local PRESENTATION: { [string]: Presentation } = {
 		accent = UiTheme.color.violet,
 	},
 	ThemeReveal = {
-		subtitle = "A new theme is on the board.",
+		subtitle = "Get ready to ink.",
 		accent = UiTheme.color.magenta,
 	},
 	TattooCreation = {
@@ -210,8 +210,6 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 	local needed = math.max(0, math.ceil(snapshot.minPlayers - snapshot.playerCount))
 	if snapshot.state == "WaitingForPlayers" and needed > 0 then
 		refs.subtitle.Text = if needed == 1 then "Waiting for 1 more artist." else `Waiting for {needed} more artists.`
-	elseif snapshot.state == "ThemeReveal" and snapshot.themeTagline ~= nil then
-		refs.subtitle.Text = snapshot.themeTagline
 	else
 		refs.subtitle.Text = fallbackSubtitle
 	end
@@ -222,10 +220,10 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 		refs.heroValue.Text = `{formatCount(snapshot.playerCount)} / {formatCount(snapshot.minPlayers)}`
 		refs.secondaryTime.Visible = false
 	elseif snapshot.state == "ThemeReveal" then
-		refs.heroCaption.Text = "THIS ROUND"
-		refs.heroValue.TextSize = 32
+		refs.heroCaption.Text = "NEXT THEME COMING UP:"
+		refs.heroValue.TextSize = 40
 		refs.heroValue.Text = snapshot.themeName or "Theme"
-		refs.secondaryTime.Visible = true
+		refs.secondaryTime.Visible = false
 	elseif snapshot.state == "Submission" then
 		refs.heroCaption.Text = "PENCILS DOWN"
 		refs.heroValue.TextSize = 36
@@ -240,17 +238,30 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 	local hasTimer = snapshot.endsAt ~= nil and snapshot.duration ~= nil
 	local designing = snapshot.state == "TattooCreation"
 	local inLobby = snapshot.state == "WaitingForPlayers" or snapshot.state == "Intermission"
-	refs.track.Visible = hasTimer and not designing and not inLobby and not snapshot.paused
+	local revealing = snapshot.state == "ThemeReveal"
+	refs.track.Visible = hasTimer and not designing and not inLobby and not revealing and not snapshot.paused
 	refs.artistsValue.Text = `{formatCount(snapshot.playerCount)} / {formatCount(snapshot.maxPlayers)}`
 	refs.themeValue.Text = snapshot.themeName or "Incoming"
-	refs.themeChip.Visible = snapshot.state ~= "ThemeReveal" and not designing and not inLobby and not snapshot.paused
+	refs.themeChip.Visible = not revealing and not designing and not inLobby and not snapshot.paused
+	refs.artistsChip.Visible = not revealing
+	refs.roundLabel.Visible = not revealing
+	refs.pill.Visible = not revealing
+	refs.heroCaption.Visible = true
+	refs.subtitle.Visible = not revealing
+	refs.eyebrow.Visible = not revealing
+	refs.wordmark.Visible = not revealing
 	local ceremony = snapshot.state == "Submission"
 		or snapshot.state == "Showcase"
 		or snapshot.state == "Voting"
 		or snapshot.state == "Results"
-	refs.card.Visible = not designing and not inLobby and not snapshot.paused and not ceremony
+	-- Theme reveal sits top-centre: caption + theme name only.
+	refs.card.Visible = revealing or (not designing and not inLobby and not snapshot.paused and not ceremony)
+	local top = math.max(UiTheme.safe.top, GuiService:GetGuiInset().Y + 12)
+	refs.card.Position = if revealing
+		then UDim2.new(0.5, 0, 0, top + 8)
+		else UDim2.new(0.5, 0, 0, top + 56)
 	-- The ceremony owns the screen. Keep the pause chip only while the lobby is paused.
-	refs.banner.Visible = (designing or inLobby or snapshot.paused or snapshot.devMode) and not ceremony
+	refs.banner.Visible = (designing or inLobby or snapshot.paused or snapshot.devMode) and not ceremony and not revealing
 	refs.pauseButton.Visible = snapshot.devMode
 	refs.pauseButton.Text = if snapshot.paused then "Resume" else "Pause"
 	refs.bannerTime.TextColor3 = accent
@@ -271,7 +282,9 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 		refs.bannerState.Text = RoundTypes.getLabel(snapshot.state)
 		refs.bannerTheme.Text = snapshot.themeName or "Theme"
 	end
-	renderClock(refs, snapshot)
+	if not revealing then
+		renderClock(refs, snapshot)
+	end
 end
 
 local function buildHud(parent: Instance): HudRefs

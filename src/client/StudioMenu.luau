@@ -7,6 +7,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
+local Juice = require(script.Parent.Juice)
 local PlayerData = require(script.Parent.PlayerData)
 local ProfileTab = require(script.Parent.ProfileTab)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
@@ -40,39 +41,47 @@ function StudioMenu.start()
 	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	gui.Parent = playerGui
 
-	local bar = UiKit.frame(gui, UiTheme.color.ink, 0)
+	local bar = UiKit.frame(gui, UiTheme.color.panel, 0)
 	bar.Name = "Bar"
 	bar.AnchorPoint = Vector2.new(0, 1)
 	bar.Position = UDim2.new(0, UiTheme.safe.side, 1, -UiTheme.safe.side)
 	bar.AutomaticSize = Enum.AutomaticSize.X
-	bar.Size = UDim2.fromOffset(0, 52)
-	UiKit.corner(bar, 12)
-	UiKit.stroke(bar, UiTheme.color.gold, 1.5, 0.05)
+	bar.Size = UDim2.fromOffset(0, 56)
+	UiKit.corner(bar, 14)
+	local barStroke = UiKit.stroke(bar, UiTheme.color.hotPink, 2, 0.05)
+	Juice.rainbowStroke(barStroke, 0.9)
 	UiKit.padding(bar, 8, 12, 8, 12)
 	local barRow = UiKit.list(bar, Enum.FillDirection.Horizontal, 10)
 	barRow.VerticalAlignment = Enum.VerticalAlignment.Center
 
-	local openButton = UiKit.button(bar, "Shop", 14, UiTheme.color.ink, UiTheme.color.gold, 8)
+	local openButton = UiKit.button(bar, "SHOP", 14, UiTheme.color.ink, UiTheme.color.gold, 10)
 	openButton.LayoutOrder = 1
-	openButton.Size = UDim2.fromOffset(88, 34)
-	UiKit.stroke(openButton, Color3.fromRGB(150, 110, 50), 1, 0.35)
+	openButton.Size = UDim2.fromOffset(96, 36)
+	openButton.TextStrokeTransparency = 1
+	local shopStroke = UiKit.stroke(openButton, UiTheme.color.hotPink, 2, 0)
+	Juice.glowStroke(shopStroke, UiTheme.color.hotPink, UiTheme.color.sunshine)
+	Juice.pulse(openButton, 1, 1.05)
 
-	local coinPip = UiKit.frame(bar, UiTheme.color.gold, 0)
+	local coinPip = UiKit.frame(bar, UiTheme.color.sunshine, 0)
 	coinPip.LayoutOrder = 2
-	coinPip.Size = UDim2.fromOffset(8, 8)
+	coinPip.Size = UDim2.fromOffset(10, 10)
 	coinPip.Rotation = 45
+	Juice.pulse(coinPip, 0.9, 1.15)
 
-	local coinText = UiKit.label(bar, "…", 15, UiTheme.font.heavy, UiTheme.color.gold)
+	local coinText = UiKit.label(bar, "…", 16, UiTheme.font.heavy, UiTheme.color.sunshine)
 	coinText.LayoutOrder = 3
 	coinText.AutomaticSize = Enum.AutomaticSize.X
-	coinText.Size = UDim2.fromOffset(0, 34)
+	coinText.Size = UDim2.fromOffset(0, 36)
+	coinText.TextStrokeTransparency = 1
 
-	local levelText = UiKit.label(bar, "Lv 1", 15, UiTheme.font.heavy, UiTheme.color.paper)
+	local levelText = UiKit.label(bar, "Lv 1", 15, UiTheme.font.heavy, UiTheme.color.electric)
 	levelText.LayoutOrder = 4
 	levelText.AutomaticSize = Enum.AutomaticSize.X
-	levelText.Size = UDim2.fromOffset(0, 34)
+	levelText.Size = UDim2.fromOffset(0, 36)
 
-	local dim = UiKit.frame(gui, Color3.new(0, 0, 0), 0.45)
+	local lastCoins: number? = nil
+
+	local dim = UiKit.frame(gui, Color3.fromRGB(12, 4, 24), 0.4)
 	dim.Name = "Dim"
 	dim.Size = UDim2.fromScale(1, 1)
 	dim.Visible = false
@@ -82,8 +91,9 @@ function StudioMenu.start()
 	panel.AnchorPoint = Vector2.new(0.5, 0.5)
 	panel.Position = UDim2.new(0.5, 0, 0.5, -8)
 	panel.Size = UDim2.new(0.9, 0, 1, -88)
-	UiKit.corner(panel, 14)
-	UiKit.stroke(panel, UiTheme.color.gold, 2, 0.08)
+	UiKit.corner(panel, 18)
+	local panelStroke = UiKit.stroke(panel, UiTheme.color.gold, 2.5, 0.05)
+	Juice.rainbowStroke(panelStroke, 1.1)
 	local limit = Instance.new("UISizeConstraint")
 	limit.MaxSize = Vector2.new(1180, 820)
 	limit.Parent = panel
@@ -108,23 +118,24 @@ function StudioMenu.start()
 	crop(0, 1, 18, -18)
 	crop(1, 1, -18, -18)
 
-	local kicker = UiKit.label(panel, "INK-OFF", 11, UiTheme.font.bold, UiTheme.color.gold)
-	kicker.Position = UDim2.fromOffset(28, 12)
-	kicker.Size = UDim2.fromOffset(220, 14)
+	local kicker = UiKit.label(panel, "INK-OFF · TREATS", 11, UiTheme.font.heavy, UiTheme.color.sunshine)
+	kicker.Position = UDim2.fromOffset(28, 14)
+	kicker.Size = UDim2.fromOffset(260, 14)
 
-	local title = UiKit.label(panel, "Shop", 24, UiTheme.font.heavy, UiTheme.color.paper)
-	title.Position = UDim2.fromOffset(28, 24)
-	title.Size = UDim2.fromOffset(220, 28)
+	local title = UiKit.label(panel, "Shop", 26, UiTheme.font.heavy, UiTheme.color.text)
+	title.Position = UDim2.fromOffset(28, 28)
+	title.Size = UDim2.fromOffset(220, 30)
+	title.TextStrokeTransparency = 1
 
-	local close = UiKit.button(panel, "Close", 14, UiTheme.color.paper, UiTheme.color.chip, 8)
+	local close = UiKit.button(panel, "Close", 14, UiTheme.color.text, UiTheme.color.chip, 10)
 	close.AnchorPoint = Vector2.new(1, 0)
-	close.Position = UDim2.new(1, -20, 0, 16)
-	close.Size = UDim2.fromOffset(88, 32)
-	UiKit.stroke(close, UiTheme.color.stroke, 1, 0.35)
+	close.Position = UDim2.new(1, -20, 0, 18)
+	close.Size = UDim2.fromOffset(88, 34)
+	UiKit.stroke(close, UiTheme.color.violet, 1.5, 0.25)
 
-	local rule = UiKit.frame(panel, UiTheme.color.gold, 0.2)
-	rule.Position = UDim2.fromOffset(28, 56)
-	rule.Size = UDim2.new(1, -56, 0, 1)
+	local rule = UiKit.frame(panel, UiTheme.color.hotPink, 0.15)
+	rule.Position = UDim2.fromOffset(28, 62)
+	rule.Size = UDim2.new(1, -56, 0, 2)
 
 	local tabRow = Instance.new("Frame")
 	tabRow.BackgroundTransparency = 1
@@ -178,14 +189,18 @@ function StudioMenu.start()
 		for id, frame in pages do
 			frame.Visible = view ~= nil and id == name
 		end
+		title.Text = name
 		for id, button in tabButtons do
 			local on = id == name
 			button.BackgroundTransparency = 1
-			button.TextColor3 = if on then UiTheme.color.gold else UiTheme.color.muted
+			button.TextColor3 = if on then UiTheme.color.sunshine else UiTheme.color.muted
 			button.FontFace = if on then UiTheme.font.heavy else UiTheme.font.medium
 			local mark = tabMarks[id]
 			if mark ~= nil then
 				mark.Visible = on
+				if on then
+					mark.BackgroundColor3 = UiTheme.color.hotPink
+				end
 			end
 		end
 	end
@@ -197,10 +212,10 @@ function StudioMenu.start()
 		button.LayoutOrder = index
 		button.AutomaticSize = Enum.AutomaticSize.X
 		button.Size = UDim2.fromOffset(0, 28)
-		local mark = UiKit.frame(button, UiTheme.color.gold, 0)
+		local mark = UiKit.frame(button, UiTheme.color.hotPink, 0)
 		mark.AnchorPoint = Vector2.new(0, 1)
 		mark.Position = UDim2.fromScale(0, 1)
-		mark.Size = UDim2.new(1, 0, 0, 2)
+		mark.Size = UDim2.new(1, 0, 0, 3)
 		mark.Visible = false
 		tabButtons[name] = button
 		tabMarks[name] = mark
@@ -218,7 +233,19 @@ function StudioMenu.start()
 			show(selected)
 			return
 		end
-		coinText.Text = UiKit.number(view.coins)
+		local coins = view.coins
+		coinText.Text = UiKit.number(coins)
+		if lastCoins ~= nil and coins > lastCoins then
+			Juice.punch(coinText, 1.22)
+			Juice.punch(coinPip, 1.35)
+			coinText.TextColor3 = UiTheme.color.lime
+			task.delay(0.45, function()
+				if coinText.Parent ~= nil then
+					coinText.TextColor3 = UiTheme.color.sunshine
+				end
+			end)
+		end
+		lastCoins = coins
 		levelText.Text = `Lv {view.level}`
 		shop.render(view)
 		rewards.render(view)
@@ -230,19 +257,30 @@ function StudioMenu.start()
 		dim.Visible = open
 		if open then
 			dim.BackgroundTransparency = 1
-			panel.Position = UDim2.new(0.5, 0, 0.58, -8)
-			panel.Size = UDim2.new(0.84, 0, 0.9, -88)
-			TweenService:Create(dim, TweenInfo.new(0.2), { BackgroundTransparency = 0.45 }):Play()
-			TweenService:Create(panel, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			panel.Position = UDim2.new(0.5, 0, 0.62, -8)
+			panel.Size = UDim2.new(0.82, 0, 0.88, -88)
+			local scale = panel:FindFirstChildOfClass("UIScale")
+			if scale == nil then
+				scale = Instance.new("UIScale")
+				scale.Parent = panel
+			end
+			scale.Scale = 0.88
+			TweenService:Create(dim, TweenInfo.new(0.22), { BackgroundTransparency = 0.38 }):Play()
+			TweenService:Create(panel, TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
 				Position = UDim2.new(0.5, 0, 0.5, -8),
 				Size = UDim2.new(0.9, 0, 1, -88),
 			}):Play()
+			TweenService:Create(scale, TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+				Scale = 1,
+			}):Play()
+			Sfx.play("good")
 			refresh()
 		end
 	end
 
 	openButton.MouseButton1Click:Connect(function()
 		Sfx.play("click")
+		Juice.punch(openButton, 1.12)
 		setOpen(not dim.Visible)
 	end)
 	close.MouseButton1Click:Connect(function()

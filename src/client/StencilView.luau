@@ -2,13 +2,137 @@
 
 -- Clean stencil silhouettes. Each shape is filled geometry, drawn once into an image,
 -- then tinted by the ink colour. UI boxes cannot make a sharp star or heart.
+-- Figma outline pack masks (StencilPack) override procedural shapes when present.
 
 local AssetService = game:GetService("AssetService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local StencilPack = require(ReplicatedStorage.Shared.StencilPack)
 
 local StencilView = {}
 
 local SIZE = 160
 local SAMPLES = 3
+local PACK_SIZE = StencilPack.size
+
+local BASE64 = {
+	["A"] = 0,
+	["B"] = 1,
+	["C"] = 2,
+	["D"] = 3,
+	["E"] = 4,
+	["F"] = 5,
+	["G"] = 6,
+	["H"] = 7,
+	["I"] = 8,
+	["J"] = 9,
+	["K"] = 10,
+	["L"] = 11,
+	["M"] = 12,
+	["N"] = 13,
+	["O"] = 14,
+	["P"] = 15,
+	["Q"] = 16,
+	["R"] = 17,
+	["S"] = 18,
+	["T"] = 19,
+	["U"] = 20,
+	["V"] = 21,
+	["W"] = 22,
+	["X"] = 23,
+	["Y"] = 24,
+	["Z"] = 25,
+	["a"] = 26,
+	["b"] = 27,
+	["c"] = 28,
+	["d"] = 29,
+	["e"] = 30,
+	["f"] = 31,
+	["g"] = 32,
+	["h"] = 33,
+	["i"] = 34,
+	["j"] = 35,
+	["k"] = 36,
+	["l"] = 37,
+	["m"] = 38,
+	["n"] = 39,
+	["o"] = 40,
+	["p"] = 41,
+	["q"] = 42,
+	["r"] = 43,
+	["s"] = 44,
+	["t"] = 45,
+	["u"] = 46,
+	["v"] = 47,
+	["w"] = 48,
+	["x"] = 49,
+	["y"] = 50,
+	["z"] = 51,
+	["0"] = 52,
+	["1"] = 53,
+	["2"] = 54,
+	["3"] = 55,
+	["4"] = 56,
+	["5"] = 57,
+	["6"] = 58,
+	["7"] = 59,
+	["8"] = 60,
+	["9"] = 61,
+	["+"] = 62,
+	["/"] = 63,
+}
+
+local function decodeBase64(data: string): buffer
+	local cleaned = string.gsub(data, "%s", "")
+	local outLen = math.floor(#cleaned * 3 / 4)
+	if string.sub(cleaned, -2) == "==" then
+		outLen -= 2
+	elseif string.sub(cleaned, -1) == "=" then
+		outLen -= 1
+	end
+	local out = buffer.create(outLen)
+	local o = 0
+	for i = 1, #cleaned, 4 do
+		local a = BASE64[string.sub(cleaned, i, i)] or 0
+		local b = BASE64[string.sub(cleaned, i + 1, i + 1)] or 0
+		local cChar = string.sub(cleaned, i + 2, i + 2)
+		local dChar = string.sub(cleaned, i + 3, i + 3)
+		local c = if cChar == "=" then 0 else (BASE64[cChar] or 0)
+		local d = if dChar == "=" then 0 else (BASE64[dChar] or 0)
+		local n = bit32.lshift(a, 18) + bit32.lshift(b, 12) + bit32.lshift(c, 6) + d
+		if o < outLen then
+			buffer.writeu8(out, o, bit32.rshift(n, 16) % 256)
+			o += 1
+		end
+		if o < outLen then
+			buffer.writeu8(out, o, bit32.rshift(n, 8) % 256)
+			o += 1
+		end
+		if o < outLen then
+			buffer.writeu8(out, o, n % 256)
+			o += 1
+		end
+	end
+	return out
+end
+
+local function packPixels(maskB64: string): buffer
+	local bits = decodeBase64(maskB64)
+	local pixels = buffer.create(PACK_SIZE * PACK_SIZE * 4)
+	local total = PACK_SIZE * PACK_SIZE
+	for i = 0, total - 1 do
+		local byte = buffer.readu8(bits, i // 8)
+		local on = bit32.band(byte, bit32.lshift(1, i % 8)) ~= 0
+		if on then
+			local offset = i * 4
+			buffer.writeu8(pixels, offset, 255)
+			buffer.writeu8(pixels, offset + 1, 255)
+			buffer.writeu8(pixels, offset + 2, 255)
+			buffer.writeu8(pixels, offset + 3, 255)
+		end
+	end
+	return pixels
+end
 
 type Vec = { x: number, y: number }
 type Mask = (number, number) -> boolean
@@ -626,13 +750,49 @@ local function solidFor(shape: string): Mask?
 	return solids[shape]
 end
 
-local function silhouette(shape: string): EditableImage?
+local function packSilhouette(shape: string): EditableImage?
+	local entry = StencilPack.byId[shape]
+	if entry == nil then
+		return nil
+	end
 	if unavailable then
 		return nil
 	end
+	local key = `pack:{shape}`
+	local cached = cachedImage(key)
+	if cached ~= nil then
+		return cached
+	end
+	local created: EditableImage? = nil
+	local ok = pcall(function()
+		created = AssetService:CreateEditableImage({
+			Size = Vector2.new(PACK_SIZE, PACK_SIZE),
+		})
+		if created ~= nil then
+			created:WritePixelsBuffer(Vector2.zero, Vector2.new(PACK_SIZE, PACK_SIZE), packPixels(entry.mask))
+		end
+	end)
+	if not ok or created == nil then
+		unavailable = true
+		warn("[InkMasters] Clean stencils need Allow Mesh / Image APIs, in Experience Settings, Security")
+		return nil
+	end
+	images[key] = created
+	return created
+end
+
+local function silhouette(shape: string): EditableImage?
+	local fromPack = packSilhouette(shape)
+	if fromPack ~= nil then
+		return fromPack
+	end
+	-- Pack path may mark EditableImage unavailable; still try procedural masks.
 	local cached = cachedImage(shape)
 	if cached ~= nil then
 		return cached
+	end
+	if unavailable and maskFor(shape) == nil and solidFor(shape) == nil then
+		return nil
 	end
 	local inside = maskFor(shape)
 	if inside == nil then
@@ -660,8 +820,9 @@ local function silhouette(shape: string): EditableImage?
 end
 
 local function solidSilhouette(shape: string): EditableImage?
-	if unavailable then
-		return nil
+	local fromPack = packSilhouette(shape)
+	if fromPack ~= nil then
+		return fromPack
 	end
 	local key = `solid:{shape}`
 	local cached = cachedImage(key)
@@ -673,6 +834,9 @@ local function solidSilhouette(shape: string): EditableImage?
 		inside = maskFor(shape)
 	end
 	if inside == nil then
+		return nil
+	end
+	if unavailable then
 		return nil
 	end
 	local created: EditableImage? = nil
@@ -707,10 +871,45 @@ local function fallback(parent: Instance, color: Color3)
 	uiCorner.Parent = blob
 end
 
-function StencilView.draw(parent: GuiObject, shape: string, color: Color3)
-	local existing = parent:FindFirstChild("Glyph")
-	if existing ~= nil then
-		existing:Destroy()
+local function clearGlyphs(parent: Instance)
+	for _, name in { "Glyph", "FillGlyph", "LineGlyph" } do
+		local existing = parent:FindFirstChild(name)
+		if existing ~= nil then
+			existing:Destroy()
+		end
+	end
+end
+
+local function assetGlyph(
+	parent: Instance,
+	name: string,
+	asset: string,
+	color: Color3,
+	transparency: number,
+	zIndex: number,
+	flip: boolean
+)
+	local glyph = Instance.new("ImageLabel")
+	glyph.Name = name
+	glyph.BackgroundTransparency = 1
+	glyph.BorderSizePixel = 0
+	glyph.AnchorPoint = Vector2.new(0.5, 0.5)
+	glyph.Position = UDim2.fromScale(0.5, 0.5)
+	glyph.Size = UDim2.fromScale(if flip then -1 else 1, 1)
+	glyph.ScaleType = Enum.ScaleType.Fit
+	glyph.Image = asset
+	glyph.ImageColor3 = color
+	glyph.ImageTransparency = transparency
+	glyph.ZIndex = zIndex
+	glyph.Parent = parent
+end
+
+function StencilView.draw(parent: GuiObject, shape: string, color: Color3, asset: string?)
+	clearGlyphs(parent)
+
+	if typeof(asset) == "string" and asset ~= "" then
+		assetGlyph(parent, "Glyph", asset, color, 0, 2, false)
+		return
 	end
 
 	local image = silhouette(shape)
@@ -892,15 +1091,31 @@ local function glyphLayer(
 	glyph.Parent = parent
 end
 
-function StencilView.drawMark(parent: GuiObject, shape: string, fillColor: Color3, lineColor: Color3, style: MarkStyle)
-	for _, name in { "Glyph", "FillGlyph", "LineGlyph" } do
-		local existing = parent:FindFirstChild(name)
-		if existing ~= nil then
-			existing:Destroy()
-		end
-	end
+function StencilView.drawMark(
+	parent: GuiObject,
+	shape: string,
+	fillColor: Color3,
+	lineColor: Color3,
+	style: MarkStyle,
+	asset: string?
+)
+	clearGlyphs(parent)
 
 	local transparency = 1 - math.clamp(style.opacity, 0, 1)
+	if typeof(asset) == "string" and asset ~= "" then
+		-- Imported outlines: tint the white silhouette. Fill uses ink colour; outline uses line colour.
+		if style.fill then
+			assetGlyph(parent, "FillGlyph", asset, fillColor, transparency, 2, style.flip)
+		end
+		if style.outline then
+			assetGlyph(parent, "LineGlyph", asset, lineColor, transparency, 3, style.flip)
+		end
+		if not style.fill and not style.outline then
+			assetGlyph(parent, "Glyph", asset, lineColor, transparency, 2, style.flip)
+		end
+		return
+	end
+
 	local thickness = math.clamp(math.floor(style.thickness + 0.5), 1, 10)
 	if style.fill then
 		local spread = if style.outline then 0 else (thickness - 1) * 2

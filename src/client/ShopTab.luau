@@ -10,6 +10,7 @@ local ProfileTypes = require(ReplicatedStorage.Shared.ProfileTypes)
 local StencilDefinitions = require(ReplicatedStorage.Shared.StencilDefinitions)
 local UiAssets = require(ReplicatedStorage.Shared.UiAssets)
 local FrameDress = require(script.Parent.FrameDress)
+local Juice = require(script.Parent.Juice)
 local PlayerData = require(script.Parent.PlayerData)
 local Sfx = require(script.Parent.Sfx)
 local StencilView = require(script.Parent.StencilView)
@@ -27,6 +28,7 @@ type Card = {
 	meta: TextLabel,
 	bar: Frame,
 	badge: Frame,
+	featuredPulse: boolean,
 }
 
 type IndexChip = {
@@ -174,7 +176,7 @@ local function paintPackShapes(area: Frame, item: Item, large: boolean)
 		pad.PaddingLeft = UDim.new(0.12, 0)
 		pad.PaddingRight = UDim.new(0.12, 0)
 		pad.Parent = holder
-		StencilView.draw(holder, definition.shape, UiTheme.color.ink)
+		StencilView.draw(holder, definition.shape, UiTheme.color.ink, definition.image)
 	end
 end
 
@@ -192,6 +194,10 @@ local function paintPreview(area: Frame, item: Item, large: boolean?)
 		text.Size = UDim2.fromScale(1, 1)
 		text.TextXAlignment = Enum.TextXAlignment.Center
 		text.TextWrapped = true
+		Juice.dressTitle(text)
+		if big then
+			Juice.sparkles(area)
+		end
 	elseif item.category == "frame" then
 		local inner = Instance.new("Frame")
 		inner.BackgroundTransparency = 1
@@ -255,8 +261,21 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 	local sheet = UiKit.frame(parent, UiTheme.color.paper, 0)
 	sheet.Name = "Sheet"
 	sheet.Size = UDim2.fromScale(1, 1)
-	UiKit.corner(sheet, 10)
-	UiKit.stroke(sheet, UiTheme.color.gold, 1.5, 0.55)
+	UiKit.corner(sheet, 14)
+	local sheetStroke = UiKit.stroke(sheet, UiTheme.color.gold, 2, 0.35)
+	Juice.rainbowStroke(sheetStroke, 0.7)
+
+	local sheetStripe = UiKit.frame(sheet, UiTheme.color.hotPink, 0)
+	sheetStripe.Name = "Stripe"
+	sheetStripe.Size = UDim2.new(1, 0, 0, 5)
+	sheetStripe.ZIndex = 5
+	local sheetGrad = Instance.new("UIGradient")
+	sheetGrad.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, UiTheme.color.hotPink),
+		ColorSequenceKeypoint.new(0.5, UiTheme.color.sunshine),
+		ColorSequenceKeypoint.new(1, UiTheme.color.electric),
+	})
+	sheetGrad.Parent = sheetStripe
 
 	local indexBar = Instance.new("ScrollingFrame")
 	indexBar.Name = "Index"
@@ -295,14 +314,15 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 
 	local detail = UiKit.frame(sheet, UiTheme.color.paper, 0)
 	detail.Name = "Plate"
-	UiKit.stroke(detail, UiTheme.color.ink, 1.5, 0)
+	UiKit.corner(detail, 12)
+	UiKit.stroke(detail, UiTheme.color.hotPink, 2, 0.25)
 
 	local detailPreview = UiKit.frame(detail, UiTheme.color.paper, 0)
 	detailPreview.Name = "Art"
-	UiKit.corner(detailPreview, 4)
-	UiKit.stroke(detailPreview, UiTheme.color.paperDeep, 1, 0.55)
+	UiKit.corner(detailPreview, 8)
+	UiKit.stroke(detailPreview, UiTheme.color.violet, 1.5, 0.35)
 
-	local kicker = UiKit.label(detail, "INK", 11, UiTheme.font.bold, UiTheme.color.oxblood)
+	local kicker = UiKit.label(detail, "INK", 11, UiTheme.font.heavy, UiTheme.color.hotPink)
 	kicker.Name = "Kicker"
 	kicker.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -319,9 +339,14 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 	local detailMeta = UiKit.label(detail, "", 13, UiTheme.font.bold, UiTheme.color.ink)
 	detailMeta.Name = "Meta"
 
-	local action = UiKit.button(detail, "Buy", 15, UiTheme.color.paper, UiTheme.color.ink, 2)
+	local action = UiKit.button(detail, "Buy", 15, UiTheme.color.ink, UiTheme.color.lime, 10)
 	action.Name = "Action"
 	action.TextTruncate = Enum.TextTruncate.AtEnd
+	action.TextStrokeTransparency = 0.8
+	action.TextStrokeColor3 = Color3.new(1, 1, 1)
+	local actionStroke = UiKit.stroke(action, UiTheme.color.hotPink, 2, 0.35)
+	local actionJuiced = false
+	local lastActionMode = ""
 
 	local function layout()
 		local width = sheet.AbsoluteSize.X
@@ -426,9 +451,10 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 
 		for _, chip in chips do
 			local on = chip.id == filter
-			chip.label.TextColor3 = if on then UiTheme.color.ink else UiTheme.color.inkMuted
+			chip.label.TextColor3 = if on then UiTheme.color.hotPink else UiTheme.color.inkMuted
 			chip.label.FontFace = if on then UiTheme.font.heavy else UiTheme.font.medium
 			chip.bar.Visible = on
+			chip.bar.BackgroundColor3 = UiTheme.color.hotPink
 		end
 
 		for order, card in cards do
@@ -438,39 +464,54 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 			local equipped = equipSlot ~= nil and view.equipped[equipSlot] == item.id
 			local price = priceOf(item, view)
 			local showing = filter == "all" or filter == item.category
+			local featured = view.featuredId == item.id and not owned and not item.earned
 			card.frame.Visible = showing
-			card.badge.Visible = view.featuredId == item.id and not owned and not item.earned
+			card.badge.Visible = featured
 			card.frame.LayoutOrder = if view.featuredId == item.id then 0 else order
+			if featured and not card.featuredPulse then
+				card.featuredPulse = true
+				Juice.pulse(card.badge, 0.95, 1.1)
+				Juice.glowStroke(card.outline, UiTheme.color.hotPink, UiTheme.color.sunshine)
+			end
 
 			local meta = ""
 			if owned and equipped then
 				meta = "Equipped"
 			elseif owned then
-				meta = "In the book"
+				meta = "Owned ✓"
 			elseif item.earned then
 				meta = "Earned"
 			elseif view.level < item.level then
-				meta = `Level {item.level}`
+				meta = `Lv {item.level}`
 			else
 				meta = `{UiKit.number(price)}`
 			end
 			card.meta.Text = meta
 			card.meta.TextColor3 = if equipped
-				then UiTheme.color.oxblood
-				elseif view.featuredId == item.id and not owned then UiTheme.color.magenta
+				then UiTheme.color.hotPink
+				elseif featured then UiTheme.color.magenta
+				elseif owned then UiTheme.color.lime
 				else UiTheme.color.inkMuted
 
 			local selected = selectedId == item.id
 			card.bar.Visible = selected
+			card.bar.BackgroundColor3 = UiTheme.color.hotPink
 			if selected then
-				card.outline.Color = UiTheme.color.ink
-				card.outline.Thickness = 2
-			elseif view.featuredId == item.id and not owned then
+				card.outline.Color = UiTheme.color.hotPink
+				card.outline.Thickness = 2.5
+				card.outline.Transparency = 0
+			elseif featured then
 				card.outline.Color = UiTheme.color.magenta
+				card.outline.Thickness = 2
+				card.outline.Transparency = 0.1
+			elseif owned then
+				card.outline.Color = UiTheme.color.lime
 				card.outline.Thickness = 1.5
+				card.outline.Transparency = 0.25
 			else
 				card.outline.Color = UiTheme.color.paperDeep
 				card.outline.Thickness = 1
+				card.outline.Transparency = 0
 			end
 		end
 
@@ -484,6 +525,8 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 		if paintedId ~= item.id then
 			paintedId = item.id
 			paintPreview(detailPreview, item, true)
+			Juice.punch(detailPreview, 1.12)
+			Juice.punch(detailName, 1.08)
 		end
 		kicker.Text = string.upper(categoryName(item.category))
 		detailName.Text = item.name
@@ -494,19 +537,22 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 		local equipped = slot ~= nil and view.equipped[slot] == item.id
 		local price = priceOf(item, view)
 		local text = ""
-		local textColor = UiTheme.color.paper
-		local background = UiTheme.color.ink
+		local textColor = UiTheme.color.ink
+		local background = UiTheme.color.lime
 		local dim = false
 		local meta = ""
+		local mode = "idle"
 		if owned and slot ~= nil then
 			if equipped then
-				text = "Equipped"
+				text = "Equipped ✨"
 				textColor = UiTheme.color.ink
 				background = UiTheme.color.gold
 				meta = "Showing on you now"
+				mode = "equipped"
 			else
-				text = "Equip"
+				text = "EQUIP"
 				meta = "Yours to wear"
+				mode = "equip"
 			end
 		elseif owned then
 			text = "Owned"
@@ -514,40 +560,64 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 			background = UiTheme.color.paperDeep
 			dim = true
 			meta = "Already in the book"
+			mode = "owned"
 		elseif item.earned then
 			text = "Locked"
 			textColor = UiTheme.color.inkMuted
 			background = UiTheme.color.paperDeep
 			dim = true
 			meta = item.unlockText or "Keep playing"
+			mode = "locked"
 		elseif view.level < item.level then
 			text = `Level {item.level}`
 			textColor = UiTheme.color.inkMuted
 			background = UiTheme.color.paperDeep
 			dim = true
 			meta = "Not unlocked yet"
+			mode = "locked"
 		elseif armedId == item.id then
-			text = `Confirm {UiKit.number(price)}`
+			text = `CONFIRM {UiKit.number(price)}!`
 			textColor = UiTheme.color.paper
-			background = UiTheme.color.oxblood
+			background = UiTheme.color.coral
 			meta = "Tap again to buy"
+			mode = "confirm"
 		elseif view.coins < price then
 			text = `{UiKit.number(price)} coins`
 			textColor = UiTheme.color.paper
 			background = UiTheme.color.magenta
 			meta = `{UiKit.number(view.coins)} in your pocket`
+			mode = "broke"
 		else
-			text = `Buy {UiKit.number(price)}`
+			text = `BUY {UiKit.number(price)}`
 			meta = if view.featuredId == item.id
-				then `Today's sheet, {math.floor(Catalogue.FEATURED_DISCOUNT * 100 + 0.5)}% off`
-				else `{UiKit.number(view.coins)} coins`
+				then `Today's deal · {math.floor(Catalogue.FEATURED_DISCOUNT * 100 + 0.5)}% off`
+				else `{UiKit.number(view.coins)} coins ready`
+			mode = "buy"
 		end
 		action.Text = text
 		action.TextColor3 = textColor
 		action.BackgroundColor3 = background
 		action.AutoButtonColor = not dim
 		action.BackgroundTransparency = if dim then 0.15 else 0
+		actionStroke.Transparency = if dim then 0.55 else 0.1
+		actionStroke.Color = if mode == "confirm"
+			then UiTheme.color.sunshine
+			elseif mode == "buy" or mode == "equip" then UiTheme.color.hotPink
+			else UiTheme.color.stroke
 		detailMeta.Text = meta
+
+		local juicy = mode == "buy" or mode == "confirm" or mode == "equip"
+		if juicy and (not actionJuiced or lastActionMode ~= mode) then
+			actionJuiced = true
+			lastActionMode = mode
+			Juice.pulse(action, 1, if mode == "confirm" then 1.1 else 1.06)
+			if mode == "buy" or mode == "confirm" then
+				Juice.shimmer(action)
+			end
+		elseif not juicy then
+			actionJuiced = false
+			lastActionMode = mode
+		end
 	end
 
 	local function press(card: Card)
@@ -589,6 +659,7 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 			armedId = item.id
 			armToken += 1
 			local token = armToken
+			Juice.punch(action, 1.16)
 			render(view)
 			task.delay(CONFIRM_SECONDS, function()
 				if token ~= armToken then
@@ -604,6 +675,11 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 		end
 		armedId = nil
 		armToken += 1
+		Sfx.play("good")
+		Juice.punch(action, 1.2)
+		if view.settings.confetti then
+			Juice.confetti(sheet, Vector2.new(0.85, 0.88), 22, 1.0)
+		end
 		PlayerData.send("buy", item.id, nil)
 	end
 
@@ -619,9 +695,9 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 		chip.Parent = indexBar
 
 		-- Underline indicator — never overlaps the label (left bars fight TextButton layout).
-		local bar = UiKit.frame(chip, UiTheme.color.gold, 0)
+		local bar = UiKit.frame(chip, UiTheme.color.hotPink, 0)
 		bar.Name = "Bar"
-		bar.Size = UDim2.new(1, -16, 0, 2)
+		bar.Size = UDim2.new(1, -16, 0, 3)
 		bar.Position = UDim2.new(0, 8, 1, -3)
 		bar.Visible = false
 		bar.ZIndex = 2
@@ -641,6 +717,7 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 			armedId = nil
 			armToken += 1
 			Sfx.play("click")
+			Juice.punch(chip, 1.1)
 			local latest = lastView
 			if latest ~= nil then
 				render(latest)
@@ -662,15 +739,15 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 		frame.BorderSizePixel = 0
 		frame.LayoutOrder = order
 		frame.Parent = scroll
-		UiKit.corner(frame, 2)
-		local outline = UiKit.stroke(frame, UiTheme.color.paperDeep, 1, 0)
+		UiKit.corner(frame, 12)
+		local outline = UiKit.stroke(frame, UiTheme.color.paperDeep, 1.5, 0)
 
 		local art = UiKit.frame(frame, UiTheme.color.paper, 0)
 		art.Name = "Art"
 		art.Position = UDim2.fromOffset(8, 8)
 		art.Size = UDim2.new(1, -16, 0, 96)
-		UiKit.corner(art, 4)
-		UiKit.stroke(art, UiTheme.color.paperDeep, 1, 0.55)
+		UiKit.corner(art, 10)
+		UiKit.stroke(art, UiTheme.color.violet, 1, 0.45)
 		paintPreview(art, item, false)
 
 		local name = UiKit.label(frame, item.name, 14, UiTheme.font.heavy, UiTheme.color.ink)
@@ -686,21 +763,25 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 		meta.TextXAlignment = Enum.TextXAlignment.Center
 		meta.TextTruncate = Enum.TextTruncate.AtEnd
 
-		local bar = UiKit.frame(frame, UiTheme.color.gold, 0)
+		local bar = UiKit.frame(frame, UiTheme.color.hotPink, 0)
 		bar.Name = "Select"
-		bar.Size = UDim2.new(0, 3, 1, -16)
+		bar.Size = UDim2.new(0, 4, 1, -16)
 		bar.Position = UDim2.fromOffset(0, 8)
 		bar.Visible = false
 
-		local badge = UiKit.frame(frame, UiTheme.color.ink, 0)
+		local badge = UiKit.frame(frame, UiTheme.color.hotPink, 0)
 		badge.Name = "Badge"
 		badge.AnchorPoint = Vector2.new(1, 0)
-		badge.Position = UDim2.new(1, -12, 0, 12)
-		badge.Size = UDim2.fromOffset(52, 18)
+		badge.Position = UDim2.new(1, -10, 0, 10)
+		badge.Size = UDim2.fromOffset(54, 20)
 		badge.Visible = false
-		local badgeText = UiKit.label(badge, "TODAY", 10, UiTheme.font.heavy, UiTheme.color.gold)
+		UiKit.corner(badge, 6)
+		UiKit.stroke(badge, UiTheme.color.sunshine, 1.5, 0.15)
+		local badgeText = UiKit.label(badge, "DEAL", 10, UiTheme.font.heavy, UiTheme.color.sunshine)
 		badgeText.Size = UDim2.fromScale(1, 1)
 		badgeText.TextXAlignment = Enum.TextXAlignment.Center
+		badgeText.TextStrokeTransparency = 0.6
+		badgeText.TextStrokeColor3 = UiTheme.color.ink
 
 		local card: Card = {
 			item = item,
@@ -709,6 +790,7 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 			meta = meta,
 			bar = bar,
 			badge = badge,
+			featuredPulse = false,
 		}
 		table.insert(cards, card)
 		frame.MouseButton1Click:Connect(function()
@@ -718,6 +800,7 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 			end
 			selectedId = item.id
 			Sfx.play("click")
+			Juice.punch(frame, 1.08)
 			local latest = lastView
 			if latest ~= nil then
 				render(latest)
@@ -728,6 +811,7 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 	action.MouseButton1Click:Connect(function()
 		local card = findCard(selectedId)
 		if card ~= nil then
+			Juice.punch(action, 1.14)
 			press(card)
 		end
 	end)

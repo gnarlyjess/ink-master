@@ -1,11 +1,13 @@
 --!strict
 
--- Cinematic unlock / welcome / daily-ink cards. Parlour palette: ink, brass, oxblood, cream.
--- Same energy as a boutique unlock popup — without the pink sparkles.
+-- Cinematic unlock / welcome / daily-ink cards.
+-- Psychology: anticipation (spinning rays) → payoff (confetti + count-up) → itch (pulsing CTA).
+-- Bright candy accents on a dark parlour stage — same game, louder dopamine.
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 
+local Juice = require(script.Parent.Juice)
 local PlayerData = require(script.Parent.PlayerData)
 local Sfx = require(script.Parent.Sfx)
 local UiKit = require(script.Parent.UiKit)
@@ -25,9 +27,8 @@ export type FanfarePayload = {
 	claimLogin: boolean?,
 }
 
-local POP = TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+local POP = TweenInfo.new(0.52, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local FADE = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local GLINT = TweenInfo.new(1.4, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
 
 local Fanfare = {}
 
@@ -38,6 +39,14 @@ local holds: { [string]: boolean } = {}
 local queue: { FanfarePayload } = {}
 local dailyPrompted = false
 local currentPayload: FanfarePayload? = nil
+
+local KIND_KICKER: { [FanfareKind]: string } = {
+	welcome = "WELCOME BONUS",
+	login = "DAILY TREAT",
+	level = "LEVEL UP!",
+	item = "NEW UNLOCK",
+	achievement = "ACHIEVEMENT",
+}
 
 local function clearActiveCard()
 	local root = gui
@@ -67,86 +76,94 @@ local function anyHold(): boolean
 	return false
 end
 
-local function softShadow(parent: Instance, size: UDim2, position: UDim2): Frame
-	local shadow = UiKit.frame(parent, UiTheme.color.shadow, 0.55)
-	shadow.Size = size
-	shadow.Position = position
-	shadow.ZIndex = 1
-	UiKit.corner(shadow, 18)
-	return shadow
+local function confettiAllowed(): boolean
+	local view = PlayerData.get()
+	return view == nil or view.settings.confetti
 end
 
-local function cropMark(parent: Instance, x: number, y: number, flipX: number, flipY: number)
-	local mark = UiKit.frame(parent, UiTheme.color.gold, 0)
-	mark.AnchorPoint = Vector2.new(0.5, 0.5)
-	mark.Position = UDim2.new(x, flipX * 10, y, flipY * 10)
-	mark.Size = UDim2.fromOffset(18, 18)
-	mark.BackgroundTransparency = 1
-	mark.ZIndex = 6
-	local h = UiKit.frame(mark, UiTheme.color.gold, 0)
-	h.Size = UDim2.fromOffset(18, 2)
-	h.Position = UDim2.fromOffset(0, if flipY < 0 then 16 else 0)
-	local v = UiKit.frame(mark, UiTheme.color.gold, 0)
-	v.Size = UDim2.fromOffset(2, 18)
-	v.Position = UDim2.fromOffset(if flipX < 0 then 16 else 0, 0)
-end
-
-local function glint(parent: Instance, x: number, y: number, delaySec: number)
-	local spark = UiKit.frame(parent, UiTheme.color.gold, 0.15)
-	spark.AnchorPoint = Vector2.new(0.5, 0.5)
-	spark.Position = UDim2.fromScale(x, y)
-	spark.Size = UDim2.fromOffset(7, 7)
-	spark.Rotation = 45
-	spark.ZIndex = 8
-	task.delay(delaySec, function()
-		if spark.Parent == nil then
-			return
-		end
-		TweenService:Create(spark, GLINT, {
-			Size = UDim2.fromOffset(11, 11),
-			BackgroundTransparency = 0.55,
-		}):Play()
-	end)
-end
-
-local function coinStack(parent: Instance, amount: number): Frame
+local function coinJewel(parent: Instance, amount: number): Frame
+	-- Circle on top, +amount under it — nothing overlapping the coin art.
 	local holder = Instance.new("Frame")
 	holder.Name = "RewardArt"
 	holder.BackgroundTransparency = 1
-	holder.Size = UDim2.fromOffset(120, 120)
-	holder.ZIndex = 4
+	holder.Size = UDim2.fromOffset(148, 178)
+	holder.ZIndex = 5
 	holder.Parent = parent
 
-	local plate = UiKit.frame(holder, UiTheme.color.paper, 0)
+	local jewel = Instance.new("Frame")
+	jewel.Name = "Jewel"
+	jewel.BackgroundTransparency = 1
+	jewel.AnchorPoint = Vector2.new(0.5, 0)
+	jewel.Position = UDim2.fromScale(0.5, 0)
+	jewel.Size = UDim2.fromOffset(120, 120)
+	jewel.ZIndex = 5
+	jewel.Parent = holder
+
+	Juice.rays(jewel, 12, 4)
+
+	local plate = UiKit.frame(jewel, UiTheme.color.panelTop, 0)
 	plate.AnchorPoint = Vector2.new(0.5, 0.5)
 	plate.Position = UDim2.fromScale(0.5, 0.5)
-	plate.Size = UDim2.fromScale(1, 1)
-	UiKit.corner(plate, 14)
-	UiKit.stroke(plate, UiTheme.color.gold, 2, 0.15)
+	plate.Size = UDim2.fromOffset(100, 100)
+	plate.ZIndex = 5
+	UiKit.corner(plate, 999)
+	local ring = UiKit.stroke(plate, UiTheme.color.gold, 3.5, 0)
+	Juice.rainbowStroke(ring, 1.8)
+
+	local inner = UiKit.frame(plate, UiTheme.color.sunshine, 0)
+	inner.AnchorPoint = Vector2.new(0.5, 0.5)
+	inner.Position = UDim2.fromScale(0.5, 0.5)
+	inner.Size = UDim2.fromOffset(78, 78)
+	inner.ZIndex = 6
+	UiKit.corner(inner, 999)
+	UiKit.stroke(inner, UiTheme.color.hotPink, 2, 0.15)
 
 	local stack = Instance.new("Frame")
 	stack.BackgroundTransparency = 1
 	stack.AnchorPoint = Vector2.new(0.5, 0.5)
-	stack.Position = UDim2.fromScale(0.5, 0.42)
-	stack.Size = UDim2.fromOffset(58, 44)
-	stack.Parent = plate
+	stack.Position = UDim2.fromScale(0.5, 0.5)
+	stack.Size = UDim2.fromOffset(48, 34)
+	stack.ZIndex = 7
+	stack.Parent = inner
 
 	for i = 1, 3 do
 		local coin = UiKit.frame(stack, UiTheme.color.gold, 0)
 		coin.AnchorPoint = Vector2.new(0.5, 0.5)
-		coin.Position = UDim2.fromScale(0.5, 0.72 - (i - 1) * 0.28)
-		coin.Size = UDim2.fromOffset(52 - i * 2, 12)
+		coin.Position = UDim2.fromScale(0.5, 0.22 + (i - 1) * 0.28)
+		coin.Size = UDim2.fromOffset(44 - (i - 1) * 2, 11)
+		coin.ZIndex = 7
 		UiKit.corner(coin, 999)
-		UiKit.stroke(coin, Color3.fromRGB(150, 110, 50), 1, 0.25)
+		UiKit.stroke(coin, Color3.fromRGB(200, 120, 30), 1, 0.2)
 	end
 
-	local amountLabel = UiKit.label(plate, `+{UiKit.number(amount)}`, 20, UiTheme.font.heavy, UiTheme.color.ink)
-	amountLabel.AnchorPoint = Vector2.new(0.5, 1)
-	amountLabel.Position = UDim2.new(0.5, 0, 1, -8)
-	amountLabel.Size = UDim2.new(1, -8, 0, 22)
+	local amountLabel = UiKit.label(holder, "+0", 24, UiTheme.font.heavy, UiTheme.color.sunshine)
+	amountLabel.AnchorPoint = Vector2.new(0.5, 0)
+	amountLabel.Position = UDim2.new(0.5, 0, 0, 128)
+	amountLabel.Size = UDim2.new(1, 0, 0, 28)
 	amountLabel.TextXAlignment = Enum.TextXAlignment.Center
-	amountLabel.ZIndex = 5
+	amountLabel.TextYAlignment = Enum.TextYAlignment.Center
+	amountLabel.ZIndex = 8
+	amountLabel.TextStrokeTransparency = 1
+	Juice.countUp(amountLabel, amount, "+", "", 0.75)
+	Juice.punch(plate, 1.12)
+
 	return holder
+end
+
+local function starBadge(parent: Instance): Frame
+	local badge = UiKit.frame(parent, UiTheme.color.violet, 0)
+	badge.Size = UDim2.fromOffset(108, 108)
+	UiKit.corner(badge, 999)
+	local ring = UiKit.stroke(badge, UiTheme.color.hotPink, 3, 0)
+	Juice.glowStroke(ring, UiTheme.color.hotPink, UiTheme.color.electric)
+	local glyph = UiKit.label(badge, "✦", 48, UiTheme.font.heavy, UiTheme.color.sunshine)
+	glyph.Size = UDim2.fromScale(1, 1)
+	glyph.TextXAlignment = Enum.TextXAlignment.Center
+	glyph.TextYAlignment = Enum.TextYAlignment.Center
+	glyph.TextStrokeTransparency = 0.5
+	glyph.TextStrokeColor3 = UiTheme.color.ink
+	Juice.pulse(badge, 0.96, 1.08)
+	return badge
 end
 
 local function present(payload: FanfarePayload)
@@ -157,104 +174,131 @@ local function present(payload: FanfarePayload)
 	busy = true
 	currentPayload = payload
 
-	local dim = UiKit.frame(root, Color3.new(0, 0, 0), 1)
+	local dim = UiKit.frame(root, Color3.fromRGB(12, 4, 24), 1)
 	dim.Name = "FanfareDim"
 	dim.Size = UDim2.fromScale(1, 1)
 	dim.ZIndex = 1
 	dim.Active = true
 
-	local cardH = 340
-	local shadow = softShadow(dim, UDim2.fromOffset(360, cardH + 16), UDim2.new(0.5, 6, 0.5, 10))
-	shadow.AnchorPoint = Vector2.new(0.5, 0.5)
+	local cardW = 340
+	local cardH = 420
+	-- Soft centred shadow — same anchor as the card, no sideways smear.
+	local shadow = Juice.shadow(dim, UDim2.fromOffset(cardW + 16, cardH + 16), UDim2.fromScale(0.5, 0.5), 24)
+	shadow.BackgroundTransparency = 1
 
 	local card = UiKit.frame(dim, UiTheme.color.ink, 1)
 	card.Name = "Card"
 	card.AnchorPoint = Vector2.new(0.5, 0.5)
 	card.Position = UDim2.fromScale(0.5, 0.54)
-	card.Size = UDim2.fromOffset(340, cardH)
+	card.Size = UDim2.fromOffset(cardW, cardH)
 	card.ZIndex = 2
 	card.Active = true
-	UiKit.corner(card, 16)
-	local border = UiKit.stroke(card, UiTheme.color.gold, 2, 0.1)
+	card.ClipsDescendants = true
+	UiKit.corner(card, 22)
+	local border = UiKit.stroke(card, UiTheme.color.gold, 3, 0.15)
+	Juice.rainbowStroke(border, 1.4)
 
-	local face = UiKit.frame(card, UiTheme.color.paper, 0)
+	local face = UiKit.frame(card, UiTheme.color.panel, 0)
 	face.Position = UDim2.fromOffset(12, 12)
 	face.Size = UDim2.new(1, -24, 1, -24)
 	face.ZIndex = 3
-	UiKit.corner(face, 10)
-	UiKit.stroke(face, UiTheme.color.ink, 1.5, 0.55)
+	face.ClipsDescendants = true
+	UiKit.corner(face, 16)
+	UiKit.stroke(face, UiTheme.color.violet, 1.5, 0.35)
 
-	cropMark(face, 0, 0, 1, 1)
-	cropMark(face, 1, 0, -1, 1)
-	cropMark(face, 0, 1, 1, -1)
-	cropMark(face, 1, 1, -1, -1)
+	-- Soft top glow inside the face
+	local glow = UiKit.frame(face, UiTheme.color.magenta, 0.85)
+	glow.Size = UDim2.new(1, 0, 0, 72)
+	glow.ZIndex = 3
+	UiKit.corner(glow, 16)
 
+	Juice.sparkles(face, {
+		{ 0.1, 0.12 },
+		{ 0.9, 0.14 },
+		{ 0.12, 0.88 },
+		{ 0.88, 0.86 },
+	})
+
+	-- One centred column so text, jewel, and CTA share the same axis.
 	local column = Instance.new("Frame")
 	column.Name = "Column"
 	column.BackgroundTransparency = 1
-	column.Position = UDim2.fromOffset(18, 16)
-	column.Size = UDim2.new(1, -36, 1, -72)
-	column.ZIndex = 4
+	column.AnchorPoint = Vector2.new(0.5, 0.5)
+	column.Position = UDim2.fromScale(0.5, 0.5)
+	column.Size = UDim2.new(1, -28, 1, -24)
+	column.ZIndex = 5
 	column.Parent = face
-	local list = UiKit.list(column, Enum.FillDirection.Vertical, 6)
+	local list = UiKit.list(column, Enum.FillDirection.Vertical, 8)
 	list.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	list.VerticalAlignment = Enum.VerticalAlignment.Top
+	list.VerticalAlignment = Enum.VerticalAlignment.Center
+	list.Padding = UDim.new(0, 8)
 
-	local kicker = UiKit.label(column, "INK-OFF", 11, UiTheme.font.bold, UiTheme.color.oxblood)
-	kicker.Size = UDim2.new(1, 0, 0, 14)
+	local kickerText = KIND_KICKER[payload.kind] or "INK-OFF"
+	local kicker = UiKit.label(column, kickerText, 12, UiTheme.font.heavy, UiTheme.color.sunshine)
+	kicker.Size = UDim2.new(1, 0, 0, 16)
 	kicker.TextXAlignment = Enum.TextXAlignment.Center
+	kicker.TextYAlignment = Enum.TextYAlignment.Center
+	kicker.TextStrokeTransparency = 1
 	kicker.LayoutOrder = 1
 
-	local titleSize = if #payload.title > 28 then 18 else 26
-	local titleHeight = if #payload.title > 28 then 44 else 30
-	local title = UiKit.label(column, payload.title, titleSize, UiTheme.font.heavy, UiTheme.color.ink)
+	local titleSize = if #payload.title > 28 then 20 else 28
+	local titleHeight = if #payload.title > 28 then 44 else 32
+	local title = UiKit.label(column, payload.title, titleSize, UiTheme.font.heavy, UiTheme.color.text)
 	title.Size = UDim2.new(1, 0, 0, titleHeight)
 	title.TextWrapped = true
 	title.TextXAlignment = Enum.TextXAlignment.Center
+	title.TextYAlignment = Enum.TextYAlignment.Center
+	title.TextStrokeTransparency = 1
 	title.LayoutOrder = 2
 
 	if payload.subtitle ~= nil and payload.subtitle ~= "" then
-		local sub = UiKit.label(column, payload.subtitle, 14, UiTheme.font.medium, UiTheme.color.inkMuted)
-		sub.Size = UDim2.new(1, 0, 0, 18)
+		local sub = UiKit.label(column, payload.subtitle, 15, UiTheme.font.bold, UiTheme.color.electric)
+		sub.Size = UDim2.new(1, 0, 0, 20)
 		sub.TextXAlignment = Enum.TextXAlignment.Center
+		sub.TextYAlignment = Enum.TextYAlignment.Center
 		sub.LayoutOrder = 3
 	end
 
 	local coins = payload.coins or 0
 	if coins > 0 then
-		local art = coinStack(column, coins)
+		local art = coinJewel(column, coins)
 		art.LayoutOrder = 4
 	else
-		local badge = UiKit.frame(column, UiTheme.color.ink, 0)
-		badge.Size = UDim2.fromOffset(100, 100)
+		local badge = starBadge(column)
 		badge.LayoutOrder = 4
-		UiKit.corner(badge, 14)
-		UiKit.stroke(badge, UiTheme.color.gold, 2, 0.2)
-		local glyph = UiKit.label(badge, "✦", 36, UiTheme.font.heavy, UiTheme.color.gold)
-		glyph.Size = UDim2.fromScale(1, 1)
-		glyph.TextXAlignment = Enum.TextXAlignment.Center
 	end
 
-	glint(face, 0.16, 0.22, 0.05)
-	glint(face, 0.84, 0.28, 0.2)
-	glint(face, 0.2, 0.78, 0.35)
-	glint(face, 0.8, 0.74, 0.5)
+	if payload.streak ~= nil and payload.streak > 0 then
+		local streak =
+			UiKit.label(column, `🔥 {payload.streak}-day streak!`, 14, UiTheme.font.heavy, UiTheme.color.coral)
+		streak.Size = UDim2.new(1, 0, 0, 20)
+		streak.TextXAlignment = Enum.TextXAlignment.Center
+		streak.TextYAlignment = Enum.TextYAlignment.Center
+		streak.LayoutOrder = 5
+		Juice.pulse(streak, 0.98, 1.05)
+	end
 
 	if payload.detail ~= nil and payload.detail ~= "" then
-		local detail = UiKit.label(column, payload.detail, 13, UiTheme.font.medium, UiTheme.color.inkMuted)
-		detail.Size = UDim2.new(1, 0, 0, 36)
+		local detail = UiKit.label(column, payload.detail, 13, UiTheme.font.medium, UiTheme.color.muted)
+		detail.Size = UDim2.new(1, -8, 0, 40)
 		detail.TextWrapped = true
 		detail.TextXAlignment = Enum.TextXAlignment.Center
-		detail.LayoutOrder = 5
+		detail.TextYAlignment = Enum.TextYAlignment.Top
+		detail.LayoutOrder = 6
 	end
 
-	local primaryLabel = if payload.claimLogin then "Claim reward" else "Continue"
-	local primary = UiKit.button(face, primaryLabel, 15, UiTheme.color.ink, UiTheme.color.gold, 8)
-	primary.AnchorPoint = Vector2.new(0.5, 1)
-	primary.Position = UDim2.new(0.5, 0, 1, -14)
-	primary.Size = UDim2.fromOffset(180, 40)
-	primary.ZIndex = 7
-	UiKit.stroke(primary, Color3.fromRGB(150, 110, 50), 1, 0.35)
+	local primaryLabel = if payload.claimLogin then "CLAIM NOW!" else "AWESOME!"
+	local primary = UiKit.button(column, primaryLabel, 16, UiTheme.color.ink, UiTheme.color.gold, 12)
+	primary.LayoutOrder = 7
+	primary.Size = UDim2.fromOffset(200, 46)
+	primary.ZIndex = 10
+	primary.TextXAlignment = Enum.TextXAlignment.Center
+	primary.TextYAlignment = Enum.TextYAlignment.Center
+	primary.TextStrokeTransparency = 1
+	local btnStroke = UiKit.stroke(primary, UiTheme.color.hotPink, 2.5, 0)
+	Juice.glowStroke(btnStroke, UiTheme.color.hotPink, UiTheme.color.sunshine)
+	Juice.shimmer(primary)
+	Juice.pulse(primary, 1, 1.05)
 
 	local closing = false
 	local function close()
@@ -262,14 +306,21 @@ local function present(payload: FanfarePayload)
 			return
 		end
 		closing = true
+		if confettiAllowed() then
+			Juice.confetti(dim, Vector2.new(0.5, 0.45), 36, 1.1)
+		end
+		local scale = card:FindFirstChildOfClass("UIScale")
+		if scale ~= nil then
+			TweenService:Create(scale, FADE, { Scale = 0.85 }):Play()
+		end
 		local out = TweenService:Create(card, FADE, {
 			BackgroundTransparency = 1,
-			Position = UDim2.fromScale(0.5, 0.58),
+			Position = UDim2.fromScale(0.5, 0.56),
 		})
 		local dimOut = TweenService:Create(dim, FADE, { BackgroundTransparency = 1 })
 		out:Play()
 		dimOut:Play()
-		task.delay(0.24, function()
+		task.delay(0.28, function()
 			if dim.Parent ~= nil then
 				dim:Destroy()
 			end
@@ -284,6 +335,7 @@ local function present(payload: FanfarePayload)
 
 	primary.MouseButton1Click:Connect(function()
 		Sfx.play("good")
+		Juice.punch(primary, 1.2)
 		claimIfNeeded(payload)
 		close()
 	end)
@@ -299,14 +351,27 @@ local function present(payload: FanfarePayload)
 		end
 	end)
 
-	card.Size = UDim2.fromOffset(300, cardH - 24)
-	TweenService:Create(dim, FADE, { BackgroundTransparency = 0.45 }):Play()
+	-- Entrance: dim → centred card pop → confetti
+	card.Size = UDim2.fromOffset(cardW - 24, cardH - 24)
+	local scale = Instance.new("UIScale")
+	scale.Scale = 0.55
+	scale.Parent = card
+	TweenService:Create(dim, FADE, { BackgroundTransparency = 0.4 }):Play()
 	TweenService:Create(card, POP, {
 		BackgroundTransparency = 0,
-		Size = UDim2.fromOffset(340, cardH),
+		Size = UDim2.fromOffset(cardW, cardH),
 		Position = UDim2.fromScale(0.5, 0.5),
 	}):Play()
-	TweenService:Create(border, POP, { Transparency = 0.05 }):Play()
+	TweenService:Create(scale, POP, { Scale = 1 }):Play()
+	TweenService:Create(shadow, POP, { BackgroundTransparency = 0.62 }):Play()
+	TweenService:Create(border, POP, { Transparency = 0 }):Play()
+
+	task.delay(0.12, function()
+		if confettiAllowed() and dim.Parent ~= nil then
+			Juice.confetti(dim, Vector2.new(0.5, 0.42), 32, 1.2)
+		end
+	end)
+
 	Sfx.play(if payload.kind == "welcome" or payload.kind == "login" then "level" else "good")
 end
 
@@ -391,10 +456,10 @@ function Fanfare.start()
 			local day = view.login.dayInCycle
 			Fanfare.show({
 				kind = "login",
-				title = "Daily ink",
+				title = "Daily ink!",
 				subtitle = `Day {day} of 7`,
 				detail = if view.login.streak > 0
-					then `Streak alive — {view.login.streak} {if view.login.streak == 1 then "day" else "days"} so far.`
+					then `Keep the streak alive — claim every day!`
 					else "Claim every day. Miss one and the streak resets.",
 				coins = view.login.nextCoins,
 				day = day,

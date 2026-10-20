@@ -263,7 +263,48 @@ function ParlourProps.place(
 	return clone
 end
 
+local function dressLamp(clone: Model)
+	-- Creator Store lamps arrive with a near-black pebble inner dome that reads as a
+	-- solid black blob once SurfaceAppearance is gone. Reskin every piece here.
+	local cream = Color3.fromRGB(255, 236, 214)
+	local warm = Color3.fromRGB(255, 214, 170)
+	local metal = Color3.fromRGB(168, 170, 172)
+	for _, part in clone:GetDescendants() do
+		if not part:IsA("BasePart") or part.Name == "LampAim" or part.Name == "PropBlock" then
+			continue
+		end
+		local name = string.lower(part.Name)
+		if string.find(name, "innerlampdome", 1, true) then
+			Surfaces.apply(part, "glass", cream)
+			part.Transparency = 0.35
+			part.Reflectance = 0.2
+			part.CastShadow = false
+		elseif string.find(name, "outerlampdome", 1, true) or string.find(name, "coloredlampdome", 1, true) then
+			Surfaces.apply(part, "glass", cream)
+			part.Transparency = 0.15
+			part.Reflectance = 0.12
+		elseif string.find(name, "lightbulb", 1, true) or string.find(name, "coloredneon", 1, true) then
+			Surfaces.apply(part, "neon", warm)
+			part.CastShadow = false
+		elseif
+			string.find(name, "pole", 1, true)
+			or string.find(name, "joint", 1, true)
+			or string.find(name, "socket", 1, true)
+			or string.find(name, "cage", 1, true)
+			or string.find(name, "nut", 1, true)
+			or string.find(name, "hold", 1, true)
+			or string.find(name, "base", 1, true)
+			or string.find(name, "transformer", 1, true)
+			or string.find(name, "switch", 1, true)
+			or string.find(name, "rotating", 1, true)
+		then
+			Surfaces.apply(part, "powder", metal)
+		end
+	end
+end
+
 local function aimLamp(clone: Model, target: Vector3)
+	dressLamp(clone)
 	local bulb = clone:FindFirstChild("LightBulb", true)
 	local origin = if bulb ~= nil and bulb:IsA("BasePart") then bulb.Position else clone:GetPivot().Position
 	local aim = Instance.new("Part")
@@ -301,20 +342,23 @@ local function aimLamp(clone: Model, target: Vector3)
 end
 
 local function dressCabinet(root: Instance)
-	for _, descendant in root:GetDescendants() do
-		if descendant:IsA("SurfaceAppearance") then
-			descendant:Destroy()
-		end
-	end
+	-- Keep Creator Store SurfaceAppearance when present; only force parlour finishes on
+	-- plain MeshParts so closing the SA does not leave a black silhouette.
 	for _, descendant in root:GetDescendants() do
 		if descendant:IsA("BasePart") and descendant.Name ~= "PropBlock" then
+			local hasLook = descendant:FindFirstChildOfClass("SurfaceAppearance") ~= nil
+			if hasLook and descendant:IsA("MeshPart") then
+				-- Soften the stock look without wiping the texture maps.
+				descendant.Color = Color3.fromRGB(255, 250, 244)
+				continue
+			end
 			local name = string.lower(descendant.Name)
 			if string.find(name, "handle", 1, true) or string.find(name, "lock", 1, true) then
 				Surfaces.apply(descendant, "steel")
 			elseif string.find(name, "wheel", 1, true) then
-				Surfaces.apply(descendant, "rubber", Color3.fromRGB(28, 28, 30))
+				Surfaces.apply(descendant, "rubber", Color3.fromRGB(36, 36, 40))
 			else
-				Surfaces.apply(descendant, "powder")
+				Surfaces.apply(descendant, "powder", Color3.fromRGB(236, 236, 232))
 			end
 		end
 	end
@@ -327,93 +371,85 @@ local function dropRig(station: Model, rigName: string)
 	end
 end
 
+-- Yields until Creator Store props are placed so layout baking can include them.
 function ParlourProps.dress(lobby: Model)
-	task.spawn(function()
-		local ok, err = pcall(function()
-			ensureLoaded()
-			local stations = lobby:FindFirstChild("Stations")
-			if stations == nil then
-				return
+	local ok, err = pcall(function()
+		ensureLoaded()
+		local stations = lobby:FindFirstChild("Stations")
+		if stations == nil then
+			return
+		end
+		for _, station in stations:GetChildren() do
+			if not station:IsA("Model") then
+				continue
 			end
-			for _, station in stations:GetChildren() do
-				if not station:IsA("Model") then
-					continue
-				end
-				local pivot = station:GetPivot()
-				local floorAt = function(offset: Vector3): CFrame
-					return pivot * CFrame.new(offset)
-				end
+			local pivot = station:GetPivot()
+			local floorAt = function(offset: Vector3): CFrame
+				return pivot * CFrame.new(offset)
+			end
 
-				local chair = ParlourProps.place(
-					"BarberChair",
-					station,
-					floorAt(Vector3.new(0.15, 0, 0.15)),
-					pivot.LookVector,
-					nil,
-					true,
-					nil
-				)
-				if chair ~= nil then
-					dropRig(station, "RigBed")
-				end
+			local chair = ParlourProps.place(
+				"BarberChair",
+				station,
+				floorAt(Vector3.new(0.15, 0, 0.15)),
+				pivot.LookVector,
+				nil,
+				true,
+				nil
+			)
+			if chair ~= nil then
+				dropRig(station, "RigBed")
+			end
 
-				local stool = ParlourProps.place(
-					"CasterSeat",
-					station,
-					floorAt(Vector3.new(2.85, 0, 0.45)),
-					-pivot.RightVector,
-					2.05,
-					false,
-					nil
-				)
-				if stool ~= nil then
-					local seat = stool:FindFirstChild("Seat", true)
-					if seat ~= nil and seat:IsA("Seat") then
-						seat.Name = "ArtistStool"
-					end
-					dropRig(station, "RigStool")
+			local stool = ParlourProps.place(
+				"CasterSeat",
+				station,
+				floorAt(Vector3.new(2.85, 0, 0.45)),
+				-pivot.RightVector,
+				2.05,
+				false,
+				nil
+			)
+			if stool ~= nil then
+				local seat = stool:FindFirstChild("Seat", true)
+				if seat ~= nil and seat:IsA("Seat") then
+					seat.Name = "ArtistStool"
 				end
+				dropRig(station, "RigStool")
+			end
 
-				local cabinet = ParlourProps.place(
-					"ToolCabinet",
-					station,
-					floorAt(Vector3.new(-4.55, 0, 2.55)),
-					nil,
-					nil,
-					true,
-					135
-				)
-				if cabinet ~= nil then
-					dressCabinet(cabinet)
-					dropRig(station, "RigTray")
-					local boundsCF, boundsSize = cabinet:GetBoundingBox()
-					local top = boundsCF.Position.Y + boundsSize.Y / 2
-					local slot = 0
-					for _, child in station:GetChildren() do
-						if child.Name == "InkBottle" and child:IsA("BasePart") then
-							slot += 1
-							local spin = child.CFrame.Rotation
-							child.CFrame = CFrame.new(
-								boundsCF.Position.X + (slot - 2) * 0.42,
-								top + 0.16,
-								boundsCF.Position.Z + 0.2
-							) * spin
-						end
+			local cabinet =
+				ParlourProps.place("ToolCabinet", station, floorAt(Vector3.new(-4.55, 0, 2.55)), nil, nil, true, 135)
+			if cabinet ~= nil then
+				dressCabinet(cabinet)
+				dropRig(station, "RigTray")
+				local boundsCF, boundsSize = cabinet:GetBoundingBox()
+				local top = boundsCF.Position.Y + boundsSize.Y / 2
+				local slot = 0
+				for _, child in station:GetChildren() do
+					if child.Name == "InkBottle" and child:IsA("BasePart") then
+						slot += 1
+						local spin = child.CFrame.Rotation
+						child.CFrame = CFrame.new(
+							boundsCF.Position.X + (slot - 2) * 0.42,
+							top + 0.16,
+							boundsCF.Position.Z + 0.2
+						) * spin
 					end
 				end
-
-				local lamp =
-					ParlourProps.place("TableLamp", station, floorAt(Vector3.new(2.15, 0, -2.35)), nil, 3.3, false, 180)
-				if lamp ~= nil then
-					aimLamp(lamp, floorAt(Vector3.new(0.1, 2.4, 0.2)).Position)
-					dropRig(station, "RigLamp")
-				end
 			end
-		end)
-		if not ok then
-			warn(`{PREFIX} Prop dressing failed: {err}`)
+
+			local lamp =
+				ParlourProps.place("TableLamp", station, floorAt(Vector3.new(2.15, 0, -2.35)), nil, 3.3, false, 180)
+			if lamp ~= nil then
+				aimLamp(lamp, floorAt(Vector3.new(0.1, 2.4, 0.2)).Position)
+				dropRig(station, "RigLamp")
+			end
 		end
 	end)
+	if not ok then
+		warn(`{PREFIX} Prop dressing failed: {err}`)
+	end
 end
 
 return ParlourProps

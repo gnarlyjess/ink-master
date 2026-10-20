@@ -129,57 +129,85 @@ local function earnedPack(id: string, name: string, description: string, unlockT
 	})
 end
 
--- Free shapes stay out of every pack: circle, square, triangle, line, heart, star.
-earnedPack("geometry", "Geometry desk", "Rectangle, oval, diamond, hex, drop, and arc.", "Reach level 4", {
-	"rect",
+-- Free shapes stay out of every pack: circle, triangle, square, line, rectangle.
+earnedPack("geometry", "Geometry desk", "Ovals, diamonds, hexes, and more clean cuts.", "Reach level 4", {
 	"ovalline",
 	"gem",
 	"hex",
-	"dropline",
-	"arc",
+	"pentagon",
+	"octagon",
+	"trapezoid",
+	"parallelogram",
+	"round_square",
+	"tri_down",
+	"quarter",
+	"half",
+	"pacman",
+	"u_shape",
 })
-pack("motion", "Motion set", "Arrow, cross, wave, zigzag, and blob.", 280, 2, {
+pack("motion", "Motion set", "Arrows, waves, zigzags, and check marks.", 280, 2, {
 	"pointer",
+	"arrow",
 	"crossline",
 	"wave",
 	"zigzag",
+	"chevronline",
+	"check",
 	"blob",
 })
-pack("garden", "Sky & garden", "Moon, sun, flower, cloud, and leaf.", 350, 2, {
+pack("garden", "Sky & garden", "Moon, sun, cloud, leaf, and drops.", 350, 2, {
 	"moon",
 	"sun",
-	"flower",
 	"cloud",
 	"leaf",
+	"dropline",
+	"flower",
+	"arch",
 })
-pack("flash", "Bold flash", "Bolts, bursts, sparks, banners, and steps.", 400, 3, {
+pack("flash", "Bold flash", "Stars, bolts, bursts, and sparks.", 400, 3, {
+	"star",
+	"star6",
 	"boltline",
 	"burstline",
 	"sparkline",
+	"asterisk",
 	"bannerline",
-	"chevronline",
 	"stepline",
 })
-pack("crest", "Royal crest", "Crown, shield, and a watching eye.", 500, 5, {
+pack("crest", "Royal crest", "Crown, shield, eye, pin, and bell.", 500, 5, {
 	"crown",
 	"shield",
 	"eye",
-})
-pack("marks", "Shop marks", "Ring, X, plus, arrow, and saltire cuts.", 320, 2, {
-	"ring",
-	"saltire",
-	"plus",
-	"arrow",
-	"slash",
-})
-pack("signal", "Signal pack", "Target, half-moon, spark, burst, and banner.", 380, 3, {
-	"target",
-	"half",
-	"spark",
-	"burst",
+	"pin",
+	"bell",
 	"banner",
 })
-pack("classic", "Classic flash", "Heart, bolt, drop, chevron, and steps.", 420, 4, {
+pack("marks", "Shop marks", "Plus, X, pill, and liner cuts.", 320, 2, {
+	"plus",
+	"saltire",
+	"pill",
+	"ring",
+})
+pack("signal", "Signal pack", "Target, spiral, infinity, and signs.", 380, 3, {
+	"target",
+	"spiral",
+	"infinity",
+	"hourglass",
+	"bowtie",
+	"peace",
+	"forbidden",
+	"spark",
+	"burst",
+})
+pack("classic", "Classic flash", "Hearts, cards, bubbles, and notes.", 420, 4, {
+	"heartline",
+	"spade",
+	"club",
+	"card_diamond",
+	"bubble",
+	"bookmark",
+	"flag",
+	"note",
 	"heart",
 	"bolt",
 	"drop",
@@ -189,13 +217,13 @@ pack("classic", "Classic flash", "Heart, bolt, drop, chevron, and steps.", 420, 
 earnedPack(
 	"starter_tools",
 	"Needle tray",
-	"Bar, pill, disc, and corner — the liner's starter kit.",
+	"Disc, band, and corner — the liner's starter kit.",
 	"Reach level 6",
 	{
 		"band",
-		"pill",
 		"disc",
 		"corner",
+		"arc",
 	}
 )
 

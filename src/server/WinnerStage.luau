@@ -6,8 +6,11 @@
 
 local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
+local WinnerStageLayout = require(ReplicatedStorage.Shared.WinnerStageLayout)
+local LayoutBake = require(script.Parent.LayoutBake)
 local Lobby = require(script.Parent.Lobby)
 
 local ORIGIN = Vector3.new(0, 0, 420)
@@ -456,6 +459,7 @@ function WinnerStage.build()
 	buildDais(model)
 	buildCamera(model)
 	model.Parent = Workspace
+	LayoutBake.apply(model, WinnerStageLayout)
 end
 
 -- Everyone stands in the audience facing the podiums.
