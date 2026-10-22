@@ -350,11 +350,25 @@ local function buildShell(lobby: Model)
 		material = Enum.Material.Plaster,
 		parent = shell,
 	})
-	-- Stops short of the restroom door cut into WallBack below.
+	-- Brick flanks only — leave the center under the neon as plaster so no dark bar reads under the sign.
+	local brickH = 7.2
+	local brickY = 7.0
+	local brickZ = HALF_D - WALL / 2 - 0.1
+	local brickGap = 11.5
+	local brickSide = (ROOM_WIDTH - 10 - brickGap) / 2
 	makePart({
 		name = "BrickFeature",
-		size = Vector3.new(ROOM_WIDTH - 10, 11.4, 0.16),
-		cframe = CFrame.new(sx(-3.8), 9.15, HALF_D - WALL / 2 - 0.1),
+		size = Vector3.new(brickSide, brickH, 0.16),
+		cframe = CFrame.new(sx(-3.8) - brickGap / 2 - brickSide / 2, brickY, brickZ),
+		color = Color3.fromRGB(132, 72, 56),
+		material = Enum.Material.Brick,
+		parent = shell,
+		collide = false,
+	})
+	makePart({
+		name = "BrickFeature",
+		size = Vector3.new(brickSide, brickH, 0.16),
+		cframe = CFrame.new(sx(-3.8) + brickGap / 2 + brickSide / 2, brickY, brickZ),
 		color = Color3.fromRGB(132, 72, 56),
 		material = Enum.Material.Brick,
 		parent = shell,
@@ -1022,70 +1036,35 @@ local function buildEntrance(lobby: Model)
 	})
 
 	-- Centered on the back wall, facing the people who walk in.
+	-- No heavy ThemeFrame slab — it read as a black bar under the neon.
 	local backFace = HALF_D - WALL / 2
-	local boardCf = faceToward(Vector3.new(0, 8, backFace - 0.36), Vector3.new(0, 0, -1))
-	makePart({
-		name = "ThemeFrame",
-		size = Vector3.new(10.2, 6, 0.16),
-		cframe = boardCf * CFrame.new(0, 0, 0.08),
-		color = PALETTE.ink,
-		material = Enum.Material.SmoothPlastic,
-		parent = entrance,
-		collide = false,
-	})
-
+	local boardCf = faceToward(Vector3.new(0, 7.6, backFace - 0.36), Vector3.new(0, 0, -1))
 	makePart({
 		name = "ThemeBoard",
-		size = Vector3.new(9.6, 5.4, 0.12),
+		size = Vector3.new(9.6, 5.0, 0.12),
 		cframe = boardCf,
 		color = PALETTE.paper,
 		material = Enum.Material.SmoothPlastic,
 		parent = entrance,
 	})
 
-	local stageZ = backFace - 0.55
-	makePart({
-		name = "StagePost",
-		size = Vector3.new(0.42, 8.2, 0.36),
-		cframe = CFrame.new(-5.7, 7.5, stageZ),
-		color = PALETTE.woodDark,
-		material = Enum.Material.Wood,
-		parent = entrance,
-		collide = false,
-	})
-	makePart({
-		name = "StagePost",
-		size = Vector3.new(0.42, 8.2, 0.36),
-		cframe = CFrame.new(5.7, 7.5, stageZ),
-		color = PALETTE.woodDark,
-		material = Enum.Material.Wood,
-		parent = entrance,
-		collide = false,
-	})
-	makePart({
-		name = "StageLintel",
-		size = Vector3.new(11.8, 0.42, 0.36),
-		cframe = CFrame.new(0, 11.45, stageZ),
-		color = PALETTE.woodDark,
-		material = Enum.Material.Wood,
-		parent = entrance,
-		collide = false,
-	})
+	-- Soft wash on the theme board only — invisible fixture, tucked under the neon.
 	local boardLight = makePart({
 		name = "BoardLight",
-		size = Vector3.new(1.4, 0.28, 0.4),
-		cframe = CFrame.lookAt(Vector3.new(0, 13.2, backFace - 5.5), Vector3.new(0, 8.2, backFace)),
-		color = PALETTE.ink,
+		size = Vector3.new(0.8, 0.2, 0.3),
+		cframe = CFrame.lookAt(Vector3.new(0, 11.2, backFace - 0.9), Vector3.new(0, 7.6, backFace)),
+		color = PALETTE.trim,
 		material = Enum.Material.Metal,
 		parent = entrance,
 		collide = false,
 		castShadow = false,
 	})
+	boardLight.Transparency = 1
 	local boardSpot = Instance.new("SpotLight")
 	boardSpot.Face = Enum.NormalId.Front
-	boardSpot.Angle = 48
-	boardSpot.Brightness = 1.5
-	boardSpot.Range = 16
+	boardSpot.Angle = 52
+	boardSpot.Brightness = 1.35
+	boardSpot.Range = 14
 	boardSpot.Color = Color3.fromRGB(255, 216, 180)
 	boardSpot.Shadows = false
 	boardSpot.Parent = boardLight
@@ -1137,8 +1116,8 @@ local function buildEntrance(lobby: Model)
 	doorLeaf(1)
 end
 
--- Standing in front of the glowing NeonSign (back wall ~z=26), not by the door.
-local SPAWN_FACE = Vector3.new(0, 0, 1)
+-- Standing in front of the glowing NeonSign on the back wall (look toward +Z).
+local NEON_AIM = Vector3.new(0, FLOOR_TOP + 1, HALF_D - 1)
 local SPAWN_SPOTS = {
 	Vector3.new(0, FLOOR_TOP + 0.22, 14),
 	Vector3.new(sx(-3.2), FLOOR_TOP + 0.22, 14),
@@ -1152,6 +1131,11 @@ local SPAWN_SPOTS = {
 	Vector3.new(0, FLOOR_TOP + 0.22, 10),
 }
 
+local function faceNeon(from: Vector3): CFrame
+	local aim = Vector3.new(NEON_AIM.X, from.Y, NEON_AIM.Z)
+	return CFrame.lookAt(from, aim)
+end
+
 local function buildSpawns(lobby: Model): { SpawnLocation }
 	local folder = makeFolder(lobby, "Spawns")
 	local pads: { SpawnLocation } = {}
@@ -1162,7 +1146,7 @@ local function buildSpawns(lobby: Model): { SpawnLocation }
 		pad.Anchored = true
 		pad.Size = Vector3.new(3.2, 0.05, 3.2)
 		local feet = Vector3.new(spot.X, FLOOR_TOP + 0.1, spot.Z)
-		pad.CFrame = CFrame.lookAt(feet, feet + SPAWN_FACE)
+		pad.CFrame = faceNeon(feet)
 		pad.Color = PALETTE.woodDark
 		pad.Material = Enum.Material.Wood
 		pad.Transparency = 1
@@ -1172,9 +1156,9 @@ local function buildSpawns(lobby: Model): { SpawnLocation }
 		pad.BottomSurface = Enum.SurfaceType.Smooth
 		pad.Neutral = true
 		pad.Duration = 0
-		pad.Enabled = true
-		-- Prefer the room-centre pad so joiners face the glowing neon.
-		pad.RootPriority = if index == 1 then 100 else math.max(0, 20 - index)
+		-- Only the centre pad is a live spawn; others are seating overflow.
+		pad.Enabled = index == 1
+		pad.RootPriority = if index == 1 then 100 else 0
 		pad.AllowTeamChangeOnTouch = false
 		pad.Parent = folder
 		for _, child in pad:GetChildren() do
@@ -1200,11 +1184,15 @@ local function pivotOnto(character: Model, pad: SpawnLocation)
 	end
 	local feet = pad.Position + Vector3.new(0, pad.Size.Y / 2, 0)
 	local stand = feet + Vector3.new(0, hip + 0.15, 0)
-	local flatLook = Vector3.new(pad.CFrame.LookVector.X, 0, pad.CFrame.LookVector.Z)
-	if flatLook.Magnitude < 0.05 then
-		flatLook = SPAWN_FACE
+	-- Always aim at the neon — pad LookVector alone can get flipped by spawn timing.
+	if humanoid ~= nil then
+		humanoid.AutoRotate = false
 	end
-	character:PivotTo(CFrame.lookAt(stand, stand + flatLook.Unit))
+	character:PivotTo(faceNeon(stand))
+	if root:IsA("BasePart") then
+		root.AssemblyLinearVelocity = Vector3.zero
+		root.AssemblyAngularVelocity = Vector3.zero
+	end
 end
 
 local nextPad = 0
@@ -1225,16 +1213,24 @@ local function seatCharacter(character: Model, pad: SpawnLocation)
 			return
 		end
 		local player = Players:GetPlayerFromCharacter(character)
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+
+		local function stamp()
+			if character.Parent ~= nil then
+				pivotOnto(character, pad)
+			end
+		end
+
+		-- Appearance / layered clothing can nudge the root after the first seat.
+		-- Keep this to two stamps max — a tight loop felt like a camera rumble on join.
+		stamp()
 		if player ~= nil and not player:HasAppearanceLoaded() then
 			player.CharacterAppearanceLoaded:Wait()
 		end
-		-- Default spawn seating can overwrite us for a beat after CharacterAdded.
-		for _ = 1, 6 do
-			if character.Parent == nil then
-				return
-			end
-			pivotOnto(character, pad)
-			task.wait(0.1)
+		task.wait(0.2)
+		stamp()
+		if humanoid ~= nil and humanoid.Parent ~= nil then
+			humanoid.AutoRotate = true
 		end
 	end)
 end

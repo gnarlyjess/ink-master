@@ -8,10 +8,12 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
+local Economy = require(ReplicatedStorage.Shared.Economy)
 local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local RoundTypes = require(ReplicatedStorage.Shared.RoundTypes)
 local Themes = require(ReplicatedStorage.Shared.Themes)
+local ThemeQueue = require(script.Parent.ThemeQueue)
 
 type RoundState = RoundTypes.RoundState
 type RoundSnapshot = RoundTypes.RoundSnapshot
@@ -27,6 +29,7 @@ local pauseRemote = Remotes.DevSetPaused
 local scheduleToken = 0
 local revision = 0
 local roundId = 0
+local designRound = 1
 local inRound = false
 local announcedWaiting = false
 local paused = GameConfig.devHoldsLobby()
@@ -48,9 +51,7 @@ local function countPlayers(): number
 	return count
 end
 
-function machine.broadcast(target: Player?)
-	revision += 1
-
+local function buildSnapshot(forPlayer: Player?): RoundSnapshot
 	local showTheme = RoundTypes.showsTheme(currentState)
 	local themeId: string? = nil
 	local themeName: string? = nil
@@ -61,9 +62,16 @@ function machine.broadcast(target: Player?)
 		themeTagline = activeTheme.tagline
 	end
 
-	local snapshot: RoundSnapshot = {
+	local mySpot: number? = nil
+	if forPlayer ~= nil then
+		mySpot = ThemeQueue.getPosition(forPlayer)
+	end
+
+	return {
 		revision = revision,
 		roundId = roundId,
+		designRound = designRound,
+		designRounds = GameConfig.getDesignRoundsPerMatch(),
 		state = currentState,
 		endsAt = endsAt,
 		duration = currentDuration,
@@ -76,16 +84,28 @@ function machine.broadcast(target: Player?)
 		themeId = themeId,
 		themeName = themeName,
 		themeTagline = themeTagline,
+		themePickPrice = Economy.THEME_PICK_PRICE,
+		themeQueueCount = ThemeQueue.getCount(),
+		themePickOpen = RoundTypes.themePickOpen(currentState, paused),
+		myThemePickSpot = mySpot,
 	}
+end
+
+function machine.broadcast(target: Player?)
+	revision += 1
 
 	if target ~= nil then
 		if target.Parent == Players then
-			stateRemote:FireClient(target, snapshot)
+			stateRemote:FireClient(target, buildSnapshot(target))
 		end
 		return
 	end
 
-	stateRemote:FireAllClients(snapshot)
+	for player in joinedPlayers do
+		if player.Parent == Players then
+			stateRemote:FireClient(player, buildSnapshot(player))
+		end
+	end
 end
 
 function machine.logState(state: RoundState, stateDuration: number)
@@ -93,8 +113,9 @@ function machine.logState(state: RoundState, stateDuration: number)
 	if activeTheme ~= nil and RoundTypes.showsTheme(state) then
 		themeNote = ` | {activeTheme.name}`
 	end
+	local matchNote = ` | design {designRound}/{GameConfig.getDesignRoundsPerMatch()}`
 	print(
-		`{PREFIX} Round {roundId} → {RoundTypes.getLabel(state)} ({state}){themeNote} | players {countPlayers()} | {string.format(
+		`{PREFIX} Match {roundId}{matchNote} → {RoundTypes.getLabel(state)} ({state}){themeNote} | players {countPlayers()} | {string.format(
 			"%.1f",
 			stateDuration
 		)}s`
@@ -105,6 +126,7 @@ function machine.publishWaiting()
 	local alreadyWaiting = announcedWaiting and currentState == "WaitingForPlayers" and not inRound
 	scheduleToken += 1
 	inRound = false
+	designRound = 1
 	currentState = "WaitingForPlayers"
 	endsAt = nil
 	currentDuration = nil
@@ -138,7 +160,8 @@ function machine.transitionTo(state: RoundState)
 	local token = scheduleToken
 	currentState = state
 	if state == "ThemeReveal" and activeTheme == nil then
-		activeTheme = Themes.pickRandom()
+		-- Paid FIFO claim first; blank custom text still resolves to a random theme.
+		activeTheme = ThemeQueue.consumeNext()
 	end
 	currentDuration = stateDuration
 	endsAt = Workspace:GetServerTimeNow() + stateDuration
@@ -165,12 +188,14 @@ function machine.beginRound()
 	inRound = true
 	announcedWaiting = false
 	roundId += 1
+	designRound = 1
 	activeTheme = nil
 	machine.transitionTo("Intermission")
 end
 
 function machine.completeRound()
 	inRound = false
+	designRound = 1
 	if countPlayers() >= GameConfig.getMinPlayers() then
 		machine.beginRound()
 	else
@@ -189,6 +214,16 @@ function machine.advance()
 			warn(`{PREFIX} Stopped at {currentState} because that state has no next step`)
 			inRound = false
 			machine.publishWaiting()
+			return
+		end
+		-- More design rounds left in this match: new theme → draw → vote again.
+		if designRound < GameConfig.getDesignRoundsPerMatch() then
+			designRound += 1
+			activeTheme = nil
+			print(
+				`{PREFIX} Match {roundId} | starting design {designRound}/{GameConfig.getDesignRoundsPerMatch()}`
+			)
+			machine.transitionTo("ThemeReveal")
 			return
 		end
 		machine.completeRound()
@@ -321,6 +356,22 @@ function RoundManager.getRoundId(): number
 	return roundId
 end
 
+function RoundManager.getDesignRound(): number
+	return designRound
+end
+
+function RoundManager.getDesignRounds(): number
+	return GameConfig.getDesignRoundsPerMatch()
+end
+
+function RoundManager.isMatchFinal(): boolean
+	return designRound >= GameConfig.getDesignRoundsPerMatch()
+end
+
+function RoundManager.canBuyThemePick(): boolean
+	return RoundTypes.themePickOpen(currentState, paused)
+end
+
 -- Creation, plus the Time's up beat so a late save still reaches the display case.
 function RoundManager.isDesignWindowOpen(): boolean
 	return currentState == "TattooCreation" or currentState == "Submission"
@@ -346,6 +397,10 @@ end
 function RoundManager.start()
 	GameConfig.validate()
 	Themes.validate()
+	ThemeQueue.start()
+	ThemeQueue.onChanged(function()
+		machine.broadcast(nil)
+	end)
 
 	local mode = if GameConfig.DevMode then "development" else "live"
 	local holdNote = if paused then " | lobby paused until Resume" else ""

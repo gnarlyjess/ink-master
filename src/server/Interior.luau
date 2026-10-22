@@ -46,8 +46,10 @@ local ART = {
 	rose = "rbxassetid://86726906730272",
 	mandala = "rbxassetid://112478329760730",
 }
-local NEON_ART = "rbxassetid://80329829825351"
+local NEON_ART = "rbxassetid://101983775816235"
 local RUG_ART = "rbxassetid://114513066068743"
+-- Original ornamental Persian rug texture (not a scraped web photo).
+local PERSIAN_RUG_ART = "rbxassetid://110091304461507"
 
 local NEUTRAL = Color3.fromRGB(255, 246, 236)
 local TASK = Color3.fromRGB(255, 249, 242)
@@ -107,9 +109,6 @@ local SKIN: { [string]: Skin } = {
 	DoorRail = { key = "powder" },
 	DoorHead = { key = "powder" },
 	Threshold = { key = "brass" },
-	ThemeFrame = { key = "walnut" },
-	StagePost = { key = "powder" },
-	StageLintel = { key = "powder" },
 	BoardLight = { key = "powder" },
 	DoorLeaf = { key = "walnut" },
 	DoorPull = { key = "brass" },
@@ -126,7 +125,8 @@ local SKIN: { [string]: Skin } = {
 	Footboard = { key = "leather" },
 	Armrest = { key = "leather" },
 	ArtistStool = { key = "leather" },
-	StationMat = { key = "rubber", tint = Color3.fromRGB(34, 34, 36) },
+	-- Match Lobby's original charcoal fabric mats (rubber + near-black tint read as pure black).
+	StationMat = { key = "fabric", tint = Color3.fromRGB(48, 44, 42) },
 	Sheet = { key = "fabric", tint = Color3.fromRGB(236, 236, 232) },
 	Pillow = { key = "fabric", tint = Color3.fromRGB(226, 226, 222) },
 }
@@ -227,6 +227,21 @@ local function buildFloorZones(root: Instance)
 		"fabric",
 		noShadow(Color3.fromRGB(88, 72, 54))
 	)
+
+	-- Big ornamental Persian rug: front edge meets the brass/oak strip, back toward the wall.
+	-- Rotated 90° so the pattern runs the other way; size axes swapped to keep the same footprint.
+	local rugFront = WORK_Z + 0.15
+	local rugBack = BACK_FACE - 1.8
+	local rugDepth = rugBack - rugFront
+	local persian = P(
+		floors,
+		"PersianRug",
+		Vector3.new(rugDepth, 0.05, 28),
+		CFrame.new(0, FLOOR_TOP + 0.03, (rugFront + rugBack) * 0.5) * CFrame.Angles(0, math.rad(90), 0),
+		"fabric",
+		noShadow(Color3.fromRGB(48, 14, 18))
+	)
+	Surfaces.decal(persian, Enum.NormalId.Top, PERSIAN_RUG_ART)
 end
 
 -- Walnut wainscot with powder-coated skirting, the joinery that ties the room together.
@@ -1535,7 +1550,7 @@ local function buildBackWall(root: Instance)
 	)
 
 	local neon =
-		P(back, "NeonSign", Vector3.new(9.0, 9.0 / 2.891, 0.05), backWall(0, 13.3) * CFrame.new(0, 0, -0.1), "paint", {
+		P(back, "NeonSign", Vector3.new(9.0, 9.0 / 2.891, 0.05), backWall(0, 12.55) * CFrame.new(0, 0, -0.1), "paint", {
 			transparency = 1,
 			shadow = false,
 		})
@@ -1552,7 +1567,7 @@ local function buildBackWall(root: Instance)
 	image.ScaleType = Enum.ScaleType.Fit
 	image.Image = NEON_ART
 	image.Parent = gui
-	Surfaces.glow(neon, Color3.fromRGB(255, 146, 70), 0.55, 12)
+	Surfaces.glow(neon, Color3.fromRGB(255, 96, 36), 0.7, 14)
 end
 
 ------------------------------------------------------------------------------------------
@@ -1720,9 +1735,9 @@ end
 
 local function buildWashUp(root: Instance)
 	local wash = Surfaces.folder(root, "WashUp")
-	-- Shortened so the restroom door (x 26 to 30) stays clear.
-	local cf = backWall(sx(20.7), WORK_TOP)
+	-- Shift left of the restroom door so the run lines up with the back-wall bay.
 	local L = 8.0
+	local cf = backWall(sx(19.2), WORK_TOP)
 	P(
 		wash,
 		"Plinth",

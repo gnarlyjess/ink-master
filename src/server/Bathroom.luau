@@ -278,7 +278,9 @@ end
 
 local function buildShell(room: Instance)
 	local cx = (X0 + X1) / 2
+	local cz = (Z0 + Z1) / 2
 	local width = X1 - X0
+	local depth = Z1 - Z0
 	-- Keep tile clear of the doorway sill so the two floors never share a face (z-fight).
 	local floorZ0 = Z0 + 0.55
 	local floorDepth = Z1 - floorZ0

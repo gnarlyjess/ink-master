@@ -849,15 +849,20 @@ local function fillWinner(snapshot: CeremonySnapshot)
 		paintConfetti(nil)
 		return
 	end
-	winnerTitle.Text = "WINNER"
+	winnerTitle.Text = if snapshot.matchFinal then "WINNER" else "ROUND LEAD"
 	winnerName.Text = winner.name
 	local title = titleOf(entry)
-	winnerTag.Text = if title ~= "" then title else "Best tattoo this round"
 	if title ~= "" then
+		winnerTag.Text = title
 		Juice.dressTitle(winnerTag)
+	elseif snapshot.matchFinal then
+		winnerTag.Text = "Most votes across the match"
+	else
+		winnerTag.Text = `Design {snapshot.designRound} of {snapshot.designRounds}`
 	end
 	local voteWord = if winner.votes == 1 then "vote" else "votes"
-	winnerStats.Text = `{winner.votes} {voteWord}`
+	local voteLabel = if snapshot.matchFinal then "total" else "this round"
+	winnerStats.Text = `{winner.votes} {voteWord} {voteLabel}`
 	local character = modelFor(entry.userId)
 	if character ~= nil then
 		TattooCanvas.snapshot(winnerThumb, character, entry.design)
@@ -932,7 +937,7 @@ end
 -- Phases ----------------------------------------------------------------------
 
 local function present(snapshot: CeremonySnapshot)
-	local phaseKey = `{snapshot.roundId}:{snapshot.phase}`
+	local phaseKey = `{snapshot.roundId}:{snapshot.designRound}:{snapshot.phase}`
 	local entering = phaseKey ~= shownPhase
 	local fromVoting = entering and string.sub(shownPhase, -7) == ":Voting" and voteRoot.Visible
 	shownPhase = phaseKey

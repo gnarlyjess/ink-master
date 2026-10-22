@@ -1,4 +1,5 @@
 .DS_Store
+.venv/
 
 # Roblox Studio lock files
 *.rbxlx.lock

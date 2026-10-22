@@ -62,6 +62,9 @@ local function ink(inkId: string, price: number, level: number, description: str
 	if swatch == nil then
 		error(`[InkMasters] Catalogue ink {inkId} has no swatch`)
 	end
+	if swatch.starter then
+		error(`[InkMasters] Starter ink {inkId} must not be sold or earned`)
+	end
 	table.insert(items, {
 		id = `ink:{inkId}`,
 		name = `{swatch.name} ink`,
@@ -75,32 +78,64 @@ local function ink(inkId: string, price: number, level: number, description: str
 	})
 end
 
-ink("ember", 120, 1, "A warm orange for flames and sunsets.")
-ink("sky", 120, 1, "A clear blue for waves and wings.")
-ink("mint", 120, 1, "Fresh green for leaves and frogs.")
-ink("blush", 150, 2, "Soft pink for hearts and flowers.")
-ink("plum", 150, 2, "A deep purple for moons and night skies.")
-ink("forest", 150, 3, "Dark green for jungles and dragons.")
-ink("copper", 200, 4, "Metallic brown for robots and treasure.")
-ink("ice", 250, 5, "Pale frost for stars and snow.")
-ink("lemon", 150, 1, "Bright yellow for suns, stars, and bees.")
-ink("navy", 150, 1, "Deep blue for oceans and night letters.")
-ink("coral", 160, 1, "Warm pink-orange for flowers and lips.")
-ink("lime", 180, 2, "Sharp green for frogs, slime, and leaves.")
-ink("lavender", 180, 2, "Soft purple for clouds and magic.")
-ink("bubble", 180, 2, "Hot pink that reads from across the parlour.")
-ink("crimson", 220, 3, "A darker red for roses and banners.")
+local function earnedInk(inkId: string, unlockText: string, description: string)
+	local swatch = InkColors.get(inkId)
+	if swatch == nil then
+		error(`[InkMasters] Catalogue ink {inkId} has no swatch`)
+	end
+	if swatch.starter then
+		error(`[InkMasters] Starter ink {inkId} must not be sold or earned`)
+	end
+	table.insert(items, {
+		id = `ink:{inkId}`,
+		name = `{swatch.name} ink`,
+		description = description,
+		category = "ink",
+		price = 0,
+		level = 1,
+		earned = true,
+		unlockText = unlockText,
+		inkId = inkId,
+		accent = { r = swatch.r, g = swatch.g, b = swatch.b },
+	})
+end
+
+-- Shop inks (coins). Solids first, pastel add-ons after. Black/white stay free.
+ink("red", 100, 1, "Classic bold red for hearts, roses, and flash.")
+ink("ember", 120, 1, "Hot orange for flames and sunsets.")
+ink("gold", 120, 1, "Warm metal for crowns, coins, and suns.")
+ink("teal", 120, 1, "Cool green-blue for waves and scales.")
+ink("magenta", 140, 1, "Loud parlour pink for flowers and neon.")
+ink("violet", 140, 1, "Rich purple for moons and magic.")
+ink("sky", 160, 1, "A clear blue for waves and wings.")
+ink("jade", 180, 2, "Rich green for snakes and gardens.")
+ink("plum", 180, 2, "A deep purple for moons and night skies.")
+ink("crimson", 200, 3, "A darker red for roses and banners.")
+ink("forest", 200, 3, "Dark green for jungles and dragons.")
 ink("cobalt", 220, 3, "Strong blue for waves and jewels.")
-ink("jade", 220, 3, "Rich green for snakes and gardens.")
-ink("sand", 280, 4, "Warm tan for stone, skin, and gold dust.")
-ink("amber", 280, 4, "Honey gold for treasure and sunlight.")
-ink("slate", 280, 4, "Cool grey for metal, stone, and shadows.")
-ink("wine", 340, 5, "Burgundy for velvet and dark roses.")
-ink("rust", 340, 5, "Weathered orange for anchors and iron.")
-ink("cream", 340, 5, "A soft highlight for stars and lace.")
-ink("cyan", 420, 6, "Bright turquoise for water and neon signs.")
-ink("indigo", 420, 6, "Between navy and violet, for night skies.")
-ink("silver", 520, 8, "Cool metal for moons, chains, and robots.")
+ink("copper", 220, 4, "Metallic brown for robots and treasure.")
+ink("amber", 240, 4, "Honey gold for treasure and sunlight.")
+ink("wine", 280, 5, "Burgundy for velvet and dark roses.")
+ink("rust", 280, 5, "Weathered orange for anchors and iron.")
+ink("cyan", 320, 6, "Bright turquoise for water and neon signs.")
+-- Pastel / soft add-ons
+ink("mint", 160, 2, "Soft green for leaves and frogs.")
+ink("blush", 180, 2, "Soft pink for hearts and flowers.")
+ink("sand", 220, 4, "Warm tan for stone, skin, and gold dust.")
+ink("slate", 240, 4, "Cool grey for metal, stone, and shadows.")
+
+-- Level-unlock inks. Never featured as shop deals.
+earnedInk("lemon", "Reach level 13", "Bright yellow for suns, stars, and bees.")
+earnedInk("navy", "Reach level 14", "Deep blue for oceans and night letters.")
+earnedInk("lime", "Reach level 17", "Sharp green for frogs, slime, and leaves.")
+earnedInk("bubble", "Reach level 19", "Hot pink that reads from across the parlour.")
+earnedInk("indigo", "Reach level 22", "Between navy and violet, for night skies.")
+-- Pastel add-ons earned later
+earnedInk("coral", "Reach level 16", "Warm pink-orange for flowers and lips.")
+earnedInk("lavender", "Reach level 18", "Soft purple for clouds and magic.")
+earnedInk("cream", "Reach level 21", "A soft highlight for stars and lace.")
+earnedInk("ice", "Reach level 23", "Pale frost for stars and snow.")
+earnedInk("silver", "Reach level 24", "Cool metal for moons, chains, and robots.")
 
 local function pack(id: string, name: string, description: string, price: number, level: number, stencils: { string })
 	table.insert(items, {
@@ -490,24 +525,34 @@ function Catalogue.ownsStencil(owned: { [string]: boolean }, stencilId: string):
 	return owned[bundle.id] == true
 end
 
--- Items a player can buy with coins. Earned items are handed out by milestones.
+-- Items a player can buy with coins. Earned / level unlocks never go on deal.
 local function buyable(): { Item }
 	local list: { Item } = {}
 	for _, item in items do
-		if not item.earned and item.price >= 150 then
+		if not item.earned and item.price > 0 then
 			table.insert(list, item)
 		end
 	end
 	return list
 end
 
--- One item is discounted for the whole UTC day, the same for every player.
+function Catalogue.isFeatured(item: Item, day: number): boolean
+	if item.earned or item.price <= 0 then
+		return false
+	end
+	return Catalogue.featuredId(day) == item.id
+end
+
+-- One buyable item is discounted for the whole UTC day, the same for every player.
 function Catalogue.featuredId(day: number): string
 	local list = buyable()
+	if #list == 0 then
+		error("[InkMasters] Catalogue has nothing to feature")
+	end
 	local index = (day * 7 + 3) % #list + 1
 	local chosen = list[index]
-	if chosen == nil then
-		error("[InkMasters] Catalogue has nothing to feature")
+	if chosen == nil or chosen.earned then
+		error("[InkMasters] Featured pick must be a buyable item")
 	end
 	return chosen.id
 end
@@ -516,7 +561,7 @@ function Catalogue.priceFor(item: Item, day: number): number
 	if item.earned then
 		return 0
 	end
-	if Catalogue.featuredId(day) == item.id then
+	if Catalogue.isFeatured(item, day) then
 		return math.floor(item.price * (1 - Catalogue.FEATURED_DISCOUNT))
 	end
 	return item.price

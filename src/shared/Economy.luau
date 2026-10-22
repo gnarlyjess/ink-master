@@ -19,8 +19,12 @@ export type LevelReward = {
 local Economy = {}
 
 Economy.MAX_LEVEL = 30
-Economy.START_COINS = 50
+Economy.START_COINS = 500
 Economy.COIN_CEILING = 1000000000
+
+-- Lobby buy: claim the next free round's theme (FIFO). Blank text = random theme.
+Economy.THEME_PICK_PRICE = 80
+Economy.THEME_PICK_MAX_CHARS = 32
 
 -- Round rewards. A round is about five minutes live, so a typical player earns 30 to 60 coins.
 Economy.PARTICIPATION = { coins = 20, xp = 30 } :: Reward
@@ -83,7 +87,7 @@ function Economy.levelInfo(totalXp: number): LevelInfo
 	return { level = level, into = 0, need = 0, maxed = true }
 end
 
--- Coins for every level, plus milestone cosmetics that cannot be bought.
+-- Coins for every level, plus milestone cosmetics / inks that cannot be bought.
 local MILESTONES: { [number]: string } = {
 	[2] = "title:steady",
 	[3] = "title:rookie",
@@ -96,8 +100,18 @@ local MILESTONES: { [number]: string } = {
 	[10] = "title:legend",
 	[11] = "confetti:aqua",
 	[12] = "title:parlour",
+	[13] = "ink:lemon",
+	[14] = "ink:navy",
 	[15] = "confetti:stars",
+	[16] = "ink:coral",
+	[17] = "ink:lime",
+	[18] = "ink:lavender",
+	[19] = "ink:bubble",
 	[20] = "title:master",
+	[21] = "ink:cream",
+	[22] = "ink:indigo",
+	[23] = "ink:ice",
+	[24] = "ink:silver",
 	[25] = "frame:midnight",
 	[30] = "title:icon",
 }

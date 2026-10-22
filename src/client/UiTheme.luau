@@ -52,6 +52,51 @@ local UiTheme = {
 		side = 16,
 		dock = 300,
 	},
+	-- Canvas editor chrome — quiet dark tools around the stage (not the lobby candy look).
+	editor = {
+		bg = Color3.fromRGB(22, 24, 28),
+		surface = Color3.fromRGB(32, 35, 40),
+		raised = Color3.fromRGB(42, 46, 52),
+		hairline = Color3.fromRGB(58, 62, 70),
+		text = Color3.fromRGB(236, 238, 242),
+		muted = Color3.fromRGB(148, 154, 164),
+		accent = Color3.fromRGB(64, 168, 255),
+		danger = Color3.fromRGB(255, 96, 112),
+	},
 }
+
+-- White padlock silhouette (assets/ui/padlock.png) — tinted grey via ImageColor3.
+-- Emoji locks stay yellow on Roblox and can't be recolored.
+local PADLOCK_IMAGE = "rbxassetid://82367063203571"
+
+function UiTheme.greyLock(parent: Instance, pixel: number?, zIndex: number?): Frame
+	local size = pixel or 22
+	local root = Instance.new("Frame")
+	root.Name = "Lock"
+	root.BackgroundTransparency = 1
+	root.BorderSizePixel = 0
+	root.AnchorPoint = Vector2.new(0.5, 0.5)
+	root.Position = UDim2.fromScale(0.5, 0.5)
+	root.Size = UDim2.fromOffset(size, size)
+	root.ZIndex = zIndex or 3
+	root.Visible = false
+	root.Parent = parent
+
+	local icon = Instance.new("ImageLabel")
+	icon.Name = "Icon"
+	icon.BackgroundTransparency = 1
+	icon.BorderSizePixel = 0
+	icon.AnchorPoint = Vector2.new(0.5, 0.5)
+	icon.Position = UDim2.fromScale(0.5, 0.5)
+	icon.Size = UDim2.fromScale(1, 1)
+	icon.ScaleType = Enum.ScaleType.Fit
+	icon.Image = PADLOCK_IMAGE
+	icon.ImageColor3 = UiTheme.editor.muted
+	icon.ImageTransparency = 0.05
+	icon.ZIndex = root.ZIndex
+	icon.Parent = root
+
+	return root
+end
 
 return UiTheme

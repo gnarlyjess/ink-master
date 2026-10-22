@@ -13,6 +13,7 @@ local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local NameTags = require(script.Parent.NameTags)
 local PlayerEconomy = require(script.Parent.PlayerEconomy)
 local Profiles = require(script.Parent.Profiles)
+local RoundManager = require(script.Parent.RoundManager)
 
 local PREFIX = "[InkMasters]"
 local ACTION_COOLDOWN_SECONDS = 0.2
@@ -163,6 +164,28 @@ local function onAction(player: Player, payload: any)
 		end
 		PlayerEconomy.setSetting(player, key, payload.value)
 		return
+	elseif kind == "buyThemePick" then
+		local text: string? = nil
+		if typeof(payload.id) == "string" then
+			text = payload.id
+		end
+		local ThemeQueue = require(script.Parent.ThemeQueue)
+		if ThemeQueue.hasClaim(player) then
+			ok, message = PlayerEconomy.setThemePickText(player, text)
+		elseif not RoundManager.canBuyThemePick() then
+			ok, message = false, "Theme picks are only sold while the lobby is waiting."
+		else
+			ok, message = PlayerEconomy.buyThemePick(player, text)
+			if ok then
+				print(`{PREFIX} Theme pick | {player.Name}`)
+			end
+		end
+	elseif kind == "setThemePick" then
+		local text: string? = nil
+		if typeof(payload.id) == "string" then
+			text = payload.id
+		end
+		ok, message = PlayerEconomy.setThemePickText(player, text)
 	else
 		return
 	end
@@ -210,6 +233,7 @@ function ShopService.start()
 	end)
 	Remotes.ProfileAction.OnServerEvent:Connect(onAction)
 	Players.PlayerRemoving:Connect(function(player: Player)
+		PlayerEconomy.refundThemePickOnLeave(player)
 		revisions[player] = nil
 		pending[player] = nil
 		lastAction[player] = nil

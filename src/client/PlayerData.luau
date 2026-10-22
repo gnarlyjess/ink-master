@@ -73,6 +73,15 @@ function PlayerData.send(kind: string, id: string?, value: boolean?)
 	Remotes.ProfileAction:FireServer({ kind = kind, id = id, value = value })
 end
 
+-- Lobby theme pick. Empty / nil text means the round theme stays random.
+function PlayerData.buyThemePick(themeText: string?)
+	Remotes.ProfileAction:FireServer({ kind = "buyThemePick", id = themeText })
+end
+
+function PlayerData.setThemePick(themeText: string?)
+	Remotes.ProfileAction:FireServer({ kind = "setThemePick", id = themeText })
+end
+
 function PlayerData.start()
 	if started then
 		return

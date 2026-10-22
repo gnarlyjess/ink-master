@@ -1,7 +1,7 @@
 --!strict
 
 -- Time's up, the display case, the vote, and the podium party.
--- The vote is counted here and handed to RoundRewards. The client only renders the result.
+-- Votes from each design round add up. The final party crowns the match winner.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -30,6 +30,13 @@ type PlaceRow = {
 	total: number,
 }
 
+type ScoredRow = {
+	userId: number,
+	name: string,
+	votes: number,
+	order: number,
+}
+
 local PREFIX = "[InkMasters]"
 local VOTE_COOLDOWN_SECONDS = 0.3
 
@@ -40,7 +47,8 @@ local phaseEnds: number? = nil
 local staged = false
 local votes: { [number]: number } = {}
 local places: { PlaceRow } = {}
-local talliedRound = 0
+local matchTotals: { [number]: number } = {}
+local talliedKey = 0
 local lastVoteAt: { [number]: number } = {}
 
 local function balanceOf(userId: number): number
@@ -73,6 +81,10 @@ local function designWire(design: LockedDesign, roundId: number)
 	}
 end
 
+local function payoutKey(): number
+	return RoundManager.getRoundId() * 100 + RoundManager.getDesignRound()
+end
+
 local function broadcast()
 	revision += 1
 	local roundId = RoundManager.getRoundId()
@@ -100,11 +112,15 @@ local function broadcast()
 		})
 	end
 
+	local matchFinal = RoundManager.isMatchFinal()
 	for _, player in Players:GetPlayers() do
 		local choice = votes[player.UserId] or 0
 		Remotes.CeremonyUpdated:FireClient(player, {
 			revision = revision,
 			roundId = roundId,
+			designRound = RoundManager.getDesignRound(),
+			designRounds = RoundManager.getDesignRounds(),
+			matchFinal = matchFinal,
 			phase = phase,
 			secondsEach = GameConfig.getShowcaseSlice(),
 			showcaseStart = showcaseStart,
@@ -126,16 +142,8 @@ local function entryExists(userId: number): boolean
 	return false
 end
 
-local function tally()
-	local roundId = RoundManager.getRoundId()
-	if talliedRound == roundId then
-		return
-	end
-	talliedRound = roundId
-	table.clear(places)
-
-	-- Only artists who drew something can place. An empty display case never wins.
-	local scored: { { userId: number, name: string, votes: number, order: number } } = {}
+local function scoreThisRound(): { ScoredRow }
+	local scored: { ScoredRow } = {}
 	for index, design in DesignService.getLocked() do
 		if #design.design.elements > 0 then
 			local count = 0
@@ -158,22 +166,114 @@ local function tally()
 		end
 		return a.order < b.order
 	end)
+	return scored
+end
+
+local function nameFor(userId: number): string
+	for _, design in DesignService.getLocked() do
+		if design.userId == userId then
+			return design.name
+		end
+	end
+	local player = Players:GetPlayerByUserId(userId)
+	if player ~= nil then
+		return player.DisplayName
+	end
+	return "Artist"
+end
+
+local function scoreMatch(): { ScoredRow }
+	local scored: { ScoredRow } = {}
+	local seen: { [number]: boolean } = {}
+	-- Prefer names/order from this round's locked designs when present.
+	for index, design in DesignService.getLocked() do
+		if #design.design.elements > 0 then
+			seen[design.userId] = true
+			table.insert(scored, {
+				userId = design.userId,
+				name = design.name,
+				votes = matchTotals[design.userId] or 0,
+				order = index,
+			})
+		end
+	end
+	-- Keep artists who scored earlier in the match even if they skipped this design.
+	for userId, total in matchTotals do
+		if seen[userId] ~= true then
+			table.insert(scored, {
+				userId = userId,
+				name = nameFor(userId),
+				votes = total,
+				order = 1000 + userId,
+			})
+		end
+	end
+	table.sort(scored, function(a, b)
+		if a.votes ~= b.votes then
+			return a.votes > b.votes
+		end
+		return a.order < b.order
+	end)
+	return scored
+end
+
+local function clearDesignRound()
+	DesignService.clearRound()
+	table.clear(votes)
+	table.clear(places)
+	showcaseStart = nil
+	lastVoteAt = {}
+end
+
+local function resetMatch()
+	clearDesignRound()
+	table.clear(matchTotals)
+	talliedKey = 0
+end
+
+local function tally()
+	local key = payoutKey()
+	if talliedKey == key then
+		return
+	end
+	talliedKey = key
+	table.clear(places)
+
+	local roundScored = scoreThisRound()
+	for _, row in roundScored do
+		matchTotals[row.userId] = (matchTotals[row.userId] or 0) + row.votes
+	end
+
+	local matchFinal = RoundManager.isMatchFinal()
+	local displayScored = if matchFinal then scoreMatch() else roundScored
 
 	local ranked: { RoundRewards.RankedRow } = {}
-	for _, row in scored do
+	for _, row in roundScored do
 		table.insert(ranked, { userId = row.userId, votes = row.votes })
 	end
+
+	local placementRanked: { RoundRewards.RankedRow }? = nil
+	if matchFinal then
+		placementRanked = {}
+		for _, row in displayScored do
+			table.insert(placementRanked, { userId = row.userId, votes = row.votes })
+		end
+	end
+
 	local voteCopy = table.clone(votes)
 	RoundRewards.award({
-		roundId = roundId,
+		roundId = RoundManager.getRoundId(),
+		designRound = RoundManager.getDesignRound(),
 		entries = DesignService.getLocked(),
 		ranked = ranked,
+		placementRanked = placementRanked,
+		awardPlacement = matchFinal,
 		votes = voteCopy,
 	})
 
-	local placementOn = #scored >= Economy.minEntriesForPlacement()
+	local placementOn = matchFinal and #displayScored >= Economy.minEntriesForPlacement()
 	local summary = ""
-	for index, row in scored do
+	for index, row in displayScored do
 		if index > 3 then
 			break
 		end
@@ -189,10 +289,11 @@ local function tally()
 		local label = if index == 1 then "1st" elseif index == 2 then "2nd" else "3rd"
 		summary ..= `{label} {row.name} +{awarded} ({row.votes} votes) `
 	end
+	local kind = if matchFinal then "Match party" else "Round party"
 	if summary == "" then
-		print(`{PREFIX} Party | no tattoos to place`)
+		print(`{PREFIX} {kind} | no tattoos to place`)
 	else
-		print(`{PREFIX} Party | {summary}`)
+		print(`{PREFIX} {kind} | {summary}`)
 	end
 end
 
@@ -233,14 +334,26 @@ end
 
 local function prepare(state: RoundState): number?
 	local roundId = RoundManager.getRoundId()
-	if state == "Intermission" or state == "WaitingForPlayers" or state == "Cleanup" then
-		if state == "Intermission" then
-			DesignService.clearRound()
-			table.clear(votes)
-			table.clear(places)
-			talliedRound = 0
-			showcaseStart = nil
-		end
+	if state == "WaitingForPlayers" or state == "Intermission" then
+		resetMatch()
+		leaveStage()
+		phase = "Idle"
+		phaseEnds = nil
+		broadcast()
+		return nil
+	end
+	if state == "Cleanup" then
+		-- Between design rounds we keep matchTotals; wipe the finished design only.
+		leaveStage()
+		clearDesignRound()
+		phase = "Idle"
+		phaseEnds = nil
+		broadcast()
+		return nil
+	end
+	if state == "ThemeReveal" then
+		-- Fresh canvas for this design round (also covers round 2+ after Cleanup).
+		clearDesignRound()
 		leaveStage()
 		phase = "Idle"
 		phaseEnds = nil

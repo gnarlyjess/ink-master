@@ -9,8 +9,10 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
+local Economy = require(ReplicatedStorage.Shared.Economy)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local RoundTypes = require(ReplicatedStorage.Shared.RoundTypes)
+local PlayerData = require(script.Parent.PlayerData)
 local UiTheme = require(script.Parent.UiTheme)
 
 type RoundSnapshot = RoundTypes.RoundSnapshot
@@ -44,6 +46,11 @@ type HudRefs = {
 	bannerTime: TextLabel,
 	bannerTheme: TextLabel,
 	pauseButton: TextButton,
+	themePick: Frame,
+	themeExpand: Frame,
+	themeInput: TextBox,
+	themeBuy: TextButton,
+	themeSet: TextButton,
 }
 
 local PREFIX = "[InkMasters]"
@@ -80,7 +87,7 @@ local PRESENTATION: { [string]: Presentation } = {
 		accent = UiTheme.color.magenta,
 	},
 	Results = {
-		subtitle = "The top three take the party and the points.",
+		subtitle = "Votes add up. Most across the match wins.",
 		accent = UiTheme.color.gold,
 	},
 	Cleanup = {
@@ -198,7 +205,7 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 	refs.subtitle.TextColor3 = if snapshot.state == "ThemeReveal" then UiTheme.color.text else UiTheme.color.muted
 	refs.roundLabel.Text = if snapshot.state == "WaitingForPlayers"
 		then "Lobby"
-		else `Round {formatCount(snapshot.roundId)}`
+		else `Match {formatCount(snapshot.roundId)} · Design {formatCount(snapshot.designRound)}/{formatCount(snapshot.designRounds)}`
 	refs.pillLabel.Text = RoundTypes.getLabel(snapshot.state)
 	refs.pill.BackgroundColor3 = accent
 	refs.pillLabel.TextColor3 = accent
@@ -265,6 +272,16 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 	refs.pauseButton.Visible = snapshot.devMode
 	refs.pauseButton.Text = if snapshot.paused then "Resume" else "Pause"
 	refs.bannerTime.TextColor3 = accent
+
+	local showPick = snapshot.themePickOpen and refs.banner.Visible
+	refs.themePick.Visible = showPick
+	if showPick then
+		local queued = snapshot.myThemePickSpot ~= nil
+		refs.themeBuy.Visible = not queued
+		refs.themeExpand.Visible = queued
+		refs.themeBuy.Text = `Choose theme for a round · {formatCount(snapshot.themePickPrice)}`
+	end
+
 	if snapshot.paused then
 		refs.bannerState.Text = "Paused"
 		refs.bannerTime.Text = "Lobby"
@@ -277,9 +294,11 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 		refs.bannerTheme.Text = "Shop open"
 	elseif inLobby then
 		refs.bannerState.Text = "Lobby"
-		refs.bannerTheme.Text = "Next theme soon"
+		refs.bannerTheme.Text =
+			`Design {formatCount(snapshot.designRound)}/{formatCount(snapshot.designRounds)} soon`
 	else
-		refs.bannerState.Text = RoundTypes.getLabel(snapshot.state)
+		refs.bannerState.Text =
+			`{RoundTypes.getLabel(snapshot.state)} · {formatCount(snapshot.designRound)}/{formatCount(snapshot.designRounds)}`
 		refs.bannerTheme.Text = snapshot.themeName or "Theme"
 	end
 	if not revealing then
@@ -516,6 +535,78 @@ local function buildHud(parent: Instance): HudRefs
 	end)
 	pauseButton.Position = UDim2.new(0.5, math.floor(banner.AbsoluteSize.X * 0.5) + 10, 0, top + 16)
 
+	local themePick = newFrame("ThemePick")
+	themePick.AnchorPoint = Vector2.new(0.5, 0)
+	themePick.Position = UDim2.new(0.5, 0, 0, top + 44)
+	themePick.AutomaticSize = Enum.AutomaticSize.XY
+	themePick.BackgroundTransparency = 1
+	themePick.Visible = false
+	themePick.ZIndex = 6
+	themePick.Parent = screenGui
+	addList(themePick, Enum.FillDirection.Vertical, 4)
+
+	local themeBuy = Instance.new("TextButton")
+	themeBuy.Name = "ThemeBuy"
+	themeBuy.BackgroundColor3 = UiTheme.color.gold
+	themeBuy.BackgroundTransparency = 0.05
+	themeBuy.BorderSizePixel = 0
+	themeBuy.FontFace = UiTheme.font.bold
+	themeBuy.TextSize = 13
+	themeBuy.TextColor3 = UiTheme.color.ink
+	themeBuy.Text = `Choose theme for a round · {Economy.THEME_PICK_PRICE}`
+	themeBuy.AutomaticSize = Enum.AutomaticSize.XY
+	themeBuy.Size = UDim2.fromOffset(0, 0)
+	themeBuy.Parent = themePick
+	addCorner(themeBuy, 999)
+	addStroke(themeBuy, UiTheme.color.stroke, 1, 0.45)
+	addPadding(themeBuy, 6, 14, 6, 14)
+
+	local themeExpand = newFrame("ThemeExpand")
+	themeExpand.AutomaticSize = Enum.AutomaticSize.XY
+	themeExpand.BackgroundColor3 = UiTheme.color.panel
+	themeExpand.BackgroundTransparency = 0.08
+	themeExpand.Visible = false
+	themeExpand.Parent = themePick
+	addCorner(themeExpand, 12)
+	addStroke(themeExpand, UiTheme.color.stroke, 1, 0.35)
+	addPadding(themeExpand, 6, 8, 6, 8)
+	addList(themeExpand, Enum.FillDirection.Horizontal, 6).HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+	local themeInput = Instance.new("TextBox")
+	themeInput.Name = "ThemeInput"
+	themeInput.BackgroundColor3 = UiTheme.color.chip
+	themeInput.BackgroundTransparency = 0
+	themeInput.BorderSizePixel = 0
+	themeInput.FontFace = UiTheme.font.medium
+	themeInput.TextSize = 14
+	themeInput.TextColor3 = UiTheme.color.text
+	themeInput.PlaceholderColor3 = UiTheme.color.muted
+	themeInput.PlaceholderText = "Your theme"
+	themeInput.Text = ""
+	themeInput.ClearTextOnFocus = false
+	themeInput.TextXAlignment = Enum.TextXAlignment.Left
+	themeInput.Size = UDim2.fromOffset(200, 30)
+	themeInput.Parent = themeExpand
+	addCorner(themeInput, 8)
+	addPadding(themeInput, 0, 8, 0, 8)
+	local inputStroke = addStroke(themeInput, UiTheme.color.stroke, 1, 0.4)
+	inputStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+	local themeSet = Instance.new("TextButton")
+	themeSet.Name = "ThemeSet"
+	themeSet.BackgroundColor3 = UiTheme.color.aqua
+	themeSet.BackgroundTransparency = 0
+	themeSet.BorderSizePixel = 0
+	themeSet.FontFace = UiTheme.font.bold
+	themeSet.TextSize = 13
+	themeSet.TextColor3 = UiTheme.color.ink
+	themeSet.Text = "Set"
+	themeSet.AutomaticSize = Enum.AutomaticSize.XY
+	themeSet.Size = UDim2.fromOffset(0, 30)
+	themeSet.Parent = themeExpand
+	addCorner(themeSet, 8)
+	addPadding(themeSet, 0, 12, 0, 12)
+
 	return {
 		badge = badge,
 		eyebrow = eyebrow,
@@ -540,6 +631,11 @@ local function buildHud(parent: Instance): HudRefs
 		bannerTime = bannerTime,
 		bannerTheme = bannerTheme,
 		pauseButton = pauseButton,
+		themePick = themePick,
+		themeExpand = themeExpand,
+		themeInput = themeInput,
+		themeBuy = themeBuy,
+		themeSet = themeSet,
 	}
 end
 
@@ -561,6 +657,7 @@ function RoundHud.start()
 	local refs = buildHud(playerGui)
 	local currentSnapshot: RoundSnapshot? = nil
 	local lastLogKey = ""
+	local wasQueued = false
 
 	local function onSnapshot(payload: any)
 		local snapshot = RoundTypes.readSnapshot(payload)
@@ -572,8 +669,13 @@ function RoundHud.start()
 			return
 		end
 
+		local nowQueued = snapshot.myThemePickSpot ~= nil
 		currentSnapshot = snapshot
 		apply(refs, snapshot)
+		if nowQueued and not wasQueued and snapshot.themePickOpen then
+			refs.themeInput:CaptureFocus()
+		end
+		wasQueued = nowQueued
 
 		local logKey = `{snapshot.roundId}:{snapshot.state}`
 		if logKey ~= lastLogKey then
@@ -606,8 +708,49 @@ function RoundHud.start()
 		if processed or input.KeyCode ~= Enum.KeyCode.P then
 			return
 		end
+		-- Don't toggle pause while typing a theme.
+		if UserInputService:GetFocusedTextBox() ~= nil then
+			return
+		end
 		local wantPause = if currentSnapshot ~= nil then not currentSnapshot.paused else true
 		sendPause(wantPause)
+	end)
+
+	local function readThemeText(): string?
+		local raw = refs.themeInput.Text
+		local trimmed = string.match(raw, "^%s*(.-)%s*$") or ""
+		if #trimmed > Economy.THEME_PICK_MAX_CHARS then
+			trimmed = string.sub(trimmed, 1, Economy.THEME_PICK_MAX_CHARS)
+			refs.themeInput.Text = trimmed
+		end
+		if trimmed == "" then
+			return nil
+		end
+		return trimmed
+	end
+
+	-- Collapsed buy: claim the next free round (theme stays random until they type one).
+	refs.themeBuy.MouseButton1Click:Connect(function()
+		local snapshot = currentSnapshot
+		if snapshot == nil or not snapshot.themePickOpen or snapshot.myThemePickSpot ~= nil then
+			return
+		end
+		PlayerData.buyThemePick(nil)
+	end)
+
+	local function submitThemeText()
+		local snapshot = currentSnapshot
+		if snapshot == nil or not snapshot.themePickOpen or snapshot.myThemePickSpot == nil then
+			return
+		end
+		PlayerData.setThemePick(readThemeText())
+	end
+
+	refs.themeSet.MouseButton1Click:Connect(submitThemeText)
+	refs.themeInput.FocusLost:Connect(function(enterPressed: boolean)
+		if enterPressed then
+			submitThemeText()
+		end
 	end)
 
 	print(`{PREFIX} HUD ready | waiting for the server snapshot`)

@@ -1,7 +1,7 @@
 --!strict
 
 -- Cinematic unlock / welcome / daily-ink cards.
--- Psychology: anticipation (spinning rays) → payoff (confetti + count-up) → itch (pulsing CTA).
+-- Psychology: anticipation → payoff (confetti + count-up) → itch (pulsing CTA).
 -- Bright candy accents on a dark parlour stage — same game, louder dopamine.
 
 local Players = game:GetService("Players")
@@ -98,8 +98,6 @@ local function coinJewel(parent: Instance, amount: number): Frame
 	jewel.Size = UDim2.fromOffset(120, 120)
 	jewel.ZIndex = 5
 	jewel.Parent = holder
-
-	Juice.rays(jewel, 12, 4)
 
 	local plate = UiKit.frame(jewel, UiTheme.color.panelTop, 0)
 	plate.AnchorPoint = Vector2.new(0.5, 0.5)

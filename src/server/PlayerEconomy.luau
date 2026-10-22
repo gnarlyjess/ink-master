@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Catalogue = require(ReplicatedStorage.Shared.Catalogue)
 local Economy = require(ReplicatedStorage.Shared.Economy)
+local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
 local ProfileTypes = require(ReplicatedStorage.Shared.ProfileTypes)
 local Quests = require(ReplicatedStorage.Shared.Quests)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
@@ -311,6 +312,59 @@ function PlayerEconomy.claimLogin(player: Player): (boolean, string)
 	return true, `Day {streak} reward: +{coins} coins`
 end
 
+function PlayerEconomy.buyThemePick(player: Player, rawText: string?): (boolean, string)
+	local ThemeQueue = require(script.Parent.ThemeQueue)
+	local data = Profiles.get(player)
+	if data == nil then
+		return false, "Your profile is still loading."
+	end
+	if ThemeQueue.hasClaim(player) then
+		return ThemeQueue.setText(player, rawText)
+	end
+
+	local price = Economy.THEME_PICK_PRICE
+	if data.coins < price then
+		return false, `You need {price - data.coins} more coins.`
+	end
+
+	data.coins -= price
+	data.lifetimeSpent += price
+	data.stats.purchases = statOf(data, "purchases") + 1
+
+	local ok, message = ThemeQueue.enqueue(player, rawText, price)
+	if not ok then
+		data.coins += price
+		data.lifetimeSpent = math.max(0, data.lifetimeSpent - price)
+		data.stats.purchases = math.max(0, statOf(data, "purchases") - 1)
+		changed(player)
+		return false, message
+	end
+
+	checkAchievements(player, data)
+	changed(player)
+	return true, message
+end
+
+function PlayerEconomy.setThemePickText(player: Player, rawText: string?): (boolean, string)
+	local ThemeQueue = require(script.Parent.ThemeQueue)
+	if Profiles.get(player) == nil then
+		return false, "Your profile is still loading."
+	end
+	return ThemeQueue.setText(player, rawText)
+end
+
+function PlayerEconomy.refundThemePickOnLeave(player: Player)
+	local ThemeQueue = require(script.Parent.ThemeQueue)
+	local data = Profiles.get(player)
+	local refund = ThemeQueue.refundLeaving(player)
+	if data == nil or refund <= 0 then
+		return
+	end
+	giveCoins(data, refund)
+	changed(player)
+	print(`[InkMasters] Theme pick refund | {player.Name} | +{refund} coins`)
+end
+
 function PlayerEconomy.purchase(player: Player, itemId: string): (boolean, string)
 	local data = Profiles.get(player)
 	if data == nil then
@@ -404,6 +458,10 @@ end
 -- Settles any level rewards that a crash might have left behind.
 function PlayerEconomy.onProfileLoaded(player: Player, data: ProfileData)
 	PlayerEconomy.ensureDaily(data)
+	-- Dev testing: top up so shop / theme picks are easy to try without wiping the save.
+	if GameConfig.DevMode and data.coins < Economy.START_COINS then
+		giveCoins(data, Economy.START_COINS - data.coins)
+	end
 	settleLevels(player, data)
 	checkAchievements(player, data)
 	changed(player)

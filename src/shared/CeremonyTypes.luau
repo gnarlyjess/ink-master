@@ -30,6 +30,9 @@ export type Place = {
 export type CeremonySnapshot = {
 	revision: number,
 	roundId: number,
+	designRound: number,
+	designRounds: number,
+	matchFinal: boolean,
 	phase: Phase,
 	secondsEach: number,
 	showcaseStart: number?,
@@ -90,15 +93,38 @@ function CeremonyTypes.read(payload: any): CeremonySnapshot?
 	end
 	local revision = readFinite(payload.revision)
 	local roundId = readFinite(payload.roundId)
+	local designRound = readFinite(payload.designRound)
+	local designRounds = readFinite(payload.designRounds)
 	local secondsEach = readFinite(payload.secondsEach)
 	local yourVote = readFinite(payload.yourVote)
 	local yourTotal = readFinite(payload.yourTotal)
-	if revision == nil or roundId == nil or secondsEach == nil or yourVote == nil or yourTotal == nil then
+	if
+		revision == nil
+		or roundId == nil
+		or designRound == nil
+		or designRounds == nil
+		or secondsEach == nil
+		or yourVote == nil
+		or yourTotal == nil
+	then
 		return nil
 	end
-	if revision < 1 or roundId < 0 or secondsEach <= 0 or yourVote < 0 or yourTotal < 0 then
+	if typeof(payload.matchFinal) ~= "boolean" then
 		return nil
 	end
+	if
+		revision < 1
+		or roundId < 0
+		or designRound < 1
+		or designRounds < 1
+		or designRound > designRounds
+		or secondsEach <= 0
+		or yourVote < 0
+		or yourTotal < 0
+	then
+		return nil
+	end
+	local matchFinal: boolean = payload.matchFinal
 
 	local showcaseStart = readFinite(payload.showcaseStart)
 	if payload.showcaseStart ~= nil and showcaseStart == nil then
@@ -171,6 +197,9 @@ function CeremonyTypes.read(payload: any): CeremonySnapshot?
 	return {
 		revision = revision,
 		roundId = roundId,
+		designRound = designRound,
+		designRounds = designRounds,
+		matchFinal = matchFinal,
 		phase = knownPhase,
 		secondsEach = secondsEach,
 		showcaseStart = showcaseStart,

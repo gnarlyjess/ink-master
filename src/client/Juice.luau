@@ -36,41 +36,6 @@ function Juice.shadow(parent: Instance, size: UDim2, position: UDim2, radius: nu
 	return shadow
 end
 
--- Spinning candy rays behind a reward jewel — always centred on the jewel.
-function Juice.rays(parent: Instance, count: number?, z: number?): Frame
-	local holder = Instance.new("Frame")
-	holder.Name = "Rays"
-	holder.BackgroundTransparency = 1
-	holder.AnchorPoint = Vector2.new(0.5, 0.5)
-	holder.Position = UDim2.fromScale(0.5, 0.5)
-	holder.Size = UDim2.fromOffset(168, 168)
-	holder.ZIndex = if z == nil then 3 else z
-	holder.ClipsDescendants = false
-	holder.Parent = parent
-
-	local n = if count == nil then 10 else count
-	for i = 1, n do
-		local ray = UiKit.frame(holder, Juice.candy(i), 0.62)
-		ray.Name = `Ray{i}`
-		ray.AnchorPoint = Vector2.new(0.5, 1)
-		ray.Position = UDim2.fromScale(0.5, 0.5)
-		ray.Size = UDim2.fromOffset(14, 78)
-		ray.Rotation = (i - 1) * (180 / n)
-		UiKit.corner(ray, 4)
-	end
-
-	task.spawn(function()
-		local start = os.clock()
-		while holder.Parent ~= nil do
-			local now = os.clock() - start
-			holder.Rotation = now * 28
-			RunService.Heartbeat:Wait()
-		end
-	end)
-
-	return holder
-end
-
 -- Burst of candy pieces that fall and fade. Respects settings.confetti when a gate is passed.
 function Juice.confetti(parent: Instance, origin: Vector2?, amount: number?, duration: number?)
 	local n = if amount == nil then 28 else amount

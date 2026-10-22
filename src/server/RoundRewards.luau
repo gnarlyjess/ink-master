@@ -22,10 +22,14 @@ export type RankedRow = {
 
 export type AwardInput = {
 	roundId: number,
+	designRound: number,
 	entries: { LockedDesign },
-	-- Artists who actually drew, best first.
+	-- This design round's vote totals (for vote-received coins).
 	ranked: { RankedRow },
-	-- Voter user id to the artist they picked.
+	-- Cumulative match ranking; only used when awardPlacement is true.
+	placementRanked: { RankedRow }?,
+	awardPlacement: boolean,
+	-- Voter user id to the artist they picked this design round.
 	votes: { [number]: number },
 }
 
@@ -107,12 +111,22 @@ local function payPlayer(player: Player, input: AwardInput, placementOn: boolean
 	local marks = if entry ~= nil then #entry.design.elements else 0
 	local drew = marks > 0
 
-	local place = 0
 	local received = 0
-	for index, row in input.ranked do
+	for _, row in input.ranked do
 		if row.userId == userId then
-			place = index
 			received = row.votes
+			break
+		end
+	end
+
+	local place = 0
+	local placementList = input.placementRanked
+	if placementOn and placementList ~= nil then
+		for index, row in placementList do
+			if row.userId == userId then
+				place = index
+				break
+			end
 		end
 	end
 
@@ -194,7 +208,11 @@ local function payPlayer(player: Player, input: AwardInput, placementOn: boolean
 end
 
 function RoundRewards.award(input: AwardInput)
-	local placementOn = #input.ranked >= Economy.minEntriesForPlacement()
+	local placementList = input.placementRanked
+	local placementOn = input.awardPlacement
+		and placementList ~= nil
+		and #placementList >= Economy.minEntriesForPlacement()
+	local payoutKey = input.roundId * 100 + input.designRound
 
 	local people: { [number]: boolean } = {}
 	for _, entry in input.entries do
@@ -203,13 +221,18 @@ function RoundRewards.award(input: AwardInput)
 	for voter in input.votes do
 		people[voter] = true
 	end
+	if placementList ~= nil then
+		for _, row in placementList do
+			people[row.userId] = true
+		end
+	end
 
 	for userId in people do
 		local player = Players:GetPlayerByUserId(userId)
 		if player ~= nil and Profiles.get(player) ~= nil then
 			local done = paidFor(player)
-			if done[input.roundId] ~= true then
-				done[input.roundId] = true
+			if done[payoutKey] ~= true then
+				done[payoutKey] = true
 				payPlayer(player, input, placementOn)
 			end
 		end

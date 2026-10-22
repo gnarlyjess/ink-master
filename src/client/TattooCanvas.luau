@@ -1,10 +1,10 @@
 --!strict
 
--- Flat design canvas. A bare photograph of the chosen limb fills most of the screen.
--- Marks are drawn on a layer above that photo so a drop stays visible.
--- This does not wrap the real arm mesh.
+-- Flat design canvas. A preloaded limb still fills the board; marks sit above it.
+-- Stills are keyed by region × skin tone in LimbPhotos (not a live avatar clone).
 
 local AssetService = game:GetService("AssetService")
+local ContentProvider = game:GetService("ContentProvider")
 local Players = game:GetService("Players")
 local GuiService = game:GetService("GuiService")
 local UserInputService = game:GetService("UserInputService")
@@ -16,6 +16,7 @@ local Catalogue = require(ReplicatedStorage.Shared.Catalogue)
 local DesignDocument = require(ReplicatedStorage.Shared.DesignDocument)
 local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
 local InkColors = require(ReplicatedStorage.Shared.InkColors)
+local LimbPhotos = require(ReplicatedStorage.Shared.LimbPhotos)
 local StencilDefinitions = require(ReplicatedStorage.Shared.StencilDefinitions)
 local FrameDress = require(script.Parent.FrameDress)
 local StencilView = require(script.Parent.StencilView)
@@ -65,13 +66,16 @@ local function stageFrame(): (UDim2, UDim2)
 end
 
 local THUMB_PIXELS = 34
-local ROTATE_LIFT = 18
-local HANDLE_HIT = 16
+local ROTATE_LIFT = 14
+local HANDLE_HIT = 12
+local DELETE_HIT = 22
+local HANDLE_SIZE = 20
+local DELETE_SIZE = 28
 local MIN_ZOOM = 1
 local MAX_ZOOM = 4
 local PAN_SLACK = 0.55
 
-type HandleMode = "scale" | "rotate"
+type HandleMode = "scale" | "rotate" | "delete"
 
 local TattooCanvas = {}
 
@@ -121,19 +125,12 @@ local shownDesign: TattooDesign? = nil
 local shownSelection: number? = nil
 local photoCharacter: Model? = nil
 local photoRegionId: string? = nil
-local photoClone: Model? = nil
-local skinToneId = "yours"
+local skinToneId = LimbPhotos.defaultTone
+local photoPreloaded = false
 local acceptsInput = true
 local viewZoom = 1
 local viewPan = Vector2.zero
 
-type PanDrag = {
-	startScreen: Vector2,
-	startPan: Vector2,
-	moved: boolean,
-}
-
-local panDrag: PanDrag? = nil
 local hoveredIndex: number? = nil
 local applyView: () -> ()
 local zoomAt: (number, Vector2) -> ()
@@ -142,7 +139,6 @@ local windowCenter: () -> Vector2
 type SkinTone = { id: string, name: string, color: Color3? }
 
 local SKIN_TONES: { SkinTone } = {
-	{ id = "yours", name = "Yours", color = nil },
 	{ id = "fair", name = "Fair", color = Color3.fromRGB(255, 224, 204) },
 	{ id = "light", name = "Light", color = Color3.fromRGB(244, 204, 176) },
 	{ id = "peach", name = "Peach", color = Color3.fromRGB(232, 184, 150) },
@@ -151,28 +147,6 @@ local SKIN_TONES: { SkinTone } = {
 	{ id = "olive", name = "Olive", color = Color3.fromRGB(154, 110, 78) },
 	{ id = "brown", name = "Brown", color = Color3.fromRGB(112, 74, 52) },
 	{ id = "deep", name = "Deep", color = Color3.fromRGB(74, 50, 40) },
-}
-
-local BARE_PARTS = {
-	LeftUpperArm = true,
-	LeftLowerArm = true,
-	LeftHand = true,
-	RightUpperArm = true,
-	RightLowerArm = true,
-	RightHand = true,
-	LeftUpperLeg = true,
-	LeftLowerLeg = true,
-	LeftFoot = true,
-	RightUpperLeg = true,
-	RightLowerLeg = true,
-	RightFoot = true,
-	UpperTorso = true,
-	LowerTorso = true,
-	["Left Arm"] = true,
-	["Right Arm"] = true,
-	["Left Leg"] = true,
-	["Right Leg"] = true,
-	Torso = true,
 }
 
 local onGrab: (number) -> () = function(_index: number) end
@@ -248,290 +222,68 @@ local function destroyCanvas()
 	zoomReadout = nil
 	photoCharacter = nil
 	photoRegionId = nil
-	photoClone = nil
 	viewZoom = 1
 	viewPan = Vector2.zero
-	panDrag = nil
 	hoveredIndex = nil
 	table.clear(elementFrames)
 end
 
-local function findPart(character: Model, region: BodyRegion): BasePart?
-	local modern = character:FindFirstChild(region.r15)
-	if modern ~= nil and modern:IsA("BasePart") then
-		return modern
+local function preloadLimbPhotos()
+	if photoPreloaded then
+		return
 	end
-	local classic = character:FindFirstChild(region.r6)
-	if classic ~= nil and classic:IsA("BasePart") then
-		return classic
-	end
-	return nil
-end
-
-local function stripClothes(clone: Model)
-	local remove: { Instance } = {}
-	for _, child in clone:GetChildren() do
-		if
-			child:IsA("Shirt")
-			or child:IsA("Pants")
-			or child:IsA("ShirtGraphic")
-			or child:IsA("Accessory")
-			or child:IsA("CharacterMesh")
-		then
-			table.insert(remove, child)
+	photoPreloaded = true
+	task.spawn(function()
+		local assets = LimbPhotos.allAssets()
+		if #assets == 0 then
+			return
 		end
-	end
-	for _, descendant in clone:GetDescendants() do
-		if descendant:IsA("WrapLayer") or descendant:IsA("SurfaceAppearance") then
-			table.insert(remove, descendant)
-		elseif descendant:IsA("Decal") or descendant:IsA("Texture") then
-			local parent = descendant.Parent
-			if parent == nil or parent.Name ~= "Head" then
-				table.insert(remove, descendant)
-			end
-		end
-	end
-	for _, item in remove do
-		item:Destroy()
-	end
-end
-
-local function prepareClone(character: Model): Model
-	local wasArchivable = character.Archivable
-	character.Archivable = true
-	local clone = character:Clone()
-	character.Archivable = wasArchivable
-	stripClothes(clone)
-
-	for _, descendant in clone:GetDescendants() do
-		if descendant:IsA("BaseScript") or descendant:IsA("BillboardGui") then
-			descendant:Destroy()
-		elseif descendant:IsA("BasePart") then
-			descendant.Anchored = true
-			descendant.CanCollide = false
-			descendant.CanTouch = false
-			descendant.CanQuery = false
-		end
-	end
-
-	local humanoid = clone:FindFirstChildOfClass("Humanoid")
-	if humanoid ~= nil then
-		humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-		humanoid.PlatformStand = true
-	end
-	return clone
-end
-
-local function avatarSkin(character: Model): Color3
-	local colors = character:FindFirstChildOfClass("BodyColors")
-	if colors ~= nil then
-		local ok, value = pcall(function()
-			return colors.LeftLegColor3
+		pcall(function()
+			ContentProvider:PreloadAsync(assets)
 		end)
-		if ok and typeof(value) == "Color3" then
-			return value
-		end
-		return colors.LeftLegColor.Color
-	end
-	local leg = character:FindFirstChild("LeftUpperLeg") or character:FindFirstChild("Left Leg")
-	if leg ~= nil and leg:IsA("BasePart") then
-		return leg.Color
-	end
-	return Color3.fromRGB(232, 184, 150)
+	end)
 end
 
-local function toneColor(character: Model): Color3
+local function applyLimbStill(image: ImageLabel, regionId: string)
+	local asset = LimbPhotos.get(regionId, skinToneId)
+	local toneColor = Color3.fromRGB(232, 184, 150)
 	for _, tone in SKIN_TONES do
 		if tone.id == skinToneId and tone.color ~= nil then
-			return tone.color
+			toneColor = tone.color
+			break
 		end
 	end
-	return avatarSkin(character)
-end
-
-local function paintBare(clone: Model, color: Color3)
-	local bodyColors = clone:FindFirstChildOfClass("BodyColors")
-	if bodyColors ~= nil then
-		-- Prefer Color3 fields so light tones (e.g. Fair / Yours) don't snap via BrickColor.
-		local ok = pcall(function()
-			bodyColors.HeadColor3 = color
-			bodyColors.LeftArmColor3 = color
-			bodyColors.RightArmColor3 = color
-			bodyColors.LeftLegColor3 = color
-			bodyColors.RightLegColor3 = color
-			bodyColors.TorsoColor3 = color
-		end)
-		if not ok then
-			local brick = BrickColor.new(color)
-			bodyColors.HeadColor = brick
-			bodyColors.LeftArmColor = brick
-			bodyColors.RightArmColor = brick
-			bodyColors.LeftLegColor = brick
-			bodyColors.RightLegColor = brick
-			bodyColors.TorsoColor = brick
-		end
-	end
-
-	for _, descendant in clone:GetDescendants() do
-		if descendant:IsA("SurfaceAppearance") then
-			local parent = descendant.Parent
-			if parent ~= nil and parent:IsA("BasePart") and BARE_PARTS[parent.Name] == true then
-				descendant:Destroy()
-			end
-		elseif descendant:IsA("BasePart") and BARE_PARTS[descendant.Name] == true then
-			descendant.Color = color
-			descendant.Material = Enum.Material.SmoothPlastic
-			if descendant:IsA("MeshPart") then
-				descendant.TextureID = ""
-			end
-		end
+	image.BackgroundColor3 = toneColor
+	if asset ~= nil then
+		image.Image = asset
+		image.ImageTransparency = 0
+	else
+		image.Image = ""
+		image.ImageTransparency = 1
 	end
 end
 
-local function findPhotoClone(): Model?
-	if photoClone ~= nil and photoClone.Parent ~= nil then
-		return photoClone
-	end
-	if photoLayer ~= nil then
-		local world = photoLayer:FindFirstChild("PhotoWorld")
-		if world ~= nil then
-			for _, child in world:GetChildren() do
-				if child:IsA("Model") then
-					photoClone = child
-					return child
-				end
-			end
-		end
-	end
-	return nil
+local function makeLimbStill(parent: GuiObject, regionId: string, zIndex: number): ImageLabel
+	local image = Instance.new("ImageLabel")
+	image.Name = "Photo"
+	image.AnchorPoint = Vector2.new(0.5, 0.5)
+	image.Position = UDim2.fromScale(0.5, 0.5)
+	image.Size = UDim2.fromScale(1, 1)
+	image.BackgroundColor3 = Color3.fromRGB(54, 42, 44)
+	image.BackgroundTransparency = 0
+	image.BorderSizePixel = 0
+	image.ScaleType = Enum.ScaleType.Crop
+	image.Active = false
+	image.ZIndex = zIndex
+	image.Parent = parent
+	applyLimbStill(image, regionId)
+	return image
 end
 
-local function allPhotoClones(): { Model }
-	local found: { Model } = {}
-	local seen: { [Model]: boolean } = {}
-	local primary = findPhotoClone()
-	if primary ~= nil then
-		seen[primary] = true
-		table.insert(found, primary)
-	end
-	local player = Players.LocalPlayer
-	local playerGui = if player ~= nil then player:FindFirstChild("PlayerGui") else nil
-	if playerGui ~= nil then
-		for _, gui in playerGui:GetChildren() do
-			if gui.Name == "InkMastersCanvas" then
-				for _, world in gui:GetDescendants() do
-					if world.Name == "PhotoWorld" then
-						for _, child in world:GetChildren() do
-							if child:IsA("Model") and seen[child] ~= true then
-								seen[child] = true
-								table.insert(found, child)
-							end
-						end
-					end
-				end
-			end
-		end
-	end
-	return found
-end
-
-local function isLeg(region: BodyRegion): boolean
-	return string.find(region.id, "Thigh") ~= nil or string.find(region.id, "Calf") ~= nil
-end
-
--- Thigh / calf photos look from the outside of the leg; a hanging arm covers the
--- surface. Swing that side's arm forward ~90° so the limb stays clear.
-local function raiseArmForLegShot(clone: Model, region: BodyRegion)
-	if not isLeg(region) then
-		return
-	end
-	local root = clone:FindFirstChild("HumanoidRootPart")
-	if root == nil or not root:IsA("BasePart") then
-		return
-	end
-	local prefix = if region.side == "right" then "Right" else "Left"
-	local upper = clone:FindFirstChild(`{prefix}UpperArm`)
-	local lower = clone:FindFirstChild(`{prefix}LowerArm`)
-	local hand = clone:FindFirstChild(`{prefix}Hand`)
-	if upper == nil or not upper:IsA("BasePart") then
-		return
-	end
-
-	local attachment = upper:FindFirstChild(`{prefix}ShoulderRigAttachment`)
-	local torso = clone:FindFirstChild("UpperTorso")
-	if torso ~= nil and torso:IsA("BasePart") then
-		local torsoAtt = torso:FindFirstChild(`{prefix}ShoulderRigAttachment`)
-		if torsoAtt ~= nil and torsoAtt:IsA("Attachment") then
-			attachment = torsoAtt
-		end
-	end
-	local pivot = if attachment ~= nil and attachment:IsA("Attachment")
-		then attachment.WorldPosition
-		else upper.Position
-
-	-- Flex the arm forward around the character's right axis (hanging → horizontal).
-	local angle = if prefix == "Left" then -math.rad(90) else math.rad(90)
-	local spin = CFrame.fromAxisAngle(root.CFrame.RightVector, angle)
-	local transform = CFrame.new(pivot) * spin * CFrame.new(-pivot)
-	for _, part in { upper, lower, hand } do
-		if part ~= nil and part:IsA("BasePart") then
-			part.CFrame = transform * part.CFrame
-		end
-	end
-end
-
-local function framePart(viewport: ViewportFrame, clone: Model, region: BodyRegion, loose: boolean?)
-	local part = findPart(clone, region)
-	local root = clone:FindFirstChild("HumanoidRootPart")
-	if part == nil then
-		return
-	end
-
-	local outward = part.CFrame.LookVector
-	if root ~= nil and root:IsA("BasePart") then
-		if region.side == "left" then
-			outward = -root.CFrame.RightVector
-		elseif region.side == "right" then
-			outward = root.CFrame.RightVector
-		elseif region.side == "back" then
-			outward = -root.CFrame.LookVector
-		else
-			outward = root.CFrame.LookVector
-		end
-		-- A pure side view turns a thigh into a thin edge. Open it toward the front.
-		if isLeg(region) then
-			outward = (outward + root.CFrame.LookVector * 0.55).Unit
-		end
-	end
-
-	local focus = part.Position
-	if string.find(region.id, "Thigh") ~= nil then
-		focus += part.CFrame.UpVector * part.Size.Y * 0.16
-	elseif string.find(region.id, "Calf") ~= nil then
-		focus -= part.CFrame.UpVector * part.Size.Y * 0.2
-	end
-
-	-- Showcase / winner thumbs pull back so the limb isn't cropped.
-	local present = loose == true or presentedCaption ~= nil
-	local distance = if region.torso then (if present then 3.6 else 3.1) else (if present then 2.35 else 1.65)
-	local fov = if region.torso then (if present then 36 else 32) else (if present then 34 else 28)
-	if isLeg(region) then
-		local span = math.max(part.Size.Y, part.Size.X, part.Size.Z)
-		fov = if present then 28 else 24
-		distance = (span * 1.5 * 0.5) / math.tan(math.rad(fov * 0.5))
-		distance = math.clamp(distance, if present then 3.2 else 2.8, 7.5)
-	end
-
-	local camera = Instance.new("Camera")
-	camera.Name = "LimbCamera"
-	camera.FieldOfView = fov
-	camera.CFrame = CFrame.lookAt(focus + outward * distance, focus, Vector3.yAxis)
-	camera.Parent = viewport
-	viewport.CurrentCamera = camera
-end
 
 local function buildCanvas(character: Model, region: BodyRegion)
 	destroyCanvas()
+	preloadLimbPhotos()
 
 	local player = Players.LocalPlayer
 	if player == nil then
@@ -541,6 +293,9 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	if playerGui == nil then
 		return
 	end
+
+	photoCharacter = character
+	photoRegionId = region.id
 
 	local photo = Instance.new("ScreenGui")
 	photo.Name = "InkMastersCanvas"
@@ -580,38 +335,7 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	outline.Parent = board
 	boardStroke = outline
 
-	local viewport = Instance.new("ViewportFrame")
-	viewport.Name = "Photo"
-	viewport.AnchorPoint = Vector2.new(0.5, 0.5)
-	viewport.Position = UDim2.fromScale(0.5, 0.5)
-	viewport.Size = UDim2.fromScale(1, 1)
-	viewport.BackgroundColor3 = Color3.fromRGB(54, 42, 44)
-	viewport.BackgroundTransparency = 0
-	viewport.BorderSizePixel = 0
-	viewport.Ambient = Color3.fromRGB(120, 104, 96)
-	viewport.LightColor = Color3.fromRGB(255, 214, 180)
-	viewport.LightDirection = Vector3.new(-0.35, -1, -0.45)
-	viewport.Active = false
-	viewport.ZIndex = 1
-	viewport.Parent = board
-	photoLayer = viewport
-
-	local clone = prepareClone(character)
-	paintBare(clone, toneColor(character))
-	raiseArmForLegShot(clone, region)
-	if findPart(clone, region) ~= nil then
-		local world = Instance.new("WorldModel")
-		world.Name = "PhotoWorld"
-		world.Parent = viewport
-		clone.Parent = world
-		framePart(viewport, clone, region)
-		photoClone = clone
-	else
-		viewport.Visible = false
-		clone:Destroy()
-		photoClone = nil
-		warn(`[InkMasters] This avatar has no {region.label} to photograph.`)
-	end
+	photoLayer = makeLimbStill(board, region.id, 1)
 
 	local caption = Instance.new("TextLabel")
 	caption.Name = "Caption"
@@ -692,21 +416,22 @@ local function buildCanvas(character: Model, region: BodyRegion)
 		local button = Instance.new("TextButton")
 		button.LayoutOrder = order
 		button.AutoButtonColor = true
-		button.BackgroundColor3 = UiTheme.color.ink
-		button.BackgroundTransparency = 0.08
+		button.Selectable = false
+		button.BackgroundColor3 = UiTheme.editor.surface
+		button.BackgroundTransparency = 0
 		button.BorderSizePixel = 0
 		button.FontFace = UiTheme.font.bold
 		button.TextSize = 14
-		button.TextColor3 = UiTheme.color.text
+		button.TextColor3 = UiTheme.editor.text
 		button.Text = text
 		button.Size = UDim2.fromOffset(width, 32)
 		button.ZIndex = 11
 		button.Parent = tools
-		corner(button, 2)
+		corner(button, 6)
 		local ring = Instance.new("UIStroke")
-		ring.Color = UiTheme.color.stroke
+		ring.Color = UiTheme.editor.hairline
 		ring.Thickness = 1
-		ring.Transparency = 0.35
+		ring.Transparency = 0
 		ring.Parent = button
 		button.MouseButton1Click:Connect(callback)
 	end
@@ -896,6 +621,52 @@ local function markIndexOf(object: Instance): number?
 	return nil
 end
 
+local function pointerCandidates(screen: Vector2): { Vector2 }
+	local inset = GuiService:GetGuiInset()
+	local mouse = UserInputService:GetMouseLocation()
+	local shift = Vector2.new(inset.X, inset.Y)
+	return { screen, mouse, mouse - shift, screen + shift, screen - shift }
+end
+
+-- Screen AABB of a handle, with a few pixels of slack. Uses Absolute* so zoom
+-- and rotation still match what the player is looking at.
+local function hitsGui(object: GuiObject, screen: Vector2, pad: number): boolean
+	local origin = object.AbsolutePosition
+	local size = object.AbsoluteSize
+	if size.X < 1 or size.Y < 1 then
+		return false
+	end
+	for _, candidate in pointerCandidates(screen) do
+		if
+			candidate.X >= origin.X - pad
+			and candidate.Y >= origin.Y - pad
+			and candidate.X <= origin.X + size.X + pad
+			and candidate.Y <= origin.Y + size.Y + pad
+		then
+			return true
+		end
+	end
+	return false
+end
+
+local function pickDeleteButton(screen: Vector2): number?
+	local selected = shownSelection
+	if selected ~= nil then
+		local mark = elementFrames[selected]
+		local deleteBtn = if mark ~= nil then mark:FindFirstChild("Delete") else nil
+		if deleteBtn ~= nil and deleteBtn:IsA("GuiObject") and hitsGui(deleteBtn, screen, 6) then
+			return selected
+		end
+	end
+	for index, mark in elementFrames do
+		local deleteBtn = mark:FindFirstChild("Delete")
+		if deleteBtn ~= nil and deleteBtn:IsA("GuiObject") and hitsGui(deleteBtn, screen, 6) then
+			return index
+		end
+	end
+	return nil
+end
+
 -- Roblox's own hit test, in the same space as the click. A transparent frame
 -- is easy for the box test to miss, so the shape button is what decides.
 local function pickFromPointer(screen: Vector2): (HandleMode?, number?)
@@ -908,26 +679,27 @@ local function pickFromPointer(screen: Vector2): (HandleMode?, number?)
 	local rotateIndex: number? = nil
 	local deleteIndex: number? = nil
 	local moveIndex: number? = nil
-	for _, object in playerGui:GetGuiObjectsAtPosition(screen.X, screen.Y) do
-		local index = markIndexOf(object)
-		if index ~= nil then
-			local onScale = object.Name == "Scale" or object:FindFirstAncestor("Scale") ~= nil
-			local onRotate = object.Name == "Rotate" or object:FindFirstAncestor("Rotate") ~= nil
-			local onDelete = object.Name == "Delete" or object:FindFirstAncestor("Delete") ~= nil
-			if onScale then
-				scaleIndex = index
-			elseif onRotate then
-				rotateIndex = index
-			elseif onDelete then
-				deleteIndex = index
-			elseif moveIndex == nil then
-				moveIndex = index
+	for _, candidate in pointerCandidates(screen) do
+		for _, object in playerGui:GetGuiObjectsAtPosition(candidate.X, candidate.Y) do
+			local index = markIndexOf(object)
+			if index ~= nil then
+				local onScale = object.Name == "Scale" or object:FindFirstAncestor("Scale") ~= nil
+				local onRotate = object.Name == "Rotate" or object:FindFirstAncestor("Rotate") ~= nil
+				local onDelete = object.Name == "Delete" or object:FindFirstAncestor("Delete") ~= nil
+				if onScale then
+					scaleIndex = index
+				elseif onRotate then
+					rotateIndex = index
+				elseif onDelete then
+					deleteIndex = index
+				elseif moveIndex == nil then
+					moveIndex = index
+				end
 			end
 		end
 	end
 	if deleteIndex ~= nil then
-		-- Handled by the delete button click; do not start a drag.
-		return nil, nil
+		return "delete", deleteIndex
 	end
 	if scaleIndex ~= nil then
 		return "scale", scaleIndex
@@ -961,13 +733,6 @@ local function localOffset(element: DesignElement, center: Vector2, screen: Vect
 	local cosAngle = math.cos(angle)
 	local sinAngle = math.sin(angle)
 	return Vector2.new(delta.X * cosAngle - delta.Y * sinAngle, delta.X * sinAngle + delta.Y * cosAngle)
-end
-
-local function pointerCandidates(screen: Vector2): { Vector2 }
-	local inset = GuiService:GetGuiInset()
-	local mouse = UserInputService:GetMouseLocation()
-	local shift = Vector2.new(inset.X, inset.Y)
-	return { screen, mouse, mouse - shift, screen + shift, screen - shift }
 end
 
 local function shapeUnderPointer(screen: Vector2): number?
@@ -1010,8 +775,13 @@ local function pickHandle(screen: Vector2): (HandleMode?, number?)
 		return nil, nil
 	end
 	local half = liveHalf(selected, element)
+	-- Match the × button center (inset from the corner), not the geometric tip.
+	local deleteCenter = Vector2.new(-half.X + DELETE_SIZE * 0.35, -half.Y + DELETE_SIZE * 0.35)
 	for _, candidate in pointerCandidates(screen) do
 		local localPoint = localOffset(element, center, candidate)
+		if (localPoint - deleteCenter).Magnitude <= DELETE_HIT then
+			return "delete", selected
+		end
 		if (localPoint - Vector2.new(half.X, half.Y)).Magnitude <= HANDLE_HIT then
 			return "scale", selected
 		end
@@ -1023,18 +793,23 @@ local function pickHandle(screen: Vector2): (HandleMode?, number?)
 end
 
 local function pickTarget(screen: Vector2): (HandleMode?, number?)
-	local handleMode, handleIndex = pickHandle(screen)
-	if handleIndex ~= nil and handleMode == "scale" then
-		return "scale", handleIndex
+	-- × first: shape-under-pointer is greedy and otherwise eats the corner click.
+	local deleteIndex = pickDeleteButton(screen)
+	if deleteIndex ~= nil then
+		return "delete", deleteIndex
 	end
-	if handleIndex ~= nil and handleMode == "rotate" then
-		return "rotate", handleIndex
+	local handleMode, handleIndex = pickHandle(screen)
+	if handleIndex ~= nil then
+		return handleMode, handleIndex
+	end
+	local pointedMode, pointedIndex = pickFromPointer(screen)
+	if pointedMode == "delete" and pointedIndex ~= nil then
+		return "delete", pointedIndex
 	end
 	local under = shapeUnderPointer(screen)
 	if under ~= nil then
 		return nil, under
 	end
-	local pointedMode, pointedIndex = pickFromPointer(screen)
 	if pointedIndex ~= nil then
 		if pointedMode == "scale" then
 			return "scale", pointedIndex
@@ -1098,7 +873,6 @@ local function beginMove(index: number, screen: Vector2)
 	end
 	-- Claim the press before any redraw. A redraw can yield, and a yield used
 	-- to let the photo pan start while the shape was still the thing under the cursor.
-	panDrag = nil
 	gesture = {
 		mode = "move",
 		index = index,
@@ -1118,7 +892,6 @@ local function beginAdjust(mode: HandleMode, index: number, screen: Vector2)
 	if element == nil or center == nil then
 		return
 	end
-	panDrag = nil
 	local offset = screen - center
 	gesture = {
 		mode = mode,
@@ -1135,6 +908,11 @@ end
 
 beginGesture = function(screen: Vector2)
 	local mode, index = pickTarget(screen)
+	if index ~= nil and mode == "delete" then
+		gesture = nil
+		onDeleteMark(index)
+		return
+	end
 	if index ~= nil and (mode == "scale" or mode == "rotate") then
 		local handleMode: HandleMode = if mode == "scale" then "scale" else "rotate"
 		beginAdjust(handleMode, index, screen)
@@ -1147,12 +925,9 @@ beginGesture = function(screen: Vector2)
 	if gesture ~= nil then
 		return
 	end
+	-- Limb photo stays fixed — blank press deselects, it does not drag the background.
 	gesture = nil
-	panDrag = {
-		startScreen = screen,
-		startPan = viewPan,
-		moved = false,
-	}
+	onBlank()
 end
 
 -- Thin line icons, the same pair photo editors put on a selection:
@@ -1300,7 +1075,7 @@ local function makeHandle(parent: GuiObject, name: string, kind: HandleMode, pos
 	button.AutoButtonColor = false
 	button.AnchorPoint = Vector2.new(0.5, 0.5)
 	button.Position = position
-	button.Size = UDim2.fromOffset(28, 28)
+	button.Size = UDim2.fromOffset(HANDLE_SIZE, HANDLE_SIZE)
 	button.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	button.BorderSizePixel = 0
 	button.Active = true
@@ -1335,7 +1110,7 @@ local function makeHandle(parent: GuiObject, name: string, kind: HandleMode, pos
 	icon.BorderSizePixel = 0
 	icon.AnchorPoint = Vector2.new(0.5, 0.5)
 	icon.Position = UDim2.fromScale(0.5, 0.5)
-	icon.Size = UDim2.fromOffset(13, 13)
+	icon.Size = UDim2.fromOffset(10, 10)
 	icon.ScaleType = Enum.ScaleType.Fit
 	icon.ImageColor3 = Color3.fromRGB(20, 20, 20)
 	icon.ImageContent = Content.fromObject(image)
@@ -1352,13 +1127,14 @@ local function makeDeleteHandle(parent: GuiObject, index: number)
 	button.TextColor3 = Color3.fromRGB(255, 250, 245)
 	button.AutoButtonColor = false
 	button.AnchorPoint = Vector2.new(0.5, 0.5)
-	button.Position = UDim2.fromScale(0, 0)
-	button.Size = UDim2.fromOffset(28, 28)
+	-- Keep the × inside the mark so ClipsDescendants on the view can't eat hits.
+	button.Position = UDim2.fromOffset(DELETE_SIZE * 0.35, DELETE_SIZE * 0.35)
+	button.Size = UDim2.fromOffset(DELETE_SIZE, DELETE_SIZE)
 	button.BackgroundColor3 = UiTheme.color.oxblood
 	button.BorderSizePixel = 0
 	button.Active = true
 	button.Selectable = false
-	button.ZIndex = 40
+	button.ZIndex = 100
 	button.Parent = parent
 	local uiCorner = Instance.new("UICorner")
 	uiCorner.CornerRadius = UDim.new(1, 0)
@@ -1369,9 +1145,27 @@ local function makeDeleteHandle(parent: GuiObject, index: number)
 	outline.Transparency = 0.25
 	outline.Parent = button
 	local shapeIndex = index
-	button.MouseButton1Click:Connect(function()
+	local fired = false
+	local function deleteNow()
+		if fired then
+			return
+		end
+		fired = true
+		gesture = nil
 		onDeleteMark(shapeIndex)
+	end
+	-- Press path: Activated/Click alone was lost when grab() rebuilt marks mid-press.
+	button.InputBegan:Connect(function(input: InputObject)
+		if
+			input.UserInputType ~= Enum.UserInputType.MouseButton1
+			and input.UserInputType ~= Enum.UserInputType.Touch
+		then
+			return
+		end
+		deleteNow()
 	end)
+	button.MouseButton1Down:Connect(deleteNow)
+	button.Activated:Connect(deleteNow)
 end
 
 function TattooCanvas.render(design: TattooDesign, selectedIndex: number?)
@@ -1419,6 +1213,15 @@ function TattooCanvas.render(design: TattooDesign, selectedIndex: number?)
 				return
 			end
 			local screen = Vector2.new(input.Position.X, input.Position.Y)
+			local handleMode, handleIndex = pickTarget(screen)
+			if handleMode == "delete" then
+				gesture = nil
+				onDeleteMark(handleIndex or shapeIndex)
+				return
+			end
+			if handleMode == "scale" or handleMode == "rotate" then
+				return
+			end
 			hoveredIndex = shapeIndex
 			beginMove(shapeIndex, screen)
 		end)
@@ -1468,7 +1271,8 @@ function TattooCanvas.show(character: Model, design: TattooDesign, selectedIndex
 	if captionLabel ~= nil then
 		captionLabel.Text = presentedCaption or string.upper(region.label)
 	end
-	if photoGui ~= nil and photoCharacter == character and photoRegionId == region.id and surfacePad ~= nil then
+	if photoGui ~= nil and photoRegionId == region.id and surfacePad ~= nil then
+		photoCharacter = character
 		TattooCanvas.render(design, selectedIndex)
 		return
 	end
@@ -1482,45 +1286,29 @@ function TattooCanvas.skinChoices(): { SkinTone }
 	return SKIN_TONES
 end
 
-function TattooCanvas.avatarTone(character: Model): Color3
-	return avatarSkin(character)
+function TattooCanvas.avatarTone(_character: Model): Color3
+	for _, tone in SKIN_TONES do
+		if tone.id == LimbPhotos.defaultTone and tone.color ~= nil then
+			return tone.color
+		end
+	end
+	return Color3.fromRGB(232, 184, 150)
 end
 
 function TattooCanvas.setSkin(id: string)
 	skinToneId = id
-	local character = photoCharacter
 	local regionId = photoRegionId
-	-- "Yours" needs a fresh clone from the live avatar so we restore the real
-	-- tone after other swatches wiped textures / BodyColors on the photo.
-	if id == "yours" and character ~= nil and regionId ~= nil then
-		local region = BodyRegions.get(regionId)
-		if region ~= nil then
-			local design = shownDesign
-			local selection = shownSelection
-			buildCanvas(character, region)
-			if design ~= nil then
-				TattooCanvas.render(design, selection)
-			end
-			return
-		end
-	end
-	-- Recolour every limb photo in place. Paint all canvases in case a duplicate
-	-- ScreenGui is still around from a double client start.
-	local color = if character ~= nil then toneColor(character) else nil
-	local clones = allPhotoClones()
-	if color ~= nil and #clones > 0 then
-		for _, clone in clones do
-			paintBare(clone, color)
-		end
+	if regionId == nil then
 		return
 	end
-	photoRegionId = nil
+	if photoLayer ~= nil and photoLayer:IsA("ImageLabel") then
+		applyLimbStill(photoLayer, regionId)
+	end
 end
 
 function TattooCanvas.setInteractive(enabled: boolean)
 	acceptsInput = enabled
 	if not enabled then
-		panDrag = nil
 		gesture = nil
 	end
 end
@@ -1598,28 +1386,10 @@ function TattooCanvas.snapshot(parent: GuiObject, character: Model, design: Tatt
 	ratio.AspectRatio = aspect
 	ratio.Parent = holder
 
-	local viewport = Instance.new("ViewportFrame")
-	viewport.Name = "Photo"
-	viewport.Size = UDim2.fromScale(1, 1)
-	viewport.BackgroundColor3 = Color3.fromRGB(54, 42, 44)
-	viewport.BorderSizePixel = 0
-	viewport.Ambient = Color3.fromRGB(120, 104, 96)
-	viewport.LightColor = Color3.fromRGB(255, 214, 180)
-	viewport.LightDirection = Vector3.new(-0.35, -1, -0.45)
-	viewport.ZIndex = holder.ZIndex
-	viewport.Parent = holder
-
-	local clone = prepareClone(character)
-	paintBare(clone, avatarSkin(character))
-	raiseArmForLegShot(clone, region)
-	if findPart(clone, region) ~= nil then
-		local world = Instance.new("WorldModel")
-		world.Parent = viewport
-		clone.Parent = world
-		framePart(viewport, clone, region, true)
-	else
-		clone:Destroy()
-	end
+	local still = makeLimbStill(holder, region.id, holder.ZIndex)
+	still.AnchorPoint = Vector2.new(0, 0)
+	still.Position = UDim2.fromScale(0, 0)
+	local _ = character
 
 	local marks = Instance.new("Frame")
 	marks.Name = "Marks"
@@ -1675,13 +1445,40 @@ UserInputService.InputBegan:Connect(function(input: InputObject)
 		return
 	end
 	local screen = Vector2.new(input.Position.X, input.Position.Y)
+	-- Prefer an explicit × hit before move/scale so delete can't lose to grab-rebuild.
+	local deleteIndex = pickDeleteButton(screen)
+	if deleteIndex ~= nil then
+		gesture = nil
+		onDeleteMark(deleteIndex)
+		return
+	end
+	local player = Players.LocalPlayer
+	local playerGui = if player ~= nil then player:FindFirstChildOfClass("PlayerGui") else nil
+	if playerGui ~= nil then
+		for _, candidate in pointerCandidates(screen) do
+			for _, object in playerGui:GetGuiObjectsAtPosition(candidate.X, candidate.Y) do
+				local onDelete = object.Name == "Delete" or object:FindFirstAncestor("Delete") ~= nil
+				if onDelete then
+					local guiIndex = markIndexOf(object)
+					if guiIndex ~= nil then
+						gesture = nil
+						onDeleteMark(guiIndex)
+						return
+					end
+				end
+			end
+		end
+	end
 	local mode, index = pickTarget(screen)
-	if index == nil and hoveredIndex ~= nil then
+	if index == nil and hoveredIndex ~= nil and mode ~= "delete" then
 		mode = nil
 		index = hoveredIndex
 	end
 	if index ~= nil then
-		if mode == "scale" then
+		if mode == "delete" then
+			gesture = nil
+			onDeleteMark(index)
+		elseif mode == "scale" then
 			beginAdjust("scale", index, screen)
 		elseif mode == "rotate" then
 			beginAdjust("rotate", index, screen)
@@ -1690,8 +1487,6 @@ UserInputService.InputBegan:Connect(function(input: InputObject)
 		end
 		return
 	end
-	local player = Players.LocalPlayer
-	local playerGui = if player ~= nil then player:FindFirstChildOfClass("PlayerGui") else nil
 	if playerGui ~= nil then
 		for _, object in playerGui:GetGuiObjectsAtPosition(screen.X, screen.Y) do
 			if object:FindFirstAncestor("InkMastersEditor") ~= nil or object.Name == "InkMastersEditor" then
@@ -1769,25 +1564,11 @@ UserInputService.InputChanged:Connect(function(input: InputObject)
 		applyGesture(screen)
 		return
 	end
-	local drag = panDrag
-	if drag ~= nil then
-		local delta = screen - drag.startScreen
-		if delta.Magnitude > 4 then
-			drag.moved = true
-		end
-		viewPan = drag.startPan + delta
-		applyView()
-		return
-	end
+	-- Pan of the limb still is disabled; only mark gestures move.
 end)
 
 UserInputService.InputEnded:Connect(function(input: InputObject)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		local drag = panDrag
-		if drag ~= nil and not drag.moved then
-			onBlank()
-		end
-		panDrag = nil
 		gesture = nil
 	end
 end)

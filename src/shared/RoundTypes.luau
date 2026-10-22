@@ -14,6 +14,9 @@ export type RoundState =
 export type RoundSnapshot = {
 	revision: number,
 	roundId: number,
+	-- Design round inside the match (1..designRounds). Votes add up across these.
+	designRound: number,
+	designRounds: number,
 	state: RoundState,
 	endsAt: number?,
 	duration: number?,
@@ -26,6 +29,11 @@ export type RoundSnapshot = {
 	themeId: string?,
 	themeName: string?,
 	themeTagline: string?,
+	-- Lobby theme-pick shop (personalized: myThemePickSpot).
+	themePickPrice: number,
+	themeQueueCount: number,
+	themePickOpen: boolean,
+	myThemePickSpot: number?,
 }
 
 local TIMED_ORDER: { RoundState } = {
@@ -71,6 +79,12 @@ end
 
 function RoundTypes.showsTheme(state: RoundState): boolean
 	return state ~= "WaitingForPlayers" and state ~= "Intermission"
+end
+
+-- Theme picks are sold while the lobby is waiting on the next reveal.
+-- Paused lobby still counts (dev hold / walk-around) so artists can queue up.
+function RoundTypes.themePickOpen(state: RoundState, _paused: boolean): boolean
+	return state == "WaitingForPlayers" or state == "Intermission"
 end
 
 function RoundTypes.isRoundState(value: any): boolean
@@ -154,12 +168,38 @@ function RoundTypes.readSnapshot(payload: any): RoundSnapshot?
 		return nil
 	end
 
+	local designRound = readFinite(payload.designRound)
+	local designRounds = readFinite(payload.designRounds)
+	if designRound == nil or designRounds == nil or designRound < 1 or designRounds < 1 or designRound > designRounds then
+		return nil
+	end
+
+	local themePickPrice = readFinite(payload.themePickPrice)
+	local themeQueueCount = readFinite(payload.themeQueueCount)
+	if themePickPrice == nil or themeQueueCount == nil or themePickPrice < 0 or themeQueueCount < 0 then
+		return nil
+	end
+	if typeof(payload.themePickOpen) ~= "boolean" then
+		return nil
+	end
+	local myThemePickSpot: number? = nil
+	if payload.myThemePickSpot ~= nil then
+		local spot = readFinite(payload.myThemePickSpot)
+		if spot == nil or spot < 1 then
+			return nil
+		end
+		myThemePickSpot = spot
+	end
+
 	local devMode: boolean = payload.devMode
 	local paused: boolean = payload.paused
 	local showTheme: boolean = payload.showTheme
+	local themePickOpen: boolean = payload.themePickOpen
 	local snapshot: RoundSnapshot = {
 		revision = revision,
 		roundId = roundId,
+		designRound = designRound,
+		designRounds = designRounds,
 		state = state,
 		endsAt = endsAt,
 		duration = duration,
@@ -172,6 +212,10 @@ function RoundTypes.readSnapshot(payload: any): RoundSnapshot?
 		themeId = themeId,
 		themeName = themeName,
 		themeTagline = themeTagline,
+		themePickPrice = themePickPrice,
+		themeQueueCount = themeQueueCount,
+		themePickOpen = themePickOpen,
+		myThemePickSpot = myThemePickSpot,
 	}
 	return snapshot
 end

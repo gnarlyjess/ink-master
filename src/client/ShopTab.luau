@@ -464,10 +464,10 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 			local equipped = equipSlot ~= nil and view.equipped[equipSlot] == item.id
 			local price = priceOf(item, view)
 			local showing = filter == "all" or filter == item.category
-			local featured = view.featuredId == item.id and not owned and not item.earned
+			local featured = Catalogue.isFeatured(item, view.day) and not owned
 			card.frame.Visible = showing
 			card.badge.Visible = featured
-			card.frame.LayoutOrder = if view.featuredId == item.id then 0 else order
+			card.frame.LayoutOrder = if featured then 0 else order
 			if featured and not card.featuredPulse then
 				card.featuredPulse = true
 				Juice.pulse(card.badge, 0.95, 1.1)
@@ -589,7 +589,7 @@ function ShopTab.build(parent: Frame): { render: (ProfileView) -> () }
 			mode = "broke"
 		else
 			text = `BUY {UiKit.number(price)}`
-			meta = if view.featuredId == item.id
+			meta = if Catalogue.isFeatured(item, view.day)
 				then `Today's deal · {math.floor(Catalogue.FEATURED_DISCOUNT * 100 + 0.5)}% off`
 				else `{UiKit.number(view.coins)} coins ready`
 			mode = "buy"

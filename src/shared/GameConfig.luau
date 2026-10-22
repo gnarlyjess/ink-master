@@ -40,6 +40,9 @@ local DEV_TIMERS: { [string]: number } = {
 	Cleanup = 2,
 }
 
+-- One match = several design → vote rounds. Votes add up; the final party crowns the match winner.
+local DESIGN_ROUNDS_PER_MATCH = 3
+
 -- The forearm panel is a placement prototype. These limits are what the server enforces.
 local MAX_ELEMENTS = 20
 local MIN_ELEMENT_SCALE = 0.015
@@ -84,6 +87,10 @@ function GameConfig.getDesignRegion(): string
 	return DESIGN_REGION
 end
 
+function GameConfig.getDesignRoundsPerMatch(): number
+	return DESIGN_ROUNDS_PER_MATCH
+end
+
 function GameConfig.isDesignRegion(region: string): boolean
 	return BodyRegions.get(region) ~= nil
 end
@@ -112,6 +119,9 @@ function GameConfig.validate()
 	end
 	if not GameConfig.isDesignRegion(DESIGN_REGION) then
 		error("[InkMasters] Default design region is not a known body part")
+	end
+	if DESIGN_ROUNDS_PER_MATCH < 1 then
+		error("[InkMasters] Design rounds per match must be at least 1")
 	end
 
 	local profiles: { [string]: { [string]: number } } = {
