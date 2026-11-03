@@ -18,6 +18,7 @@ local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
 local InkColors = require(ReplicatedStorage.Shared.InkColors)
 local LimbPhotos = require(ReplicatedStorage.Shared.LimbPhotos)
 local StencilDefinitions = require(ReplicatedStorage.Shared.StencilDefinitions)
+local UiAssets = require(ReplicatedStorage.Shared.UiAssets)
 local FrameDress = require(script.Parent.FrameDress)
 local StencilView = require(script.Parent.StencilView)
 local UiTheme = require(script.Parent.UiTheme)
@@ -27,6 +28,10 @@ type DesignElement = DesignDocument.DesignElement
 type BodyRegion = BodyRegions.BodyRegion
 
 local leftExtra = 0
+local chromeDock = UiTheme.safe.dock
+local chromeTop = UiTheme.safe.top
+local chromeBottom = UiTheme.safe.bottom
+local chromeSide = UiTheme.safe.side
 local stage: Frame? = nil
 local boardStroke: UIStroke? = nil
 local caseFrameId: string? = nil
@@ -58,24 +63,25 @@ local function stageFrame(): (UDim2, UDim2)
 	if overridePosition ~= nil and overrideSize ~= nil then
 		return overridePosition, overrideSize
 	end
-	local left = UiTheme.safe.side + leftExtra
-	local position = UDim2.fromOffset(left, UiTheme.safe.top)
+	local left = chromeSide + leftExtra
+	local position = UDim2.fromOffset(left, chromeTop)
 	local size =
-		UDim2.new(1, -(left + UiTheme.safe.side * 2 + UiTheme.safe.dock), 1, -(UiTheme.safe.top + UiTheme.safe.bottom))
+		UDim2.new(1, -(left + chromeSide * 2 + chromeDock), 1, -(chromeTop + chromeBottom))
 	return position, size
 end
 
 local THUMB_PIXELS = 34
-local ROTATE_LIFT = 14
-local HANDLE_HIT = 12
-local DELETE_HIT = 22
-local HANDLE_SIZE = 20
-local DELETE_SIZE = 28
+local ROTATE_LIFT = 12
+-- Compact selection chrome (PicsArt / Instagram story stickers): tiny scale/rotate handles.
+-- Delete lives under the limb caption — not on the shape (too easy to tap by accident).
+local HANDLE_HIT = 10
+local HANDLE_SIZE = 14
+local HANDLE_ICON = 8
 local MIN_ZOOM = 1
 local MAX_ZOOM = 4
-local PAN_SLACK = 0.55
+-- Pan only while zoomed; at 100% the limb stays locked like PicsArt / Procreate.
 
-type HandleMode = "scale" | "rotate" | "delete"
+type HandleMode = "scale" | "rotate"
 
 local TattooCanvas = {}
 
@@ -97,6 +103,22 @@ end
 
 function TattooCanvas.setMargins(extra: number)
 	leftExtra = math.max(0, extra)
+	if extra <= 0 then
+		chromeDock = UiTheme.safe.dock
+		chromeTop = UiTheme.safe.top
+		chromeBottom = UiTheme.safe.bottom
+		chromeSide = UiTheme.safe.side
+	end
+	applyStage()
+end
+
+-- Responsive Studio chrome — phones scale panels so the canvas keeps a desktop-like share.
+function TattooCanvas.setChrome(layout: UiTheme.EditorLayout)
+	leftExtra = math.max(0, layout.leftExtra)
+	chromeDock = layout.dock
+	chromeTop = layout.top
+	chromeBottom = layout.bottom
+	chromeSide = layout.side
 	applyStage()
 end
 
@@ -114,9 +136,15 @@ function TattooCanvas.setStageOverride(position: UDim2?, size: UDim2?)
 end
 
 local photoLayer: GuiObject? = nil
-local canvasDim: Frame? = nil
+local canvasDim: GuiObject? = nil
 local surfacePad: GuiObject? = nil
+local worldLocked = false
+local savedWalkSpeed: number? = nil
+local savedJumpHeight: number? = nil
+local savedAutoRotate: boolean? = nil
+local savedCameraType: Enum.CameraType? = nil
 local captionLabel: TextLabel? = nil
+local deleteButton: TextButton? = nil
 local viewTools: GuiObject? = nil
 local presentedCaption: string? = nil
 local zoomReadout: TextLabel? = nil
@@ -131,15 +159,26 @@ local acceptsInput = true
 local viewZoom = 1
 local viewPan = Vector2.zero
 
+type PanDrag = {
+	startScreen: Vector2,
+	startPan: Vector2,
+	moved: boolean,
+}
+
+local panDrag: PanDrag? = nil
 local hoveredIndex: number? = nil
 local applyView: () -> ()
 local zoomAt: (number, Vector2) -> ()
 local windowCenter: () -> Vector2
 
+local function canPanView(): boolean
+	return viewZoom > 1.001
+end
+
 type SkinTone = { id: string, name: string, color: Color3? }
 
+-- Chip colours are the target look. Limb uses a peach master + ImageColor3 tint to match.
 local SKIN_TONES: { SkinTone } = {
-	{ id = "fair", name = "Fair", color = Color3.fromRGB(255, 224, 204) },
 	{ id = "light", name = "Light", color = Color3.fromRGB(244, 204, 176) },
 	{ id = "peach", name = "Peach", color = Color3.fromRGB(232, 184, 150) },
 	{ id = "warm", name = "Warm", color = Color3.fromRGB(214, 158, 118) },
@@ -149,12 +188,83 @@ local SKIN_TONES: { SkinTone } = {
 	{ id = "deep", name = "Deep", color = Color3.fromRGB(74, 50, 40) },
 }
 
+local PEACH_BASE = Color3.fromRGB(232, 184, 150)
+
+local function skinTint(toneColor: Color3): Color3
+	return Color3.new(
+		math.clamp(toneColor.R / PEACH_BASE.R, 0.18, 1.35),
+		math.clamp(toneColor.G / PEACH_BASE.G, 0.18, 1.35),
+		math.clamp(toneColor.B / PEACH_BASE.B, 0.18, 1.35)
+	)
+end
+
 local onGrab: (number) -> () = function(_index: number) end
 local onBlank: () -> () = function() end
 local onMove: (number, number, number) -> () = function(_index: number, _x: number, _y: number) end
 local onTransform: (number, number, number) -> () = function(_index: number, _rotation: number, _scale: number) end
 local onAdjustStarted: () -> () = function() end
 local onDeleteMark: (number) -> () = function(_index: number) end
+
+-- Compact layers tray (Procreate / PicsArt style) — top-right of the canvas.
+export type LayersState = {
+	active: number,
+	count: number,
+	locked: { [number]: boolean },
+	marks: { [number]: number },
+}
+
+local layersHost: Frame? = nil
+local layersPanel: Frame? = nil
+local layersToggle: TextButton? = nil
+local layersOpen = false
+local layersState: LayersState = {
+	active = 1,
+	count = 1,
+	locked = {},
+	marks = {},
+}
+local onSelectLayer: (number) -> () = function(_layer: number) end
+local onToggleLayerLock: (number) -> () = function(_layer: number) end
+local onAddLayer: () -> () = function() end
+local onDeleteLayer: (number) -> () = function(_layer: number) end
+local onReorderLayers: (number, number) -> () = function(_fromLayer: number, _toLayer: number) end
+
+type LayerDrag = {
+	fromLayer: number,
+	startY: number,
+	row: Frame,
+	moved: boolean,
+}
+local layerDrag: LayerDrag? = nil
+
+local PADLOCK_IMAGE = "rbxassetid://82367063203571"
+
+local function elementLayer(element: DesignElement): number
+	local layer = element.layer
+	if typeof(layer) ~= "number" then
+		return 1
+	end
+	return DesignDocument.clampLayer(layer)
+end
+
+local function normalizeLocked(src: { [number]: boolean }): { [number]: boolean }
+	local out: { [number]: boolean } = {}
+	for i = 1, DesignDocument.MAX_LAYERS do
+		-- Accept number or string keys (defensive — Luau maps sometimes stringify).
+		if src[i] == true or (src :: any)[tostring(i)] == true then
+			out[i] = true
+		end
+	end
+	return out
+end
+
+local function layerLocked(layer: number): boolean
+	return layersState.locked[DesignDocument.clampLayer(layer)] == true
+end
+
+local function elementLocked(element: DesignElement): boolean
+	return layerLocked(elementLayer(element))
+end
 
 type GestureMode = "move" | HandleMode
 
@@ -171,6 +281,44 @@ type Gesture = {
 
 local gesture: Gesture? = nil
 local beginGesture: (Vector2) -> () = function(_screen: Vector2) end
+
+-- Multitouch: selected mark → scale/twist; empty canvas → pinch-zoom the view.
+type PinchGesture = {
+	mode: "shape" | "view",
+	index: number,
+	startDist: number,
+	startAngle: number,
+	startScale: number,
+	startRotation: number,
+	startZoom: number,
+	focus: Vector2,
+}
+
+local pinch: PinchGesture? = nil
+local activeTouches: { [InputObject]: Vector2 } = {}
+
+local function touchPoints(): { Vector2 }
+	local points: { Vector2 } = {}
+	for _, position in activeTouches do
+		table.insert(points, position)
+	end
+	return points
+end
+
+local function touchCount(): number
+	local count = 0
+	for _ in activeTouches do
+		count += 1
+	end
+	return count
+end
+
+local function touchMidpoint(points: { Vector2 }): Vector2
+	if #points < 2 then
+		return if #points == 1 then points[1] else Vector2.zero
+	end
+	return (points[1] + points[2]) * 0.5
+end
 
 local function elementSize(scale: number): UDim2
 	if surfacePad == nil then
@@ -202,6 +350,9 @@ local function destroyCanvas()
 	local playerGui = if player ~= nil then player:FindFirstChild("PlayerGui") else nil
 	if playerGui ~= nil then
 		-- Sweep duplicates from Main running twice (Client RunContext under StarterPlayerScripts).
+		destroyNamedGuis(playerGui, "InkRivalryCanvas")
+		destroyNamedGuis(playerGui, "InkRivalryInk")
+		-- Sweep old brand GUI names after the rebrand.
 		destroyNamedGuis(playerGui, "InkMastersCanvas")
 		destroyNamedGuis(playerGui, "InkMastersInk")
 	elseif photoGui ~= nil then
@@ -218,12 +369,20 @@ local function destroyCanvas()
 	photoLayer = nil
 	canvasDim = nil
 	captionLabel = nil
+	deleteButton = nil
 	viewTools = nil
 	zoomReadout = nil
+	layersHost = nil
+	layersPanel = nil
+	layersToggle = nil
+	layersOpen = false
 	photoCharacter = nil
 	photoRegionId = nil
 	viewZoom = 1
 	viewPan = Vector2.zero
+	panDrag = nil
+	pinch = nil
+	table.clear(activeTouches)
 	hoveredIndex = nil
 	table.clear(elementFrames)
 end
@@ -244,23 +403,50 @@ local function preloadLimbPhotos()
 	end)
 end
 
+local limbApplyToken = 0
+
+-- Fixed board fill — never follows skin tone (that used to darken the whole stage).
+local LIMB_BOARD = Color3.fromRGB(54, 42, 44)
+
 local function applyLimbStill(image: ImageLabel, regionId: string)
-	local asset = LimbPhotos.get(regionId, skinToneId)
-	local toneColor = Color3.fromRGB(232, 184, 150)
+	local wantedTone = skinToneId
+	-- Peach master + ImageColor3 so the limb matches the chip. Board fill stays LIMB_BOARD.
+	local asset = LimbPhotos.get(regionId, "peach") or LimbPhotos.get(regionId, wantedTone)
+	local toneColor = PEACH_BASE
 	for _, tone in SKIN_TONES do
-		if tone.id == skinToneId and tone.color ~= nil then
+		if tone.id == wantedTone and tone.color ~= nil then
 			toneColor = tone.color
 			break
 		end
 	end
-	image.BackgroundColor3 = toneColor
-	if asset ~= nil then
-		image.Image = asset
-		image.ImageTransparency = 0
-	else
+	image.BackgroundColor3 = LIMB_BOARD
+	image.BackgroundTransparency = 0
+	image.ImageColor3 = skinTint(toneColor)
+	image.ImageTransparency = 0
+	if asset == nil or asset == "" then
 		image.Image = ""
 		image.ImageTransparency = 1
+		return
 	end
+	if image.Image == asset then
+		return
+	end
+	limbApplyToken += 1
+	local token = limbApplyToken
+	image.Image = asset
+	task.spawn(function()
+		pcall(function()
+			ContentProvider:PreloadAsync({ asset })
+		end)
+		if token ~= limbApplyToken or image.Parent == nil or skinToneId ~= wantedTone then
+			return
+		end
+		if image.Image ~= asset then
+			image.Image = asset
+		end
+		image.ImageColor3 = skinTint(toneColor)
+		image.ImageTransparency = 0
+	end)
 end
 
 local function makeLimbStill(parent: GuiObject, regionId: string, zIndex: number): ImageLabel
@@ -269,10 +455,11 @@ local function makeLimbStill(parent: GuiObject, regionId: string, zIndex: number
 	image.AnchorPoint = Vector2.new(0.5, 0.5)
 	image.Position = UDim2.fromScale(0.5, 0.5)
 	image.Size = UDim2.fromScale(1, 1)
-	image.BackgroundColor3 = Color3.fromRGB(54, 42, 44)
+	image.BackgroundColor3 = LIMB_BOARD
 	image.BackgroundTransparency = 0
 	image.BorderSizePixel = 0
 	image.ScaleType = Enum.ScaleType.Crop
+	image.ResampleMode = Enum.ResamplerMode.Default
 	image.Active = false
 	image.ZIndex = zIndex
 	image.Parent = parent
@@ -280,10 +467,12 @@ local function makeLimbStill(parent: GuiObject, regionId: string, zIndex: number
 	return image
 end
 
-
 local function buildCanvas(character: Model, region: BodyRegion)
 	destroyCanvas()
 	preloadLimbPhotos()
+	-- Limb is locked to the stage; pan only after the player zooms in.
+	viewZoom = 1
+	viewPan = Vector2.zero
 
 	local player = Players.LocalPlayer
 	if player == nil then
@@ -298,7 +487,7 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	photoRegionId = region.id
 
 	local photo = Instance.new("ScreenGui")
-	photo.Name = "InkMastersCanvas"
+	photo.Name = "InkRivalryCanvas"
 	photo.ResetOnSpawn = false
 	photo.IgnoreGuiInset = true
 	photo.DisplayOrder = if presentedCaption ~= nil then 37 else 15
@@ -306,16 +495,26 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	photo.Parent = playerGui
 	photoGui = photo
 
-	local dim = Instance.new("Frame")
-	dim.Name = "Dim"
-	dim.Active = false
+	-- Opaque parlor still — covers the live lobby so the world never shows through.
+	local dim = Instance.new("ImageLabel")
+	dim.Name = "StudioBackdrop"
+	dim.Active = true
 	dim.Size = UDim2.fromScale(1, 1)
-	dim.BackgroundColor3 = Color3.new(0, 0, 0)
-	dim.BackgroundTransparency = 0.55
+	dim.BackgroundColor3 = Color3.fromRGB(14, 10, 12)
+	dim.BackgroundTransparency = 0
 	dim.BorderSizePixel = 0
+	dim.Image = UiAssets.studioBackdrop
+	dim.ScaleType = Enum.ScaleType.Crop
+	dim.ResampleMode = Enum.ResamplerMode.Default
+	dim.ZIndex = 0
 	dim.Visible = presentedCaption == nil
 	dim.Parent = photo
 	canvasDim = dim
+	task.spawn(function()
+		pcall(function()
+			ContentProvider:PreloadAsync({ UiAssets.studioBackdrop, dim })
+		end)
+	end)
 
 	local board = Instance.new("Frame")
 	board.Name = "Board"
@@ -359,9 +558,45 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	captionPad.Parent = caption
 	captionLabel = caption
 
+	local remove = Instance.new("TextButton")
+	remove.Name = "CanvasDelete"
+	remove.Text = "Delete"
+	remove.FontFace = UiTheme.font.bold
+	remove.TextSize = 13
+	remove.TextColor3 = Color3.fromRGB(255, 250, 245)
+	remove.AutoButtonColor = true
+	remove.AutomaticSize = Enum.AutomaticSize.X
+	remove.Size = UDim2.fromOffset(0, 28)
+	remove.Position = UDim2.fromOffset(12, 44)
+	remove.BackgroundColor3 = UiTheme.color.oxblood
+	remove.BorderSizePixel = 0
+	remove.Active = true
+	remove.Selectable = false
+	remove.ZIndex = 6
+	remove.Visible = false
+	remove.Parent = board
+	corner(remove, 6)
+	local removePad = Instance.new("UIPadding")
+	removePad.PaddingLeft = UDim.new(0, 12)
+	removePad.PaddingRight = UDim.new(0, 12)
+	removePad.Parent = remove
+	local removeStroke = Instance.new("UIStroke")
+	removeStroke.Color = Color3.fromRGB(255, 250, 245)
+	removeStroke.Thickness = 1
+	removeStroke.Transparency = 0.35
+	removeStroke.Parent = remove
+	remove.Activated:Connect(function()
+		local index = shownSelection
+		if index == nil or not acceptsInput or presentedCaption ~= nil then
+			return
+		end
+		onDeleteMark(index)
+	end)
+	deleteButton = remove
+
 	-- A second ScreenGui keeps the ink above the viewport photo.
 	local ink = Instance.new("ScreenGui")
-	ink.Name = "InkMastersInk"
+	ink.Name = "InkRivalryInk"
 	ink.ResetOnSpawn = false
 	ink.IgnoreGuiInset = true
 	ink.DisplayOrder = if presentedCaption ~= nil then 38 else 17
@@ -457,11 +692,310 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	applyCaseFrame()
 
 	viewButton("−", 32, 1, function()
-		zoomAt(1 / 1.2, windowCenter())
+		zoomAt(1 / 1.15, windowCenter())
 	end)
 	viewButton("+", 32, 3, function()
-		zoomAt(1.2, windowCenter())
+		zoomAt(1.15, windowCenter())
 	end)
+
+	-- Layers tray — Photoshop / PicsArt style, compact, top-right of the canvas.
+	local host = Instance.new("Frame")
+	host.Name = "LayersHost"
+	host.AnchorPoint = Vector2.new(1, 0)
+	host.Position = UDim2.new(1, -8, 0, 8)
+	host.Size = UDim2.fromOffset(132, 0)
+	host.AutomaticSize = Enum.AutomaticSize.Y
+	host.BackgroundTransparency = 1
+	host.ZIndex = 20
+	host.Visible = presentedCaption == nil
+	host.Parent = window
+	layersHost = host
+	local hostList = Instance.new("UIListLayout")
+	hostList.FillDirection = Enum.FillDirection.Vertical
+	hostList.HorizontalAlignment = Enum.HorizontalAlignment.Right
+	hostList.Padding = UDim.new(0, 4)
+	hostList.SortOrder = Enum.SortOrder.LayoutOrder
+	hostList.Parent = host
+
+	local toggle = Instance.new("TextButton")
+	toggle.Name = "LayersToggle"
+	toggle.LayoutOrder = 1
+	toggle.AutoButtonColor = true
+	toggle.BackgroundColor3 = UiTheme.editor.surface
+	toggle.BorderSizePixel = 0
+	toggle.FontFace = UiTheme.font.bold
+	toggle.TextSize = 13
+	toggle.TextColor3 = UiTheme.editor.text
+	toggle.Text = "Layers"
+	toggle.Size = UDim2.fromOffset(78, 28)
+	toggle.ZIndex = 21
+	toggle.Parent = host
+	corner(toggle, 6)
+	local toggleRing = Instance.new("UIStroke")
+	toggleRing.Color = UiTheme.editor.hairline
+	toggleRing.Thickness = 1
+	toggleRing.Parent = toggle
+	layersToggle = toggle
+
+	local panel = Instance.new("Frame")
+	panel.Name = "LayersPanel"
+	panel.LayoutOrder = 2
+	panel.BackgroundColor3 = UiTheme.editor.surface
+	panel.BackgroundTransparency = 0.04
+	panel.BorderSizePixel = 0
+	panel.Size = UDim2.fromOffset(132, 0)
+	panel.AutomaticSize = Enum.AutomaticSize.Y
+	panel.Visible = false
+	panel.ZIndex = 21
+	panel.Parent = host
+	corner(panel, 8)
+	local panelRing = Instance.new("UIStroke")
+	panelRing.Color = UiTheme.editor.hairline
+	panelRing.Thickness = 1
+	panelRing.Parent = panel
+	local panelPad = Instance.new("UIPadding")
+	panelPad.PaddingTop = UDim.new(0, 4)
+	panelPad.PaddingBottom = UDim.new(0, 4)
+	panelPad.PaddingLeft = UDim.new(0, 4)
+	panelPad.PaddingRight = UDim.new(0, 4)
+	panelPad.Parent = panel
+	local panelList = Instance.new("UIListLayout")
+	panelList.FillDirection = Enum.FillDirection.Vertical
+	panelList.Padding = UDim.new(0, 2)
+	panelList.SortOrder = Enum.SortOrder.LayoutOrder
+	panelList.Parent = panel
+	layersPanel = panel
+
+	toggle.MouseButton1Click:Connect(function()
+		layersOpen = not layersOpen
+		panel.Visible = layersOpen
+		toggle.Text = "Layers"
+		TattooCanvas.refreshLayers()
+	end)
+end
+
+local function clearLayerRows(panel: Frame)
+	for _, child in panel:GetChildren() do
+		if child:IsA("GuiObject") then
+			child:Destroy()
+		end
+	end
+end
+
+local function layerIconButton(parent: Instance, name: string, zIndex: number): TextButton
+	local button = Instance.new("TextButton")
+	button.Name = name
+	button.Size = UDim2.fromOffset(26, 22)
+	button.BackgroundColor3 = UiTheme.editor.raised
+	button.BackgroundTransparency = 0
+	button.BorderSizePixel = 0
+	button.Text = ""
+	button.AutoButtonColor = true
+	button.Active = true
+	button.ZIndex = zIndex
+	button.Parent = parent
+	corner(button, 4)
+	local ring = Instance.new("UIStroke")
+	ring.Color = UiTheme.editor.hairline
+	ring.Thickness = 1
+	ring.Transparency = 0.35
+	ring.Parent = button
+	return button
+end
+
+function TattooCanvas.refreshLayers()
+	local panel = layersPanel
+	local toggle = layersToggle
+	if panel == nil then
+		return
+	end
+	clearLayerRows(panel)
+	panel.Visible = layersOpen
+	if toggle ~= nil then
+		toggle.Text = "Layers"
+	end
+	if not layersOpen then
+		return
+	end
+
+	-- Highest layer on top (Photoshop / GIMP stack order).
+	for layer = layersState.count, 1, -1 do
+		local active = layer == layersState.active
+		local locked = layerLocked(layer)
+		local row = Instance.new("Frame")
+		row.Name = `Layer{layer}`
+		row.LayoutOrder = layersState.count - layer + 1
+		row.BackgroundColor3 = if active then UiTheme.editor.raised else UiTheme.editor.surface
+		row.BackgroundTransparency = 0
+		row.BorderSizePixel = 0
+		row.Size = UDim2.new(1, 0, 0, 28)
+		row.ZIndex = 22
+		row.Parent = panel
+		corner(row, 5)
+		if active then
+			local activeRing = Instance.new("UIStroke")
+			activeRing.Color = UiTheme.color.gold
+			activeRing.Thickness = 1.2
+			activeRing.Transparency = 0.35
+			activeRing.Parent = row
+		end
+
+		local grip = Instance.new("TextButton")
+		grip.Name = "Grip"
+		grip.BackgroundTransparency = 1
+		grip.BorderSizePixel = 0
+		grip.Position = UDim2.fromOffset(0, 0)
+		grip.Size = UDim2.fromOffset(22, 28)
+		grip.FontFace = UiTheme.font.bold
+		grip.TextSize = 14
+		grip.TextColor3 = UiTheme.editor.muted
+		grip.Text = "="
+		grip.AutoButtonColor = false
+		grip.ZIndex = 24
+		grip.Parent = row
+
+		local selectBtn = Instance.new("TextButton")
+		selectBtn.Name = "Select"
+		selectBtn.BackgroundTransparency = 1
+		selectBtn.BorderSizePixel = 0
+		selectBtn.Position = UDim2.fromOffset(20, 0)
+		selectBtn.Size = UDim2.new(1, -78, 1, 0)
+		selectBtn.FontFace = if active then UiTheme.font.heavy else UiTheme.font.bold
+		selectBtn.TextSize = 12
+		selectBtn.TextColor3 = if locked then UiTheme.editor.muted else UiTheme.editor.text
+		selectBtn.TextXAlignment = Enum.TextXAlignment.Left
+		selectBtn.Text = ` Layer {layer}`
+		selectBtn.ZIndex = 23
+		selectBtn.Parent = row
+		local captured = layer
+		selectBtn.Activated:Connect(function()
+			onSelectLayer(captured)
+		end)
+		-- Drag handle — tracked on UserInputService so release outside the row still counts.
+		grip.InputBegan:Connect(function(input: InputObject)
+			if
+				input.UserInputType ~= Enum.UserInputType.MouseButton1
+				and input.UserInputType ~= Enum.UserInputType.Touch
+			then
+				return
+			end
+			layerDrag = {
+				fromLayer = captured,
+				startY = input.Position.Y,
+				row = row,
+				moved = false,
+			}
+			row.BackgroundTransparency = 0.25
+		end)
+
+		local lockBtn = layerIconButton(row, "Lock", 24)
+		lockBtn.AnchorPoint = Vector2.new(1, 0.5)
+		lockBtn.Position = UDim2.new(1, -30, 0.5, 0)
+		lockBtn.Text = ""
+		local lockIcon = Instance.new("ImageLabel")
+		lockIcon.Name = "Icon"
+		lockIcon.BackgroundTransparency = 1
+		lockIcon.BorderSizePixel = 0
+		lockIcon.Active = false
+		lockIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+		lockIcon.Position = UDim2.fromScale(0.5, 0.5)
+		lockIcon.Size = UDim2.fromOffset(14, 14)
+		lockIcon.ScaleType = Enum.ScaleType.Fit
+		lockIcon.Image = PADLOCK_IMAGE
+		lockIcon.ImageColor3 = if locked then UiTheme.color.gold else UiTheme.editor.muted
+		lockIcon.ImageTransparency = if locked then 0 else 0.35
+		lockIcon.ZIndex = 25
+		lockIcon.Parent = lockBtn
+		if locked then
+			lockBtn.BackgroundColor3 = UiTheme.color.gold
+			lockBtn.BackgroundTransparency = 0.75
+		end
+		lockBtn.Activated:Connect(function()
+			onToggleLayerLock(captured)
+		end)
+
+		local deleteBtn = layerIconButton(row, "Delete", 24)
+		deleteBtn.AnchorPoint = Vector2.new(1, 0.5)
+		deleteBtn.Position = UDim2.new(1, -2, 0.5, 0)
+		deleteBtn.FontFace = UiTheme.font.heavy
+		deleteBtn.TextSize = 16
+		deleteBtn.Text = "×"
+		deleteBtn.TextColor3 = if layersState.count <= 1 then UiTheme.editor.muted else UiTheme.editor.text
+		deleteBtn.AutoButtonColor = layersState.count > 1
+		deleteBtn.Activated:Connect(function()
+			if layersState.count <= 1 then
+				return
+			end
+			onDeleteLayer(captured)
+		end)
+	end
+
+	if layersState.count < DesignDocument.MAX_LAYERS then
+		local add = Instance.new("TextButton")
+		add.Name = "AddLayer"
+		add.LayoutOrder = 100
+		add.BackgroundTransparency = 1
+		add.BorderSizePixel = 0
+		add.Size = UDim2.new(1, 0, 0, 24)
+		add.FontFace = UiTheme.font.bold
+		add.TextSize = 12
+		add.TextColor3 = UiTheme.editor.muted
+		add.Text = "+ New layer"
+		add.ZIndex = 22
+		add.Parent = panel
+		add.MouseButton1Click:Connect(function()
+			onAddLayer()
+		end)
+	end
+end
+
+function TattooCanvas.setLayers(
+	state: LayersState,
+	selectHandler: (number) -> (),
+	lockHandler: (number) -> (),
+	addHandler: () -> (),
+	deleteHandler: (number) -> (),
+	reorderHandler: ((number, number) -> ())?
+)
+	local marksCopy: { [number]: number } = {}
+	for i = 1, DesignDocument.MAX_LAYERS do
+		local count = state.marks[i] or (state.marks :: any)[tostring(i)]
+		if typeof(count) == "number" then
+			marksCopy[i] = count
+		end
+	end
+	layersState = {
+		active = DesignDocument.clampLayer(state.active),
+		count = math.clamp(math.floor(state.count + 0.5), 1, DesignDocument.MAX_LAYERS),
+		locked = normalizeLocked(state.locked),
+		marks = marksCopy,
+	}
+	onSelectLayer = selectHandler
+	onToggleLayerLock = lockHandler
+	onAddLayer = addHandler
+	onDeleteLayer = deleteHandler
+	onReorderLayers = reorderHandler or function(_from: number, _to: number) end
+	local host = layersHost
+	if host ~= nil then
+		host.Visible = presentedCaption == nil
+	end
+	TattooCanvas.refreshLayers()
+end
+
+function TattooCanvas.setLayersVisible(visible: boolean)
+	local host = layersHost
+	if host ~= nil then
+		host.Visible = visible and presentedCaption == nil
+	end
+	if not visible then
+		layersOpen = false
+		if layersPanel ~= nil then
+			layersPanel.Visible = false
+		end
+		if layersToggle ~= nil then
+			layersToggle.Text = "Layers"
+		end
+	end
 end
 
 local function viewMetrics(): (Vector2?, Vector2?)
@@ -479,19 +1013,24 @@ end
 
 local function placeLayer(layer: GuiObject)
 	layer.AnchorPoint = Vector2.new(0.5, 0.5)
+	if not canPanView() then
+		-- Locked full-bleed limb — no free drag at 100%.
+		layer.Size = UDim2.fromScale(1, 1)
+		layer.Position = UDim2.fromScale(0.5, 0.5)
+		return
+	end
 	layer.Size = UDim2.fromScale(viewZoom, viewZoom)
 	layer.Position = UDim2.new(0.5, viewPan.X, 0.5, viewPan.Y)
 end
 
 local function clampPan(pan: Vector2): Vector2
-	if viewWindow == nil then
+	if viewWindow == nil or not canPanView() then
 		return Vector2.zero
 	end
 	local window = viewWindow.AbsoluteSize
-	local extraX = window.X * (viewZoom - 1) * 0.5
-	local extraY = window.Y * (viewZoom - 1) * 0.5
-	local limitX = extraX + window.X * PAN_SLACK
-	local limitY = extraY + window.Y * PAN_SLACK
+	-- Keep the zoomed limb covering the window — no empty slack around the edges.
+	local limitX = window.X * (viewZoom - 1) * 0.5
+	local limitY = window.Y * (viewZoom - 1) * 0.5
 	return Vector2.new(math.clamp(pan.X, -limitX, limitX), math.clamp(pan.Y, -limitY, limitY))
 end
 
@@ -503,7 +1042,12 @@ function windowCenter(): Vector2
 end
 
 function applyView()
-	viewPan = clampPan(viewPan)
+	if not canPanView() then
+		viewZoom = 1
+		viewPan = Vector2.zero
+	else
+		viewPan = clampPan(viewPan)
+	end
 	if photoLayer ~= nil then
 		placeLayer(photoLayer)
 	end
@@ -519,9 +1063,16 @@ function zoomAt(factor: number, focus: Vector2)
 	if viewWindow == nil then
 		return
 	end
+	-- Canvas uses IgnoreGuiInset — mouse/AbsolutePosition share the same top-left space.
 	local beforeX, beforeY = TattooCanvas.screenToUv(focus)
 	local nextZoom = math.clamp(viewZoom * factor, MIN_ZOOM, MAX_ZOOM)
-	if nextZoom == viewZoom then
+	if math.abs(nextZoom - viewZoom) < 0.0001 then
+		return
+	end
+	if nextZoom <= 1.001 then
+		viewZoom = 1
+		viewPan = Vector2.zero
+		applyView()
 		return
 	end
 	viewZoom = nextZoom
@@ -649,26 +1200,22 @@ local function hitsGui(object: GuiObject, screen: Vector2, pad: number): boolean
 	return false
 end
 
-local function pickDeleteButton(screen: Vector2): number?
-	local selected = shownSelection
-	if selected ~= nil then
-		local mark = elementFrames[selected]
-		local deleteBtn = if mark ~= nil then mark:FindFirstChild("Delete") else nil
-		if deleteBtn ~= nil and deleteBtn:IsA("GuiObject") and hitsGui(deleteBtn, screen, 6) then
-			return selected
-		end
-	end
-	for index, mark in elementFrames do
-		local deleteBtn = mark:FindFirstChild("Delete")
-		if deleteBtn ~= nil and deleteBtn:IsA("GuiObject") and hitsGui(deleteBtn, screen, 6) then
-			return index
-		end
-	end
-	return nil
+local function hitsCanvasDelete(screen: Vector2): boolean
+	local button = deleteButton
+	return button ~= nil and button.Visible and hitsGui(button, screen, 4)
 end
 
 -- Roblox's own hit test, in the same space as the click. A transparent frame
 -- is easy for the box test to miss, so the shape button is what decides.
+local function indexIsLocked(index: number): boolean
+	local design = shownDesign
+	if design == nil then
+		return true
+	end
+	local element = design.elements[index]
+	return element == nil or elementLocked(element)
+end
+
 local function pickFromPointer(screen: Vector2): (HandleMode?, number?)
 	local player = Players.LocalPlayer
 	local playerGui = if player ~= nil then player:FindFirstChildOfClass("PlayerGui") else nil
@@ -677,29 +1224,22 @@ local function pickFromPointer(screen: Vector2): (HandleMode?, number?)
 	end
 	local scaleIndex: number? = nil
 	local rotateIndex: number? = nil
-	local deleteIndex: number? = nil
 	local moveIndex: number? = nil
 	for _, candidate in pointerCandidates(screen) do
 		for _, object in playerGui:GetGuiObjectsAtPosition(candidate.X, candidate.Y) do
 			local index = markIndexOf(object)
-			if index ~= nil then
+			if index ~= nil and not indexIsLocked(index) then
 				local onScale = object.Name == "Scale" or object:FindFirstAncestor("Scale") ~= nil
 				local onRotate = object.Name == "Rotate" or object:FindFirstAncestor("Rotate") ~= nil
-				local onDelete = object.Name == "Delete" or object:FindFirstAncestor("Delete") ~= nil
 				if onScale then
 					scaleIndex = index
 				elseif onRotate then
 					rotateIndex = index
-				elseif onDelete then
-					deleteIndex = index
 				elseif moveIndex == nil then
 					moveIndex = index
 				end
 			end
 		end
-	end
-	if deleteIndex ~= nil then
-		return "delete", deleteIndex
 	end
 	if scaleIndex ~= nil then
 		return "scale", scaleIndex
@@ -735,29 +1275,83 @@ local function localOffset(element: DesignElement, center: Vector2, screen: Vect
 	return Vector2.new(delta.X * cosAngle - delta.Y * sinAngle, delta.X * sinAngle + delta.Y * cosAngle)
 end
 
+-- Soft edge around the silhouette so taps near ink still count (not the whole box).
+local HIT_SLOP_PX = 14
+
+local function hitsShapeInk(index: number, element: DesignElement, screen: Vector2): boolean
+	local center = liveCenter(index, element)
+	if center == nil then
+		return false
+	end
+	local half = liveHalf(index, element)
+	if half.X < 1 or half.Y < 1 then
+		return false
+	end
+	local localPoint = localOffset(element, center, screen)
+	local u = 0.5 + localPoint.X / (half.X * 2)
+	local v = 0.5 + localPoint.Y / (half.Y * 2)
+	if element.flip then
+		u = 1 - u
+	end
+	local stencil = StencilDefinitions.get(element.stencilId)
+	local shape = if stencil ~= nil then stencil.shape else "disc"
+	if StencilView.contains(shape, u, v) then
+		return true
+	end
+	-- Sample a ring around the tip: if any sample lands on ink, the tap was "close enough".
+	local du = HIT_SLOP_PX / (half.X * 2)
+	local dv = HIT_SLOP_PX / (half.Y * 2)
+	for step = 1, 8 do
+		local angle = step * (math.pi * 0.25)
+		if StencilView.contains(shape, u + math.cos(angle) * du, v + math.sin(angle) * dv) then
+			return true
+		end
+	end
+	-- Half-radius samples catch corners of thin shapes (stars, lines).
+	local hu, hv = du * 0.55, dv * 0.55
+	for step = 1, 8 do
+		local angle = step * (math.pi * 0.25) + 0.2
+		if StencilView.contains(shape, u + math.cos(angle) * hu, v + math.sin(angle) * hv) then
+			return true
+		end
+	end
+	return false
+end
+
+local function drawOrder(design: TattooDesign): { number }
+	local order: { number } = {}
+	for index = 1, #design.elements do
+		table.insert(order, index)
+	end
+	table.sort(order, function(a: number, b: number)
+		local layerA = elementLayer(design.elements[a])
+		local layerB = elementLayer(design.elements[b])
+		if layerA ~= layerB then
+			return layerA > layerB
+		end
+		return a > b
+	end)
+	return order
+end
+
 local function shapeUnderPointer(screen: Vector2): number?
 	local design = shownDesign
 	if design == nil then
 		return nil
 	end
-	local bestIndex: number? = nil
-	local bestDist = math.huge
+	-- Topmost unlocked silhouette under the tip — locked layers stay put.
 	for _, candidate in pointerCandidates(screen) do
-		for index = #design.elements, 1, -1 do
+		for _, index in drawOrder(design) do
 			local element = design.elements[index]
-			local center = liveCenter(index, element)
-			if center ~= nil then
-				local half = liveHalf(index, element)
-				local reach = math.max(half.X, half.Y) + 12
-				local distance = (candidate - center).Magnitude
-				if distance <= reach and distance < bestDist then
-					bestDist = distance
-					bestIndex = index
-				end
+			if elementLocked(element) then
+				continue
+			end
+			if hitsShapeInk(index, element, candidate) then
+				return index
 			end
 		end
 	end
-	return bestIndex
+	return nil
 end
 
 local function pickHandle(screen: Vector2): (HandleMode?, number?)
@@ -767,7 +1361,7 @@ local function pickHandle(screen: Vector2): (HandleMode?, number?)
 		return nil, nil
 	end
 	local element = design.elements[selected]
-	if element == nil then
+	if element == nil or elementLocked(element) then
 		return nil, nil
 	end
 	local center = liveCenter(selected, element)
@@ -775,13 +1369,8 @@ local function pickHandle(screen: Vector2): (HandleMode?, number?)
 		return nil, nil
 	end
 	local half = liveHalf(selected, element)
-	-- Match the × button center (inset from the corner), not the geometric tip.
-	local deleteCenter = Vector2.new(-half.X + DELETE_SIZE * 0.35, -half.Y + DELETE_SIZE * 0.35)
 	for _, candidate in pointerCandidates(screen) do
 		local localPoint = localOffset(element, center, candidate)
-		if (localPoint - deleteCenter).Magnitude <= DELETE_HIT then
-			return "delete", selected
-		end
 		if (localPoint - Vector2.new(half.X, half.Y)).Magnitude <= HANDLE_HIT then
 			return "scale", selected
 		end
@@ -793,30 +1382,19 @@ local function pickHandle(screen: Vector2): (HandleMode?, number?)
 end
 
 local function pickTarget(screen: Vector2): (HandleMode?, number?)
-	-- × first: shape-under-pointer is greedy and otherwise eats the corner click.
-	local deleteIndex = pickDeleteButton(screen)
-	if deleteIndex ~= nil then
-		return "delete", deleteIndex
-	end
 	local handleMode, handleIndex = pickHandle(screen)
 	if handleIndex ~= nil then
 		return handleMode, handleIndex
 	end
+	-- Gui hit-test only for handles — mark frames are full rectangles and would
+	-- select when tapping empty space beside a star/heart/etc.
 	local pointedMode, pointedIndex = pickFromPointer(screen)
-	if pointedMode == "delete" and pointedIndex ~= nil then
-		return "delete", pointedIndex
+	if pointedIndex ~= nil and (pointedMode == "scale" or pointedMode == "rotate") then
+		return pointedMode, pointedIndex
 	end
 	local under = shapeUnderPointer(screen)
 	if under ~= nil then
 		return nil, under
-	end
-	if pointedIndex ~= nil then
-		if pointedMode == "scale" then
-			return "scale", pointedIndex
-		elseif pointedMode == "rotate" then
-			return "rotate", pointedIndex
-		end
-		return nil, pointedIndex
 	end
 	return nil, nil
 end
@@ -827,7 +1405,7 @@ local function applyGesture(screen: Vector2)
 		return
 	end
 	local element = shownDesign.elements[drag.index]
-	if element == nil then
+	if element == nil or elementLocked(element) then
 		gesture = nil
 		return
 	end
@@ -858,17 +1436,37 @@ local function applyGesture(screen: Vector2)
 	end
 	onTransform(drag.index, rotation, scale)
 	local mark = elementFrames[drag.index]
+	if mark == nil then
+		return
+	end
+	-- Keep the UV centre locked while size/rotation change (AnchorPoint 0.5).
+	mark.Position = UDim2.fromScale(element.x, element.y)
 	mark.Rotation = rotation
 	mark.Size = elementSize(scale)
+	if drag.mode == "scale" then
+		local stencil = StencilDefinitions.get(element.stencilId)
+		local shape = if stencil ~= nil then stencil.shape else "disc"
+		local asset = if stencil ~= nil then stencil.image else nil
+		local markWidthPx = if surfacePad ~= nil then surfacePad.AbsoluteSize.X * scale else 0
+		StencilView.drawMark(mark, shape, InkColors.toColor3(element.color), InkColors.toColor3(element.line), {
+			fill = element.fill,
+			outline = element.outline,
+			thickness = element.thickness,
+			opacity = element.opacity,
+			flip = element.flip,
+			markWidthPx = if markWidthPx > 1 then markWidthPx else nil,
+		}, asset)
+	end
 end
 
 local function beginMove(index: number, screen: Vector2)
-	if gesture ~= nil and gesture.mode == "move" and gesture.index == index then
+	-- Once a shape is held, stay locked to it until release — never steal mid-drag.
+	if gesture ~= nil or pinch ~= nil then
 		return
 	end
 	local design = shownDesign
 	local element = if design ~= nil then design.elements[index] else nil
-	if element == nil then
+	if element == nil or elementLocked(element) then
 		return
 	end
 	-- Claim the press before any redraw. A redraw can yield, and a yield used
@@ -884,15 +1482,27 @@ local function beginMove(index: number, screen: Vector2)
 		startAngle = 0,
 	}
 	onGrab(index)
+	-- Editor may refuse (layer locked) — drop the claim so we don't drag a locked mark.
+	if elementLocked(element) then
+		gesture = nil
+	end
 end
 
 local function beginAdjust(mode: HandleMode, index: number, screen: Vector2)
+	if gesture ~= nil or pinch ~= nil then
+		return
+	end
 	local element = if shownDesign ~= nil then shownDesign.elements[index] else nil
-	local center = if element ~= nil then elementCenter(element) else nil
-	if element == nil or center == nil then
+	if element == nil or elementLocked(element) then
+		return
+	end
+	-- Use the on-screen pivot (not UV math) so zoom/pan doesn't jump the mark.
+	local center = liveCenter(index, element) or elementCenter(element)
+	if center == nil then
 		return
 	end
 	local offset = screen - center
+	pinch = nil
 	gesture = {
 		mode = mode,
 		index = index,
@@ -906,13 +1516,134 @@ local function beginAdjust(mode: HandleMode, index: number, screen: Vector2)
 	onAdjustStarted()
 end
 
-beginGesture = function(screen: Vector2)
-	local mode, index = pickTarget(screen)
-	if index ~= nil and mode == "delete" then
-		gesture = nil
-		onDeleteMark(index)
+local function applyPinch()
+	local drag = pinch
+	if drag == nil then
 		return
 	end
+	local points = touchPoints()
+	if #points < 2 then
+		return
+	end
+	local delta = points[2] - points[1]
+	local dist = math.max(12, delta.Magnitude)
+	if drag.mode == "view" then
+		local targetZoom = math.clamp(drag.startZoom * (dist / drag.startDist), MIN_ZOOM, MAX_ZOOM)
+		if math.abs(targetZoom - viewZoom) < 0.0001 then
+			return
+		end
+		local focus = touchMidpoint(points)
+		if TattooCanvas.screenToUv(focus) == nil then
+			focus = drag.focus
+		end
+		local factor = targetZoom / math.max(viewZoom, 0.001)
+		zoomAt(factor, focus)
+		return
+	end
+	if shownDesign == nil then
+		return
+	end
+	local element = shownDesign.elements[drag.index]
+	if element == nil or elementLocked(element) then
+		pinch = nil
+		return
+	end
+	local angle = math.atan2(delta.Y, delta.X)
+	local scale = math.clamp(
+		drag.startScale * (dist / drag.startDist),
+		GameConfig.getMinElementScale(),
+		GameConfig.getMaxElementScale()
+	)
+	local rotation = drag.startRotation + math.deg(angle - drag.startAngle)
+	onTransform(drag.index, rotation, scale)
+	local mark = elementFrames[drag.index]
+	if mark ~= nil then
+		mark.Position = UDim2.fromScale(element.x, element.y)
+		mark.Rotation = rotation
+		mark.Size = elementSize(scale)
+		local stencil = StencilDefinitions.get(element.stencilId)
+		local shape = if stencil ~= nil then stencil.shape else "disc"
+		local asset = if stencil ~= nil then stencil.image else nil
+		local markWidthPx = if surfacePad ~= nil then surfacePad.AbsoluteSize.X * scale else 0
+		StencilView.drawMark(mark, shape, InkColors.toColor3(element.color), InkColors.toColor3(element.line), {
+			fill = element.fill,
+			outline = element.outline,
+			thickness = element.thickness,
+			opacity = element.opacity,
+			flip = element.flip,
+			markWidthPx = if markWidthPx > 1 then markWidthPx else nil,
+		}, asset)
+	end
+end
+
+local function beginShapePinch(index: number)
+	local design = shownDesign
+	local element = if design ~= nil then design.elements[index] else nil
+	local points = touchPoints()
+	if element == nil or elementLocked(element) or #points < 2 then
+		return
+	end
+	local delta = points[2] - points[1]
+	gesture = nil
+	panDrag = nil
+	pinch = {
+		mode = "shape",
+		index = index,
+		startDist = math.max(12, delta.Magnitude),
+		startAngle = math.atan2(delta.Y, delta.X),
+		startScale = element.scale,
+		startRotation = element.rotation,
+		startZoom = viewZoom,
+		focus = touchMidpoint(points),
+	}
+	onGrab(index)
+	onAdjustStarted()
+end
+
+local function beginViewPinch()
+	local points = touchPoints()
+	if #points < 2 then
+		return
+	end
+	local mid = touchMidpoint(points)
+	if TattooCanvas.screenToUv(mid) == nil then
+		return
+	end
+	local delta = points[2] - points[1]
+	gesture = nil
+	panDrag = nil
+	pinch = {
+		mode = "view",
+		index = 0,
+		startDist = math.max(12, delta.Magnitude),
+		startAngle = 0,
+		startScale = 1,
+		startRotation = 0,
+		startZoom = viewZoom,
+		focus = mid,
+	}
+end
+
+local function pinchTargetIndex(screen: Vector2): number?
+	-- Prefer the shape already in hand so a second finger can't retarget mid-drag.
+	if gesture ~= nil then
+		return gesture.index
+	end
+	if shownSelection ~= nil and shownDesign ~= nil and shownDesign.elements[shownSelection] ~= nil then
+		return shownSelection
+	end
+	local _mode, index = pickTarget(screen)
+	return index
+end
+
+beginGesture = function(screen: Vector2)
+	if gesture ~= nil or pinch ~= nil then
+		return
+	end
+	if hitsCanvasDelete(screen) then
+		return
+	end
+	local mode, index = pickTarget(screen)
 	if index ~= nil and (mode == "scale" or mode == "rotate") then
 		local handleMode: HandleMode = if mode == "scale" then "scale" else "rotate"
 		beginAdjust(handleMode, index, screen)
@@ -922,12 +1653,18 @@ beginGesture = function(screen: Vector2)
 		beginMove(index, screen)
 		return
 	end
-	if gesture ~= nil then
-		return
-	end
-	-- Limb photo stays fixed — blank press deselects, it does not drag the background.
 	gesture = nil
-	onBlank()
+	-- At 100% the limb is locked; when zoomed, blank-drag pans the view (PicsArt-style).
+	if canPanView() then
+		panDrag = {
+			startScreen = screen,
+			startPan = viewPan,
+			moved = false,
+		}
+	else
+		panDrag = nil
+		onBlank()
+	end
 end
 
 -- Thin line icons, the same pair photo editors put on a selection:
@@ -1110,7 +1847,7 @@ local function makeHandle(parent: GuiObject, name: string, kind: HandleMode, pos
 	icon.BorderSizePixel = 0
 	icon.AnchorPoint = Vector2.new(0.5, 0.5)
 	icon.Position = UDim2.fromScale(0.5, 0.5)
-	icon.Size = UDim2.fromOffset(10, 10)
+	icon.Size = UDim2.fromOffset(HANDLE_ICON, HANDLE_ICON)
 	icon.ScaleType = Enum.ScaleType.Fit
 	icon.ImageColor3 = Color3.fromRGB(20, 20, 20)
 	icon.ImageContent = Content.fromObject(image)
@@ -1118,54 +1855,13 @@ local function makeHandle(parent: GuiObject, name: string, kind: HandleMode, pos
 	icon.Parent = button
 end
 
-local function makeDeleteHandle(parent: GuiObject, index: number)
-	local button = Instance.new("TextButton")
-	button.Name = "Delete"
-	button.Text = "×"
-	button.FontFace = UiTheme.font.heavy
-	button.TextSize = 18
-	button.TextColor3 = Color3.fromRGB(255, 250, 245)
-	button.AutoButtonColor = false
-	button.AnchorPoint = Vector2.new(0.5, 0.5)
-	-- Keep the × inside the mark so ClipsDescendants on the view can't eat hits.
-	button.Position = UDim2.fromOffset(DELETE_SIZE * 0.35, DELETE_SIZE * 0.35)
-	button.Size = UDim2.fromOffset(DELETE_SIZE, DELETE_SIZE)
-	button.BackgroundColor3 = UiTheme.color.oxblood
-	button.BorderSizePixel = 0
-	button.Active = true
-	button.Selectable = false
-	button.ZIndex = 100
-	button.Parent = parent
-	local uiCorner = Instance.new("UICorner")
-	uiCorner.CornerRadius = UDim.new(1, 0)
-	uiCorner.Parent = button
-	local outline = Instance.new("UIStroke")
-	outline.Color = Color3.fromRGB(255, 250, 245)
-	outline.Thickness = 1
-	outline.Transparency = 0.25
-	outline.Parent = button
-	local shapeIndex = index
-	local fired = false
-	local function deleteNow()
-		if fired then
-			return
-		end
-		fired = true
-		gesture = nil
-		onDeleteMark(shapeIndex)
+local function refreshDeleteButton(selectedIndex: number?)
+	local button = deleteButton
+	if button == nil then
+		return
 	end
-	-- Press path: Activated/Click alone was lost when grab() rebuilt marks mid-press.
-	button.InputBegan:Connect(function(input: InputObject)
-		if
-			input.UserInputType ~= Enum.UserInputType.MouseButton1
-			and input.UserInputType ~= Enum.UserInputType.Touch
-		then
-			return
-		end
-		deleteNow()
-	end)
-	button.MouseButton1Down:Connect(deleteNow)
-	button.Activated:Connect(deleteNow)
+	local show = presentedCaption == nil and selectedIndex ~= nil
+	button.Visible = show
 end
 
 function TattooCanvas.render(design: TattooDesign, selectedIndex: number?)
@@ -1194,37 +1890,39 @@ function TattooCanvas.render(design: TattooDesign, selectedIndex: number?)
 		mark.BorderSizePixel = 0
 		mark.Active = true
 		mark.Selectable = false
-		mark.ZIndex = 3 + index
+		local layer = elementLayer(element)
+		mark.ZIndex = 3 + layer * 40 + index
 		mark.Parent = surfacePad
 		local shapeIndex = index
-		mark.MouseEnter:Connect(function()
-			hoveredIndex = shapeIndex
-		end)
-		mark.MouseLeave:Connect(function()
-			if hoveredIndex == shapeIndex then
-				hoveredIndex = nil
-			end
-		end)
-		mark.InputBegan:Connect(function(input: InputObject)
-			if
-				input.UserInputType ~= Enum.UserInputType.MouseButton1
-				and input.UserInputType ~= Enum.UserInputType.Touch
-			then
-				return
-			end
-			local screen = Vector2.new(input.Position.X, input.Position.Y)
-			local handleMode, handleIndex = pickTarget(screen)
-			if handleMode == "delete" then
-				gesture = nil
-				onDeleteMark(handleIndex or shapeIndex)
-				return
-			end
-			if handleMode == "scale" or handleMode == "rotate" then
-				return
-			end
-			hoveredIndex = shapeIndex
-			beginMove(shapeIndex, screen)
-		end)
+		mark.Active = false
+		-- Locked layers: no press handler at all (harder to bypass than a mid-handler return).
+		if not elementLocked(element) then
+			mark.InputBegan:Connect(function(input: InputObject)
+				if gesture ~= nil or pinch ~= nil then
+					return
+				end
+				if
+					input.UserInputType ~= Enum.UserInputType.MouseButton1
+					and input.UserInputType ~= Enum.UserInputType.Touch
+				then
+					return
+				end
+				local screen = Vector2.new(input.Position.X, input.Position.Y)
+				local handleMode, handleIndex = pickTarget(screen)
+				if handleMode == "scale" or handleMode == "rotate" then
+					return
+				end
+				if handleIndex ~= shapeIndex and not hitsShapeInk(shapeIndex, element, screen) then
+					return
+				end
+				-- Re-check — layer may have been locked after the button was built.
+				if elementLocked(element) then
+					return
+				end
+				hoveredIndex = shapeIndex
+				beginMove(shapeIndex, screen)
+			end)
+		end
 
 		local stroke = Instance.new("UIStroke")
 		stroke.Name = "Selection"
@@ -1235,22 +1933,24 @@ function TattooCanvas.render(design: TattooDesign, selectedIndex: number?)
 
 		local shape = if stencil ~= nil then stencil.shape else "disc"
 		local asset = if stencil ~= nil then stencil.image else nil
+		local markWidthPx = if surfacePad ~= nil then surfacePad.AbsoluteSize.X * element.scale else 0
 		StencilView.drawMark(mark, shape, InkColors.toColor3(element.color), InkColors.toColor3(element.line), {
 			fill = element.fill,
 			outline = element.outline,
 			thickness = element.thickness,
 			opacity = element.opacity,
 			flip = element.flip,
+			markWidthPx = if markWidthPx > 1 then markWidthPx else nil,
 		}, asset)
 
-		if index == selectedIndex then
+		if index == selectedIndex and not elementLocked(element) then
 			makeHandle(mark, "Scale", "scale", UDim2.fromScale(1, 1), index)
 			makeHandle(mark, "Rotate", "rotate", UDim2.new(0.5, 0, 0, -ROTATE_LIFT), index)
-			makeDeleteHandle(mark, index)
 		end
 
 		elementFrames[index] = mark
 	end
+	refreshDeleteButton(selectedIndex)
 end
 
 function TattooCanvas.nudge(index: number, x: number, y: number)
@@ -1296,7 +1996,10 @@ function TattooCanvas.avatarTone(_character: Model): Color3
 end
 
 function TattooCanvas.setSkin(id: string)
-	skinToneId = id
+	if id == "" then
+		return
+	end
+	skinToneId = if id == "fair" then "light" else id
 	local regionId = photoRegionId
 	if regionId == nil then
 		return
@@ -1310,6 +2013,9 @@ function TattooCanvas.setInteractive(enabled: boolean)
 	acceptsInput = enabled
 	if not enabled then
 		gesture = nil
+		panDrag = nil
+		pinch = nil
+		table.clear(activeTouches)
 	end
 end
 
@@ -1326,6 +2032,9 @@ function TattooCanvas.clear()
 	shownDesign = nil
 	shownSelection = nil
 	destroyCanvas()
+	if worldLocked then
+		TattooCanvas.setCameraLocked(false)
+	end
 end
 
 -- Showcase mode: only the tattoo, no limb label, zoom tools, or world dim.
@@ -1347,13 +2056,21 @@ function TattooCanvas.setPresentation(caption: string?)
 		local region = if shownDesign ~= nil then BodyRegions.get(shownDesign.region) else nil
 		captionLabel.Text = caption or (if region ~= nil then string.upper(region.label) else captionLabel.Text)
 	end
+	refreshDeleteButton(if presenting then nil else shownSelection)
 	if viewTools ~= nil then
 		viewTools.Visible = not presenting
 	end
+	TattooCanvas.setLayersVisible(not presenting)
 end
 
--- Width over height of the stage. Marks are stored against this shape, so snapshots copy it.
+-- Live editor canvas aspect (width/height). Call before submit so vote thumbs crop like the editor.
 function TattooCanvas.stageAspect(): number
+	if surfacePad ~= nil then
+		local size = surfacePad.AbsoluteSize
+		if size.Y > 1 then
+			return size.X / size.Y
+		end
+	end
 	local camera = Workspace.CurrentCamera
 	local view = if camera ~= nil then camera.ViewportSize else Vector2.new(1280, 720)
 	local _, size = stageFrame()
@@ -1371,14 +2088,18 @@ function TattooCanvas.snapshot(parent: GuiObject, character: Model, design: Tatt
 	if region == nil then
 		return nil
 	end
-	local aspect = TattooCanvas.stageAspect()
+	local aspect = design.canvasAspect
+	if typeof(aspect) ~= "number" or aspect ~= aspect or aspect <= 0.2 or aspect >= 5 then
+		aspect = TattooCanvas.stageAspect()
+	end
 
 	local holder = Instance.new("Frame")
 	holder.Name = "Snapshot"
 	holder.AnchorPoint = Vector2.new(0.5, 0.5)
 	holder.Position = UDim2.fromScale(0.5, 0.5)
 	holder.Size = UDim2.fromScale(1, 1)
-	holder.BackgroundTransparency = 1
+	holder.BackgroundColor3 = LIMB_BOARD
+	holder.BackgroundTransparency = 0
 	holder.ClipsDescendants = true
 	holder.ZIndex = parent.ZIndex + 1
 	holder.Parent = parent
@@ -1387,8 +2108,9 @@ function TattooCanvas.snapshot(parent: GuiObject, character: Model, design: Tatt
 	ratio.Parent = holder
 
 	local still = makeLimbStill(holder, region.id, holder.ZIndex)
-	still.AnchorPoint = Vector2.new(0, 0)
-	still.Position = UDim2.fromScale(0, 0)
+	still.AnchorPoint = Vector2.new(0.5, 0.5)
+	still.Position = UDim2.fromScale(0.5, 0.5)
+	still.Size = UDim2.fromScale(1, 1)
 	local _ = character
 
 	local marks = Instance.new("Frame")
@@ -1402,40 +2124,138 @@ function TattooCanvas.snapshot(parent: GuiObject, character: Model, design: Tatt
 		local mark = Instance.new("Frame")
 		mark.AnchorPoint = Vector2.new(0.5, 0.5)
 		mark.Position = UDim2.fromScale(element.x, element.y)
+		-- Same square-in-pixels rule as the editor (width = scale of parent width).
 		mark.Size = UDim2.fromScale(element.scale, element.scale * aspect)
 		mark.Rotation = element.rotation
 		mark.BackgroundTransparency = 1
-		mark.ZIndex = marks.ZIndex + index
+		mark.ZIndex = marks.ZIndex + elementLayer(element) * 40 + index
 		mark.Parent = marks
 		local shape = if stencil ~= nil then stencil.shape else "disc"
 		local asset = if stencil ~= nil then stencil.image else nil
+		local markWidthPx = holder.AbsoluteSize.X * element.scale
 		StencilView.drawMark(mark, shape, InkColors.toColor3(element.color), InkColors.toColor3(element.line), {
 			fill = element.fill,
 			outline = element.outline,
 			thickness = element.thickness,
 			opacity = element.opacity,
 			flip = element.flip,
+			markWidthPx = if markWidthPx > 1 then markWidthPx else nil,
 		}, asset)
 	end
 	return holder
 end
 
-function TattooCanvas.setCameraLocked(_locked: boolean)
-	local camera = Workspace.CurrentCamera
-	if camera == nil or camera.CameraType ~= Enum.CameraType.Scriptable then
+local function playerControls(): any?
+	local localPlayer = Players.LocalPlayer
+	if localPlayer == nil then
+		return nil
+	end
+	local scripts = localPlayer:FindFirstChild("PlayerScripts")
+	local playerModule = if scripts ~= nil then scripts:FindFirstChild("PlayerModule") else nil
+	if playerModule == nil then
+		return nil
+	end
+	local ok, module = pcall(require, playerModule)
+	if not ok or typeof(module) ~= "table" then
+		return nil
+	end
+	local getControls = (module :: any).GetControls
+	if typeof(getControls) ~= "function" then
+		return nil
+	end
+	local okControls, controls = pcall(getControls, module)
+	if not okControls then
+		return nil
+	end
+	return controls
+end
+
+local function setCharacterHidden(character: Model?, hidden: boolean)
+	if character == nil then
 		return
 	end
-	camera.CameraType = Enum.CameraType.Custom
+	for _, descendant in character:GetDescendants() do
+		if descendant:IsA("BasePart") or descendant:IsA("Decal") then
+			descendant.LocalTransparencyModifier = if hidden then 1 else 0
+		end
+	end
+end
+
+-- While designing: cover the lobby, freeze walk/camera, hide the local avatar.
+function TattooCanvas.setCameraLocked(locked: boolean)
+	if locked == worldLocked then
+		return
+	end
+	worldLocked = locked
+
+	local camera = Workspace.CurrentCamera
 	local localPlayer = Players.LocalPlayer
 	local character = if localPlayer ~= nil then localPlayer.Character else nil
 	local humanoid = if character ~= nil then character:FindFirstChildOfClass("Humanoid") else nil
-	if humanoid ~= nil then
-		camera.CameraSubject = humanoid
+	local controls = playerControls()
+
+	if locked then
+		if camera ~= nil then
+			savedCameraType = camera.CameraType
+			camera.CameraType = Enum.CameraType.Scriptable
+		end
+		if humanoid ~= nil then
+			savedWalkSpeed = humanoid.WalkSpeed
+			savedJumpHeight = humanoid.JumpHeight
+			savedAutoRotate = humanoid.AutoRotate
+			humanoid.WalkSpeed = 0
+			humanoid.JumpHeight = 0
+			humanoid.AutoRotate = false
+			humanoid:Move(Vector3.zero, false)
+		end
+		if controls ~= nil then
+			pcall(function()
+				(controls :: any):Disable()
+			end)
+		end
+		setCharacterHidden(character, true)
+	else
+		if camera ~= nil then
+			camera.CameraType = savedCameraType or Enum.CameraType.Custom
+			if humanoid ~= nil then
+				camera.CameraSubject = humanoid
+			end
+		end
+		if humanoid ~= nil then
+			humanoid.WalkSpeed = savedWalkSpeed or 16
+			humanoid.JumpHeight = savedJumpHeight or 7.2
+			humanoid.AutoRotate = if savedAutoRotate ~= nil then savedAutoRotate else true
+		end
+		if controls ~= nil then
+			pcall(function()
+				(controls :: any):Enable()
+			end)
+		end
+		setCharacterHidden(character, false)
+		savedWalkSpeed = nil
+		savedJumpHeight = nil
+		savedAutoRotate = nil
+		savedCameraType = nil
 	end
 end
 
 UserInputService.InputBegan:Connect(function(input: InputObject)
 	if not acceptsInput then
+		return
+	end
+	if input.UserInputType == Enum.UserInputType.MouseButton3 then
+		if surfacePad == nil or not canPanView() then
+			return
+		end
+		local screen = Vector2.new(input.Position.X, input.Position.Y)
+		if TattooCanvas.screenToUv(screen) == nil then
+			return
+		end
+		panDrag = {
+			startScreen = screen,
+			startPan = viewPan,
+			moved = false,
+		}
 		return
 	end
 	if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
@@ -1445,40 +2265,42 @@ UserInputService.InputBegan:Connect(function(input: InputObject)
 		return
 	end
 	local screen = Vector2.new(input.Position.X, input.Position.Y)
-	-- Prefer an explicit × hit before move/scale so delete can't lose to grab-rebuild.
-	local deleteIndex = pickDeleteButton(screen)
-	if deleteIndex ~= nil then
-		gesture = nil
-		onDeleteMark(deleteIndex)
-		return
-	end
-	local player = Players.LocalPlayer
-	local playerGui = if player ~= nil then player:FindFirstChildOfClass("PlayerGui") else nil
-	if playerGui ~= nil then
-		for _, candidate in pointerCandidates(screen) do
-			for _, object in playerGui:GetGuiObjectsAtPosition(candidate.X, candidate.Y) do
-				local onDelete = object.Name == "Delete" or object:FindFirstAncestor("Delete") ~= nil
-				if onDelete then
-					local guiIndex = markIndexOf(object)
-					if guiIndex ~= nil then
-						gesture = nil
-						onDeleteMark(guiIndex)
-						return
-					end
+	if input.UserInputType == Enum.UserInputType.Touch then
+		activeTouches[input] = screen
+		-- Second finger: held/selected mark → scale/twist; otherwise pinch-zoom the canvas.
+		if touchCount() >= 2 then
+			if pinch ~= nil then
+				return
+			end
+			-- Keep the shape already in hand — never retarget or drop into view-pinch.
+			if gesture ~= nil then
+				beginShapePinch(gesture.index)
+				return
+			end
+			local selected = shownSelection ~= nil
+				and shownDesign ~= nil
+				and shownDesign.elements[shownSelection] ~= nil
+			if selected then
+				local index = pinchTargetIndex(screen)
+				if index ~= nil then
+					beginShapePinch(index)
+					return
 				end
 			end
+			beginViewPinch()
+			return
 		end
 	end
-	local mode, index = pickTarget(screen)
-	if index == nil and hoveredIndex ~= nil and mode ~= "delete" then
-		mode = nil
-		index = hoveredIndex
+	if hitsCanvasDelete(screen) then
+		return
 	end
+	-- Already holding a shape or pinching — ignore new presses so nothing else jumps.
+	if gesture ~= nil or pinch ~= nil then
+		return
+	end
+	local mode, index = pickTarget(screen)
 	if index ~= nil then
-		if mode == "delete" then
-			gesture = nil
-			onDeleteMark(index)
-		elseif mode == "scale" then
+		if mode == "scale" then
 			beginAdjust("scale", index, screen)
 		elseif mode == "rotate" then
 			beginAdjust("rotate", index, screen)
@@ -1487,12 +2309,17 @@ UserInputService.InputBegan:Connect(function(input: InputObject)
 		end
 		return
 	end
+	local player = Players.LocalPlayer
+	local playerGui = if player ~= nil then player:FindFirstChildOfClass("PlayerGui") else nil
 	if playerGui ~= nil then
 		for _, object in playerGui:GetGuiObjectsAtPosition(screen.X, screen.Y) do
-			if object:FindFirstAncestor("InkMastersEditor") ~= nil or object.Name == "InkMastersEditor" then
+			if object:FindFirstAncestor("InkRivalryEditor") ~= nil or object.Name == "InkRivalryEditor" then
 				return
 			end
 			if object:FindFirstAncestor("ViewTools") ~= nil or object.Name == "ViewTools" then
+				return
+			end
+			if object.Name == "CanvasDelete" or object:FindFirstAncestor("CanvasDelete") ~= nil then
 				return
 			end
 		end
@@ -1510,7 +2337,7 @@ local function pointerHitsEditor(screen: Vector2): boolean
 	if playerGui == nil then
 		return false
 	end
-	local editor = playerGui:FindFirstChild("InkMastersEditor")
+	local editor = playerGui:FindFirstChild("InkRivalryEditor")
 	if editor ~= nil and editor:IsA("ScreenGui") and editor.Enabled then
 		for _, child in editor:GetChildren() do
 			if child:IsA("GuiObject") and child.Visible then
@@ -1531,6 +2358,19 @@ local function pointerHitsEditor(screen: Vector2): boolean
 end
 
 UserInputService.InputChanged:Connect(function(input: InputObject)
+	local drag = layerDrag
+	if
+		drag ~= nil
+		and (
+			input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch
+		)
+	then
+		if math.abs(input.Position.Y - drag.startY) >= 6 then
+			drag.moved = true
+			drag.row.BackgroundTransparency = 0.45
+		end
+	end
 	if not acceptsInput then
 		return
 	end
@@ -1538,44 +2378,92 @@ UserInputService.InputChanged:Connect(function(input: InputObject)
 		if viewWindow == nil then
 			return
 		end
+		-- IgnoreGuiInset canvas: GetMouseLocation matches AbsolutePosition (no inset subtract).
 		local mouse = UserInputService:GetMouseLocation()
-		local inset = GuiService:GetGuiInset()
-		local adjusted = mouse - Vector2.new(inset.X, inset.Y)
-		if pointerHitsEditor(mouse) or pointerHitsEditor(adjusted) then
+		if pointerHitsEditor(mouse) or TattooCanvas.screenToUv(mouse) == nil then
 			return
 		end
-		local screen = Vector2.new(input.Position.X, input.Position.Y)
-		if
-			pointerHitsEditor(screen)
-			or TattooCanvas.screenToUv(mouse) == nil and TattooCanvas.screenToUv(adjusted) == nil
-		then
-			return
-		end
-		local factor = if input.Position.Z > 0 then 1.15 else 1 / 1.15
-		local focus = if TattooCanvas.screenToUv(mouse) ~= nil then mouse else adjusted
-		zoomAt(factor, focus)
+		local factor = if input.Position.Z > 0 then 1.1 else 1 / 1.1
+		zoomAt(factor, mouse)
 		return
 	end
 	if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
 		return
 	end
 	local screen = Vector2.new(input.Position.X, input.Position.Y)
+	if input.UserInputType == Enum.UserInputType.Touch then
+		if activeTouches[input] ~= nil then
+			activeTouches[input] = screen
+		end
+	end
+	if pinch ~= nil then
+		applyPinch()
+		return
+	end
 	if gesture ~= nil then
 		applyGesture(screen)
 		return
 	end
-	-- Pan of the limb still is disabled; only mark gestures move.
+	if panDrag ~= nil and canPanView() then
+		local delta = screen - panDrag.startScreen
+		if delta.Magnitude > 2 then
+			panDrag.moved = true
+		end
+		viewPan = panDrag.startPan + delta
+		applyView()
+	end
 end)
 
 UserInputService.InputEnded:Connect(function(input: InputObject)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+	local isPrimary = input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch
+	local isMiddle = input.UserInputType == Enum.UserInputType.MouseButton3
+	if not isPrimary and not isMiddle then
+		return
+	end
+	local drag = layerDrag
+	if isPrimary and drag ~= nil then
+		layerDrag = nil
+		drag.row.BackgroundTransparency = 0
+		local dy = input.Position.Y - drag.startY
+		if drag.moved and math.abs(dy) >= 6 and layersState.count > 1 then
+			local steps = math.floor(dy / 28 + (if dy >= 0 then 0.5 else -0.5))
+			if steps ~= 0 then
+				local fromVis = layersState.count - drag.fromLayer + 1
+				local toVis = math.clamp(fromVis + steps, 1, layersState.count)
+				local toLayer = layersState.count - toVis + 1
+				if toLayer ~= drag.fromLayer then
+					onReorderLayers(drag.fromLayer, toLayer)
+				end
+			end
+		end
+	end
+	if input.UserInputType == Enum.UserInputType.Touch then
+		activeTouches[input] = nil
+		if touchCount() < 2 then
+			pinch = nil
+		end
+	end
+	if panDrag ~= nil then
+		if isPrimary and not panDrag.moved and pinch == nil then
+			onBlank()
+		end
+		panDrag = nil
+	end
+	if isPrimary and touchCount() == 0 then
 		gesture = nil
+		pinch = nil
 	end
 end)
 
 local player = Players.LocalPlayer
 if player ~= nil then
 	player.CharacterAdded:Connect(function(character: Model)
+		if worldLocked then
+			-- Re-apply freeze after respawn mid-edit.
+			worldLocked = false
+			TattooCanvas.setCameraLocked(true)
+		end
 		if shownDesign == nil then
 			return
 		end

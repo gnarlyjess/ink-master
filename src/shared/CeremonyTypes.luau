@@ -38,6 +38,7 @@ export type CeremonySnapshot = {
 	showcaseStart: number?,
 	-- Server time the current phase ends, when it has a clock.
 	phaseEnds: number?,
+	themeName: string,
 	yourVote: number,
 	yourTotal: number,
 	entries: { Entry },
@@ -193,6 +194,11 @@ function CeremonyTypes.read(payload: any): CeremonySnapshot?
 		})
 	end
 
+	local themeName = ""
+	if typeof(payload.themeName) == "string" and #payload.themeName <= 48 then
+		themeName = payload.themeName
+	end
+
 	local knownPhase: Phase = phase :: Phase
 	return {
 		revision = revision,
@@ -204,6 +210,7 @@ function CeremonyTypes.read(payload: any): CeremonySnapshot?
 		secondsEach = secondsEach,
 		showcaseStart = showcaseStart,
 		phaseEnds = phaseEnds,
+		themeName = themeName,
 		yourVote = yourVote,
 		yourTotal = yourTotal,
 		entries = entries,

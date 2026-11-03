@@ -1,6 +1,6 @@
 --!strict
 
--- Left-side card for the selected mark. It only shows while a shape is selected.
+-- Left-side mark tools. Stays open for the whole design round; idle until a shape is selected.
 
 local InkColors = require(game:GetService("ReplicatedStorage").Shared.InkColors)
 local PlayerData = require(script.Parent.PlayerData)
@@ -26,13 +26,10 @@ export type MarkActions = {
 	onOutline: (boolean) -> (),
 	onThickness: (number) -> (),
 	onOpacity: (number) -> (),
-	onScale: (number) -> (),
-	onRotate: (number) -> (),
 	onFlip: (boolean) -> (),
 	onColor: (Rgb) -> (),
 	onLine: (Rgb) -> (),
 	onDuplicate: () -> (),
-	onOrder: (number) -> (),
 }
 
 local MarkInspector = {}
@@ -47,14 +44,22 @@ local function sameColor(a: Rgb, b: Rgb): boolean
 	return math.abs(a.r - b.r) < 0.03 and math.abs(a.g - b.g) < 0.03 and math.abs(a.b - b.b) < 0.03
 end
 
-function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (MarkState) -> (), hide: () -> () }
+function MarkInspector.mount(
+	parent: Instance,
+	actions: MarkActions
+): {
+	show: (MarkState) -> (),
+	idle: () -> (),
+	hide: () -> (),
+	layout: (UiTheme.EditorLayout) -> (),
+}
 	local ed = UiTheme.editor
 	local card = Instance.new("Frame")
 	card.Name = "MarkEditor"
 	card.AnchorPoint = Vector2.new(0, 0)
 	card.Position = UDim2.fromOffset(UiTheme.safe.side, UiTheme.safe.top)
 	card.Size = UDim2.new(0, 256, 1, -(UiTheme.safe.top + UiTheme.safe.bottom))
-	card.Visible = false
+	card.Visible = true
 	card.Active = true
 	card.BackgroundColor3 = ed.bg
 	card.BackgroundTransparency = 0
@@ -62,6 +67,11 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 	card.ZIndex = 6
 	card.Parent = parent
 	corner(card, 8)
+
+	local function layout(chrome: UiTheme.EditorLayout)
+		card.Position = UDim2.fromOffset(chrome.side, chrome.top)
+		card.Size = UDim2.new(0, chrome.leftWidth, 1, -(chrome.top + chrome.bottom))
+	end
 	local outline = Instance.new("UIStroke")
 	outline.Color = ed.hairline
 	outline.Thickness = 1
@@ -99,7 +109,7 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 		label.FontFace = UiTheme.font.bold
 		label.TextSize = 11
 		label.TextColor3 = ed.muted
-		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.TextXAlignment = Enum.TextXAlignment.Center
 		label.Text = text
 		label.Size = UDim2.new(1, 0, 0, 16)
 		label.Parent = scroll
@@ -176,26 +186,32 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 		actions.onFlip(enabled)
 	end)
 
+	-- Label on top, − / value / + underneath — narrow left panels crush a single-row stepper.
 	local function stepper(caption: string, order: number, step: number, onDelta: (number) -> ()): TextLabel
 		local row = Instance.new("Frame")
 		row.BackgroundTransparency = 1
 		row.LayoutOrder = order
-		row.Size = UDim2.new(1, 0, 0, 32)
+		row.Size = UDim2.new(1, 0, 0, 58)
 		row.Parent = scroll
 		local captionLabel = Instance.new("TextLabel")
 		captionLabel.BackgroundTransparency = 1
-		captionLabel.Size = UDim2.new(1, -96, 1, 0)
+		captionLabel.Size = UDim2.new(1, 0, 0, 18)
 		captionLabel.FontFace = UiTheme.font.medium
 		captionLabel.TextSize = 14
 		captionLabel.TextColor3 = ed.text
 		captionLabel.TextXAlignment = Enum.TextXAlignment.Left
 		captionLabel.Text = caption
 		captionLabel.Parent = row
-		local function stepButton(text: string, x: number, delta: number)
+		local controls = Instance.new("Frame")
+		controls.BackgroundTransparency = 1
+		controls.Position = UDim2.fromOffset(0, 22)
+		controls.Size = UDim2.new(1, 0, 0, 32)
+		controls.Parent = row
+		local function stepButton(text: string, side: "left" | "right", delta: number)
 			local button = Instance.new("TextButton")
-			button.AnchorPoint = Vector2.new(1, 0.5)
-			button.Position = UDim2.new(1, x, 0.5, 0)
-			button.Size = UDim2.fromOffset(28, 28)
+			button.AnchorPoint = if side == "left" then Vector2.new(0, 0.5) else Vector2.new(1, 0.5)
+			button.Position = if side == "left" then UDim2.fromScale(0, 0.5) else UDim2.fromScale(1, 0.5)
+			button.Size = UDim2.fromOffset(40, 28)
 			button.BackgroundColor3 = ed.surface
 			button.BorderSizePixel = 0
 			button.FontFace = UiTheme.font.bold
@@ -203,7 +219,7 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 			button.TextColor3 = Color3.new(1, 1, 1)
 			button.Text = text
 			button.AutoButtonColor = false
-			button.Parent = row
+			button.Parent = controls
 			corner(button, 6)
 			local ring = Instance.new("UIStroke")
 			ring.Color = ed.hairline
@@ -213,111 +229,71 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 				onDelta(delta * step)
 			end)
 		end
-		stepButton("+", 0, 1)
-		stepButton("-", -64, -1)
+		stepButton("-", "left", -1)
+		stepButton("+", "right", 1)
 		local value = Instance.new("TextLabel")
-		value.AnchorPoint = Vector2.new(1, 0.5)
-		value.Position = UDim2.new(1, -32, 0.5, 0)
-		value.Size = UDim2.fromOffset(32, 28)
+		value.AnchorPoint = Vector2.new(0.5, 0.5)
+		value.Position = UDim2.fromScale(0.5, 0.5)
+		value.Size = UDim2.new(1, -96, 1, 0)
 		value.BackgroundTransparency = 1
 		value.FontFace = UiTheme.font.medium
 		value.TextSize = 13
 		value.TextColor3 = ed.muted
 		value.Text = "1"
-		value.Parent = row
+		value.Parent = controls
 		return value
 	end
 
 	local thicknessValue = stepper("Thickness", 6, 1, actions.onThickness)
 	local opacityValue = stepper("Opacity", 7, 0.1, actions.onOpacity)
 
-	local function pair(
-		caption: string,
-		order: number,
-		left: string,
-		right: string,
-		onLeft: () -> (),
-		onRight: () -> ()
-	)
-		local row = Instance.new("Frame")
-		row.BackgroundTransparency = 1
-		row.LayoutOrder = order
-		row.Size = UDim2.new(1, 0, 0, 32)
-		row.Parent = scroll
-		local captionLabel = Instance.new("TextLabel")
-		captionLabel.BackgroundTransparency = 1
-		captionLabel.Size = UDim2.new(1, -132, 1, 0)
-		captionLabel.FontFace = UiTheme.font.medium
-		captionLabel.TextSize = 14
-		captionLabel.TextColor3 = ed.text
-		captionLabel.TextXAlignment = Enum.TextXAlignment.Left
-		captionLabel.Text = caption
-		captionLabel.Parent = row
-		local function side(text: string, x: number, callback: () -> ())
-			local button = Instance.new("TextButton")
-			button.AnchorPoint = Vector2.new(1, 0.5)
-			button.Position = UDim2.new(1, x, 0.5, 0)
-			button.Size = UDim2.fromOffset(62, 28)
-			button.BackgroundColor3 = ed.surface
-			button.BorderSizePixel = 0
-			button.FontFace = UiTheme.font.bold
-			button.TextSize = 12
-			button.TextColor3 = Color3.new(1, 1, 1)
-			button.Text = text
-			button.AutoButtonColor = false
-			button.Parent = row
-			corner(button, 6)
-			local ring = Instance.new("UIStroke")
-			ring.Color = ed.hairline
-			ring.Thickness = 1
-			ring.Parent = button
-			button.MouseButton1Click:Connect(callback)
-		end
-		side(right, 0, onRight)
-		side(left, -68, onLeft)
-	end
+	local duplicate = Instance.new("TextButton")
+	duplicate.LayoutOrder = 8
+	duplicate.Size = UDim2.new(1, 0, 0, 34)
+	duplicate.BackgroundColor3 = ed.surface
+	duplicate.BorderSizePixel = 0
+	duplicate.FontFace = UiTheme.font.bold
+	duplicate.TextSize = 14
+	duplicate.TextColor3 = Color3.new(1, 1, 1)
+	duplicate.Text = "Duplicate"
+	duplicate.AutoButtonColor = false
+	duplicate.Parent = scroll
+	corner(duplicate, 6)
+	local dupStroke = Instance.new("UIStroke")
+	dupStroke.Color = ed.hairline
+	dupStroke.Thickness = 1
+	dupStroke.Parent = duplicate
+	duplicate.MouseButton1Click:Connect(actions.onDuplicate)
 
-	pair("Size", 8, "Smaller", "Larger", function()
-		actions.onScale(-1)
-	end, function()
-		actions.onScale(1)
-	end)
-	pair("Angle", 9, "Left", "Right", function()
-		actions.onRotate(-15)
-	end, function()
-		actions.onRotate(15)
-	end)
-	pair("Order", 10, "Back", "Front", function()
-		actions.onOrder(-1)
-	end, function()
-		actions.onOrder(1)
-	end)
-
-	heading("INK", 11)
+	heading("INK", 9)
 	local fillSwatches: { [string]: UIStroke } = {}
 	local inkRow = Instance.new("Frame")
 	inkRow.BackgroundTransparency = 1
-	inkRow.LayoutOrder = 12
+	inkRow.LayoutOrder = 10
 	inkRow.AutomaticSize = Enum.AutomaticSize.Y
 	inkRow.Size = UDim2.fromScale(1, 0)
 	inkRow.Parent = scroll
 	local inkLayout = Instance.new("UIListLayout")
 	inkLayout.FillDirection = Enum.FillDirection.Horizontal
+	inkLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	inkLayout.VerticalAlignment = Enum.VerticalAlignment.Top
 	inkLayout.Padding = UDim.new(0, 6)
 	inkLayout.Wraps = true
 	inkLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	inkLayout.Parent = inkRow
 
-	heading("LINE", 13)
+	heading("LINE", 11)
 	local lineSwatches: { [string]: UIStroke } = {}
 	local lineRow = Instance.new("Frame")
 	lineRow.BackgroundTransparency = 1
-	lineRow.LayoutOrder = 14
+	lineRow.LayoutOrder = 12
 	lineRow.AutomaticSize = Enum.AutomaticSize.Y
 	lineRow.Size = UDim2.fromScale(1, 0)
 	lineRow.Parent = scroll
 	local lineLayout = Instance.new("UIListLayout")
 	lineLayout.FillDirection = Enum.FillDirection.Horizontal
+	lineLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	lineLayout.VerticalAlignment = Enum.VerticalAlignment.Top
 	lineLayout.Padding = UDim.new(0, 6)
 	lineLayout.Wraps = true
 	lineLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -363,30 +339,23 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 	swatch(inkRow, fillSwatches, actions.onColor)
 	swatch(lineRow, lineSwatches, actions.onLine)
 
-	local duplicate = Instance.new("TextButton")
-	duplicate.LayoutOrder = 15
-	duplicate.Size = UDim2.new(1, 0, 0, 34)
-	duplicate.BackgroundColor3 = ed.surface
-	duplicate.BorderSizePixel = 0
-	duplicate.FontFace = UiTheme.font.bold
-	duplicate.TextSize = 14
-	duplicate.TextColor3 = Color3.new(1, 1, 1)
-	duplicate.Text = "Duplicate"
-	duplicate.AutoButtonColor = false
-	duplicate.Parent = scroll
-	corner(duplicate, 6)
-	local dupStroke = Instance.new("UIStroke")
-	dupStroke.Color = ed.hairline
-	dupStroke.Thickness = 1
-	dupStroke.Parent = duplicate
-	duplicate.MouseButton1Click:Connect(actions.onDuplicate)
-
 	local function paintOwnership()
 		for _, entry in inkButtons do
 			local owned = PlayerData.ownsInk(entry.id)
 			entry.button.LayoutOrder = if owned then entry.order else 1000 + entry.order
 			entry.button.BackgroundTransparency = 0
 			entry.lock.Visible = not owned
+		end
+	end
+
+	local function clearSwatchRings()
+		for _, ring in fillSwatches do
+			ring.Color = ed.hairline
+			ring.Thickness = 1
+		end
+		for _, ring in lineSwatches do
+			ring.Color = ed.hairline
+			ring.Thickness = 1
 		end
 	end
 
@@ -413,13 +382,30 @@ function MarkInspector.mount(parent: Instance, actions: MarkActions): { show: (M
 		paintOwnership()
 	end
 
+	-- Empty design / no selection — panel stays up with neutral defaults.
+	local function idle()
+		card.Visible = true
+		title.Text = "Shape"
+		paintToggle(fillButton, true)
+		paintToggle(outlineButton, false)
+		paintToggle(flipButton, false)
+		thicknessValue.Text = "1"
+		opacityValue.Text = "100%"
+		clearSwatchRings()
+		paintOwnership()
+	end
+
 	local function hide()
 		card.Visible = false
 	end
 
+	idle()
+
 	return {
 		show = show,
+		idle = idle,
 		hide = hide,
+		layout = layout,
 	}
 end
 

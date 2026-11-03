@@ -8,6 +8,7 @@ local ContentProvider = game:GetService("ContentProvider")
 local Players = game:GetService("Players")
 local ReplicatedFirst = game:GetService("ReplicatedFirst")
 local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
@@ -16,6 +17,10 @@ if not script:IsDescendantOf(Players) then
 end
 
 local HERO_IMAGE = "rbxassetid://106925356858392"
+
+pcall(function()
+	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false)
+end)
 
 local INK = Color3.fromRGB(12, 6, 20)
 local TEXT = Color3.fromRGB(255, 250, 245)
@@ -40,13 +45,14 @@ local MIN_SECONDS = 3.2
 local FADE_SECONDS = 0.6
 
 local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
-if playerGui:FindFirstChild("InkMastersLoading") then
+local playerGui = player:WaitForChild("PlayerGui") :: PlayerGui
+playerGui.ScreenOrientation = Enum.ScreenOrientation.LandscapeSensor
+if playerGui:FindFirstChild("InkRivalryLoading") then
 	return
 end
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "InkMastersLoading"
+gui.Name = "InkRivalryLoading"
 gui.IgnoreGuiInset = true
 gui.ResetOnSpawn = false
 gui.DisplayOrder = 1000
@@ -72,6 +78,8 @@ hero.BackgroundTransparency = 0
 hero.BorderSizePixel = 0
 hero.Size = UDim2.fromScale(1, 1)
 hero.ScaleType = Enum.ScaleType.Crop
+hero.ResampleMode = Enum.ResamplerMode.Default
+hero.Image = HERO_IMAGE
 hero.ImageTransparency = 0
 hero.ZIndex = 2
 hero.Parent = veil
@@ -122,7 +130,7 @@ wordmark.Size = UDim2.new(1, 0, 0, 56)
 wordmark.Font = Enum.Font.GothamBold
 wordmark.TextSize = 52
 wordmark.TextColor3 = TEXT
-wordmark.Text = "INK-OFF"
+wordmark.Text = "INK RIVALRY"
 wordmark.TextStrokeColor3 = Color3.fromRGB(10, 8, 16)
 wordmark.TextStrokeTransparency = 0.35
 wordmark.ZIndex = 7
@@ -237,10 +245,10 @@ end
 
 local function shopIsReady(): boolean
 	local lobby = Workspace:FindFirstChild("Lobby")
-	if lobby == nil then
+	if lobby == nil or lobby:GetAttribute("ShopReady") ~= true then
 		return false
 	end
-	return lobby:GetAttribute("ShopReady") == true
+	return lobby:FindFirstChildWhichIsA("BasePart", true) ~= nil
 end
 
 local function waitForShop(timeout: number): boolean
@@ -260,14 +268,11 @@ if not game:IsLoaded() then
 	game.Loaded:Wait()
 end
 
-hero.Image = HERO_IMAGE
-pcall(function()
-	ContentProvider:PreloadAsync({ hero })
+task.spawn(function()
+	pcall(function()
+		ContentProvider:PreloadAsync({ HERO_IMAGE, hero })
+	end)
 end)
-local preloadDeadline = os.clock() + 6
-while not hero.IsLoaded and os.clock() < preloadDeadline do
-	task.wait(0.05)
-end
 setProgress(0.35)
 
 waitForShop(45)
@@ -279,6 +284,8 @@ end
 if player.Character ~= nil and player.Character:FindFirstChild("HumanoidRootPart") == nil then
 	player.Character:WaitForChild("HumanoidRootPart", 8)
 end
+task.wait(0.2)
+RunService.RenderStepped:Wait()
 setProgress(1)
 
 local elapsed = os.clock() - started
@@ -289,18 +296,20 @@ end
 running = false
 status.Text = "Welcome in."
 
-local fadeInfo = TweenInfo.new(FADE_SECONDS, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-TweenService:Create(stageScale, fadeInfo, { Scale = 1.04 }):Play()
-TweenService:Create(wordmark, fadeInfo, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
-TweenService:Create(tagline, fadeInfo, { TextTransparency = 1 }):Play()
-TweenService:Create(status, fadeInfo, { TextTransparency = 1 }):Play()
-TweenService:Create(track, fadeInfo, { BackgroundTransparency = 1 }):Play()
-TweenService:Create(fill, fadeInfo, { BackgroundTransparency = 1 }):Play()
-TweenService:Create(hero, fadeInfo, { ImageTransparency = 1 }):Play()
-TweenService:Create(shade, fadeInfo, { BackgroundTransparency = 1 }):Play()
-TweenService:Create(bottomWash, fadeInfo, { BackgroundTransparency = 1 }):Play()
+local chromeInfo = TweenInfo.new(FADE_SECONDS * 0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+TweenService:Create(stageScale, chromeInfo, { Scale = 1.04 }):Play()
+TweenService:Create(wordmark, chromeInfo, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+TweenService:Create(tagline, chromeInfo, { TextTransparency = 1 }):Play()
+TweenService:Create(status, chromeInfo, { TextTransparency = 1 }):Play()
+TweenService:Create(track, chromeInfo, { BackgroundTransparency = 1 }):Play()
+TweenService:Create(fill, chromeInfo, { BackgroundTransparency = 1 }):Play()
+TweenService:Create(hero, chromeInfo, { ImageTransparency = 1 }):Play()
+TweenService:Create(shade, chromeInfo, { BackgroundTransparency = 1 }):Play()
+TweenService:Create(bottomWash, chromeInfo, { BackgroundTransparency = 1 }):Play()
+task.wait(FADE_SECONDS * 0.55)
 
-local veilOut = TweenService:Create(veil, fadeInfo, { BackgroundTransparency = 1 })
+local veilInfo = TweenInfo.new(FADE_SECONDS * 0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+local veilOut = TweenService:Create(veil, veilInfo, { BackgroundTransparency = 1 })
 veilOut:Play()
 veilOut.Completed:Wait()
 gui:Destroy()

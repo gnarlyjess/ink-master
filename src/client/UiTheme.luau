@@ -46,6 +46,7 @@ local UiTheme = {
 		medium = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium),
 	},
 	-- One set of margins so the banner, the side panels, and the bottom bar never share a pixel.
+	-- Desktop reference sizes; use editorLayout() on phones so the canvas keeps the same share.
 	safe = {
 		top = 68,
 		bottom = 84,
@@ -64,6 +65,49 @@ local UiTheme = {
 		danger = Color3.fromRGB(255, 96, 112),
 	},
 }
+
+export type EditorLayout = {
+	side: number,
+	top: number,
+	bottom: number,
+	leftWidth: number,
+	rightWidth: number,
+	leftExtra: number,
+	dock: number,
+}
+
+-- Scale the Studio panels with the viewport so phones keep a desktop-like canvas ratio.
+function UiTheme.editorLayout(view: Vector2): EditorLayout
+	local scaleX = math.clamp(view.X / 1280, 0.42, 1)
+	local scaleY = math.clamp(view.Y / 720, 0.5, 1)
+	local side = math.max(8, math.floor(UiTheme.safe.side * scaleX + 0.5))
+	local top = math.max(36, math.floor(UiTheme.safe.top * scaleY + 0.5))
+	local bottom = math.max(40, math.floor(UiTheme.safe.bottom * scaleY + 0.5))
+	local gap = math.max(6, math.floor(12 * scaleX + 0.5))
+	local leftWidth = math.clamp(math.floor(256 * scaleX + 0.5), 128, 256)
+	local rightWidth = math.clamp(math.floor(UiTheme.safe.dock * scaleX + 0.5), 148, UiTheme.safe.dock)
+
+	-- Panels + gutters may use at most ~46% of width; canvas keeps the rest.
+	local chrome = leftWidth + rightWidth + side * 2 + gap * 2
+	local maxChrome = view.X * 0.46
+	if view.X > 1 and chrome > maxChrome then
+		local shrink = maxChrome / chrome
+		leftWidth = math.max(112, math.floor(leftWidth * shrink))
+		rightWidth = math.max(128, math.floor(rightWidth * shrink))
+		side = math.max(6, math.floor(side * shrink))
+		gap = math.max(4, math.floor(gap * shrink))
+	end
+
+	return {
+		side = side,
+		top = top,
+		bottom = bottom,
+		leftWidth = leftWidth,
+		rightWidth = rightWidth,
+		leftExtra = leftWidth + gap,
+		dock = rightWidth,
+	}
+end
 
 -- White padlock silhouette (assets/ui/padlock.png) — tinted grey via ImageColor3.
 -- Emoji locks stay yellow on Roblox and can't be recolored.

@@ -930,7 +930,7 @@ local function placeHeroDesk(hero: Model, cf: CFrame, length: number, parent: In
 	end
 	if front == nil then
 		copy:Destroy()
-		warn("[InkMasters] ParlourImport.ReceptionDesk has no DeskFront mesh; using the built desk")
+		warn("[InkRivalry] ParlourImport.ReceptionDesk has no DeskFront mesh; using the built desk")
 		return false
 	end
 
@@ -1247,7 +1247,7 @@ local function buildReception(root: Instance)
 		{ transparency = 1, shadow = false }
 	)
 	local wordmark =
-		Surfaces.label(sign, Enum.NormalId.Front, "Ink-Off", Color3.fromRGB(196, 160, 102), Enum.Font.Bodoni, 48, 0)
+		Surfaces.label(sign, Enum.NormalId.Front, "Ink Rivalry", Color3.fromRGB(196, 160, 102), Enum.Font.Bodoni, 48, 0)
 	wordmark.TextStrokeTransparency = 0.6
 	wordmark.TextStrokeColor3 = Color3.fromRGB(60, 40, 20)
 	local tagline = P(
@@ -2029,7 +2029,7 @@ local function ensureBlenderPlants()
 		probe:Destroy()
 	end)
 	if not apiOk then
-		warn("[InkMasters] Blender plants need Allow Mesh / Image APIs, in Experience Settings, Security")
+		warn("[InkRivalry] Blender plants need Allow Mesh / Image APIs, in Experience Settings, Security")
 		return
 	end
 
@@ -2073,14 +2073,14 @@ local function ensureBlenderPlants()
 			end
 		end
 		if body == nil then
-			warn(`[InkMasters] Could not load {species}`)
+			warn(`[InkRivalry] Could not load {species}`)
 			continue
 		end
 		local decoded, pieces = pcall(function()
 			return HttpService:JSONDecode(body)
 		end)
 		if not decoded or type(pieces) ~= "table" then
-			warn(`[InkMasters] {species} mesh data was not readable`)
+			warn(`[InkRivalry] {species} mesh data was not readable`)
 			continue
 		end
 		local model = Instance.new("Model")
@@ -2110,7 +2110,7 @@ local function ensureBlenderPlants()
 			end)
 			editable:Destroy()
 			if not bakedOk or result ~= Enum.CreateContentResult.Success then
-				warn(`[InkMasters] {piece.name} could not be baked: {result}`)
+				warn(`[InkRivalry] {piece.name} could not be baked: {result}`)
 				built = false
 				break
 			end
@@ -2121,7 +2121,7 @@ local function ensureBlenderPlants()
 				})
 			end)
 			if not created or meshPart == nil then
-				warn(`[InkMasters] {piece.name} mesh failed: {meshPart}`)
+				warn(`[InkRivalry] {piece.name} mesh failed: {meshPart}`)
 				built = false
 				break
 			end
@@ -2221,7 +2221,7 @@ local function buildGreenery(root: Instance)
 	if needsPlantBake() then
 		local baked, bakeErr = pcall(ensureBlenderPlants)
 		if not baked then
-			warn(`[InkMasters] Blender plants could not be prepared: {bakeErr}`)
+			warn(`[InkRivalry] Blender plants could not be prepared: {bakeErr}`)
 		end
 	end
 	local green = Surfaces.folder(root, "Greenery")
@@ -2356,7 +2356,7 @@ function Interior.build(lobby: Model)
 	for name, step in steps do
 		local ok, err = pcall(step)
 		if not ok then
-			warn(`[InkMasters] Interior step {name} failed: {err}`)
+			warn(`[InkRivalry] Interior step {name} failed: {err}`)
 		end
 	end
 end

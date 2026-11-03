@@ -1,6 +1,6 @@
 --!strict
 
--- Builds the Ink Masters parlour when the server starts.
+-- Builds the Ink Rivalry parlour when the server starts.
 -- A converted street-front studio: cream plaster, walnut, charcoal, and brass.
 -- Players land inside, walk the floor, and sit while the round card runs on top.
 -- Lighting.Technology cannot be set from a runtime script. Use Future in Studio.
@@ -16,7 +16,7 @@ local ParlourProps = require(script.Parent.ParlourProps)
 local Interior = require(script.Parent.Interior)
 local LayoutBake = require(script.Parent.LayoutBake)
 
-local PREFIX = "[InkMasters]"
+local PREFIX = "[InkRivalry]"
 
 -- Was 68; slimmed so the centre aisle feels less empty. Furniture X coords
 -- authored for the old half-width are scaled with sx() below.
@@ -219,7 +219,7 @@ local function dressLighting()
 		return created
 	end
 
-	local atmosphere = effect("Atmosphere", "InkMastersAtmosphere")
+	local atmosphere = effect("Atmosphere", "InkRivalryAtmosphere")
 	if atmosphere:IsA("Atmosphere") then
 		atmosphere.Density = 0.06
 		atmosphere.Offset = 0.1
@@ -229,7 +229,7 @@ local function dressLighting()
 		atmosphere.Haze = 0.4
 	end
 
-	local grade = effect("ColorCorrectionEffect", "InkMastersGrade")
+	local grade = effect("ColorCorrectionEffect", "InkRivalryGrade")
 	if grade:IsA("ColorCorrectionEffect") then
 		grade.Brightness = 0
 		grade.Contrast = 0.12
@@ -237,7 +237,7 @@ local function dressLighting()
 		grade.TintColor = Color3.fromRGB(255, 251, 247)
 	end
 
-	local bloom = effect("BloomEffect", "InkMastersBloom")
+	local bloom = effect("BloomEffect", "InkRivalryBloom")
 	if bloom:IsA("BloomEffect") then
 		bloom.Intensity = 0.3
 		bloom.Size = 20
@@ -956,8 +956,8 @@ local function buildEntrance(lobby: Model)
 	local intoRoom = Vector3.new(0, 0, 1)
 	local towardStreet = Vector3.new(0, 0, -1)
 
-	buildWordmark(entrance, Vector3.new(0, 15.05, -HALF_D - 1.25), towardStreet, 14.5, 1.7, "INK-OFF")
-	buildWordmark(entrance, Vector3.new(0, 12.15, -HALF_D + 0.95), intoRoom, 8.5, 1.15, "INK-OFF")
+	buildWordmark(entrance, Vector3.new(0, 15.05, -HALF_D - 1.25), towardStreet, 22, 1.7, "INK RIVALRY")
+	buildWordmark(entrance, Vector3.new(0, 12.15, -HALF_D + 0.95), intoRoom, 13, 1.15, "INK RIVALRY")
 	buildWordmark(
 		entrance,
 		Vector3.new(-8.6, 5.6, -HALF_D - 0.72),

@@ -3,12 +3,11 @@
 -- Preloaded limb stills for the design canvas. One image per region × skin tone.
 -- Generated / uploaded assets — replace any id when you swap art.
 
-export type SkinToneId = "fair" | "light" | "peach" | "warm" | "tan" | "olive" | "brown" | "deep"
+export type SkinToneId = "light" | "peach" | "warm" | "tan" | "olive" | "brown" | "deep"
 
 local DEFAULT_TONE: SkinToneId = "peach"
 
 local TONES: { SkinToneId } = {
-	"fair",
 	"light",
 	"peach",
 	"warm",
@@ -21,7 +20,6 @@ local TONES: { SkinToneId } = {
 -- regionId -> toneId -> rbxassetid
 local photos: { [string]: { [string]: string } } = {
 	LeftForearm = {
-		fair = "rbxassetid://83763388714411",
 		light = "rbxassetid://105725694418928",
 		peach = "rbxassetid://92716745950431",
 		warm = "rbxassetid://95785016954319",
@@ -31,7 +29,6 @@ local photos: { [string]: { [string]: string } } = {
 		deep = "rbxassetid://130189225993849",
 	},
 	LeftUpperArm = {
-		fair = "rbxassetid://103876463846118",
 		light = "rbxassetid://96793958612236",
 		peach = "rbxassetid://75494655827654",
 		warm = "rbxassetid://130312158953640",
@@ -41,7 +38,6 @@ local photos: { [string]: { [string]: string } } = {
 		deep = "rbxassetid://119286107625110",
 	},
 	LeftThigh = {
-		fair = "rbxassetid://82021749693212",
 		light = "rbxassetid://105265634640190",
 		peach = "rbxassetid://120588074998974",
 		warm = "rbxassetid://124581724614975",
@@ -51,7 +47,6 @@ local photos: { [string]: { [string]: string } } = {
 		deep = "rbxassetid://127177180415992",
 	},
 	LeftCalf = {
-		fair = "rbxassetid://92911230083828",
 		light = "rbxassetid://88876246216890",
 		peach = "rbxassetid://91808551297723",
 		warm = "rbxassetid://76467639694051",
@@ -61,7 +56,6 @@ local photos: { [string]: { [string]: string } } = {
 		deep = "rbxassetid://101196815113273",
 	},
 	Chest = {
-		fair = "rbxassetid://107625374439976",
 		light = "rbxassetid://114167788353512",
 		peach = "rbxassetid://107600178745379",
 		warm = "rbxassetid://78580889693300",
@@ -71,7 +65,6 @@ local photos: { [string]: { [string]: string } } = {
 		deep = "rbxassetid://100919392882441",
 	},
 	Back = {
-		fair = "rbxassetid://128347693700660",
 		light = "rbxassetid://122191314032622",
 		peach = "rbxassetid://136698860612467",
 		warm = "rbxassetid://87617491164025",
@@ -92,7 +85,11 @@ function LimbPhotos.get(regionId: string, toneId: string?): string?
 	if byTone == nil then
 		return nil
 	end
+	-- "fair" used to sit next to light and looked identical — map old saves over.
 	local tone = if toneId ~= nil and toneId ~= "" then toneId else DEFAULT_TONE
+	if tone == "fair" then
+		tone = "light"
+	end
 	return byTone[tone] or byTone[DEFAULT_TONE]
 end
 

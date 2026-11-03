@@ -110,7 +110,7 @@ local function bakeFixtures()
 		probe:Destroy()
 	end)
 	if not apiOk then
-		warn("[InkMasters] Restroom meshes need Allow Mesh / Image APIs, in Experience Settings, Security")
+		warn("[InkRivalry] Restroom meshes need Allow Mesh / Image APIs, in Experience Settings, Security")
 		return
 	end
 
@@ -153,19 +153,19 @@ local function bakeFixtures()
 			existing:Destroy()
 		end
 		if meshApi == nil or type(meshApi.get) ~= "function" then
-			warn(`[InkMasters] Could not load {species}`)
+			warn(`[InkRivalry] Could not load {species}`)
 			continue
 		end
 		local okBody, packed = pcall(meshApi.get, species)
 		if not okBody or type(packed) ~= "string" then
-			warn(`[InkMasters] Could not load {species}`)
+			warn(`[InkRivalry] Could not load {species}`)
 			continue
 		end
 		local decoded, pieces = pcall(function()
 			return HttpService:JSONDecode(packed)
 		end)
 		if not decoded or type(pieces) ~= "table" then
-			warn(`[InkMasters] {species} mesh data was not readable`)
+			warn(`[InkRivalry] {species} mesh data was not readable`)
 			continue
 		end
 		local model = Instance.new("Model")
@@ -200,7 +200,7 @@ local function bakeFixtures()
 			end)
 			editable:Destroy()
 			if not bakedOk or result ~= Enum.CreateContentResult.Success then
-				warn(`[InkMasters] {piece.name} could not be baked: {result}`)
+				warn(`[InkRivalry] {piece.name} could not be baked: {result}`)
 				built = false
 				break
 			end
@@ -211,7 +211,7 @@ local function bakeFixtures()
 				})
 			end)
 			if not created or meshPart == nil then
-				warn(`[InkMasters] {piece.name} mesh failed: {meshPart}`)
+				warn(`[InkRivalry] {piece.name} mesh failed: {meshPart}`)
 				built = false
 				break
 			end
@@ -687,7 +687,7 @@ function Bathroom.build(parent: Instance)
 	buildDoor(room)
 	local baked, bakeErr = pcall(bakeFixtures)
 	if not baked then
-		warn(`[InkMasters] Restroom meshes could not be prepared: {bakeErr}`)
+		warn(`[InkRivalry] Restroom meshes could not be prepared: {bakeErr}`)
 	end
 	buildFixtures(room)
 end

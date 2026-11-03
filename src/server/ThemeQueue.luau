@@ -17,7 +17,7 @@ export type ThemeClaim = {
 	pricePaid: number,
 }
 
-local PREFIX = "[InkMasters]"
+local PREFIX = "[InkRivalry]"
 
 local queue: { ThemeClaim } = {}
 local changedCallbacks: { () -> () } = {}

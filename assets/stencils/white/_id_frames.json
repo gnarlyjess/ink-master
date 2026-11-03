@@ -1,0 +1,242 @@
+[
+  {
+    "id": "circle",
+    "frame": 15
+  },
+  {
+    "id": "tri",
+    "frame": 16
+  },
+  {
+    "id": "frame",
+    "frame": 17
+  },
+  {
+    "id": "star",
+    "frame": 18
+  },
+  {
+    "id": "rect",
+    "frame": 19
+  },
+  {
+    "id": "pointer",
+    "frame": 20
+  },
+  {
+    "id": "bar",
+    "frame": 21
+  },
+  {
+    "id": "gem",
+    "frame": 22
+  },
+  {
+    "id": "pentagon",
+    "frame": 23
+  },
+  {
+    "id": "hex",
+    "frame": 24
+  },
+  {
+    "id": "octagon",
+    "frame": 25
+  },
+  {
+    "id": "ovalline",
+    "frame": 26
+  },
+  {
+    "id": "half",
+    "frame": 27
+  },
+  {
+    "id": "trapezoid",
+    "frame": 28
+  },
+  {
+    "id": "parallelogram",
+    "frame": 29
+  },
+  {
+    "id": "plus",
+    "frame": 30
+  },
+  {
+    "id": "saltire",
+    "frame": 31
+  },
+  {
+    "id": "pill",
+    "frame": 32
+  },
+  {
+    "id": "heartline",
+    "frame": 33
+  },
+  {
+    "id": "spade",
+    "frame": 34
+  },
+  {
+    "id": "club",
+    "frame": 35
+  },
+  {
+    "id": "card_diamond",
+    "frame": 36
+  },
+  {
+    "id": "sparkline",
+    "frame": 37
+  },
+  {
+    "id": "moon",
+    "frame": 38
+  },
+  {
+    "id": "dropline",
+    "frame": 39
+  },
+  {
+    "id": "boltline",
+    "frame": 40
+  },
+  {
+    "id": "cloud",
+    "frame": 41
+  },
+  {
+    "id": "sun",
+    "frame": 42
+  },
+  {
+    "id": "arch",
+    "frame": 43
+  },
+  {
+    "id": "shield",
+    "frame": 44
+  },
+  {
+    "id": "bubble",
+    "frame": 45
+  },
+  {
+    "id": "bookmark",
+    "frame": 46
+  },
+  {
+    "id": "flag",
+    "frame": 47
+  },
+  {
+    "id": "leaf",
+    "frame": 48
+  },
+  {
+    "id": "infinity",
+    "frame": 49
+  },
+  {
+    "id": "hourglass",
+    "frame": 50
+  },
+  {
+    "id": "round_square",
+    "frame": 51
+  },
+  {
+    "id": "tri_down",
+    "frame": 52
+  },
+  {
+    "id": "star6",
+    "frame": 53
+  },
+  {
+    "id": "burstline",
+    "frame": 54
+  },
+  {
+    "id": "crossline",
+    "frame": 55
+  },
+  {
+    "id": "asterisk",
+    "frame": 56
+  },
+  {
+    "id": "bowtie",
+    "frame": 57
+  },
+  {
+    "id": "pacman",
+    "frame": 58
+  },
+  {
+    "id": "quarter",
+    "frame": 59
+  },
+  {
+    "id": "u_shape",
+    "frame": 60
+  },
+  {
+    "id": "wave",
+    "frame": 61
+  },
+  {
+    "id": "zigzag",
+    "frame": 62
+  },
+  {
+    "id": "spiral",
+    "frame": 63
+  },
+  {
+    "id": "target",
+    "frame": 64
+  },
+  {
+    "id": "peace",
+    "frame": 65
+  },
+  {
+    "id": "forbidden",
+    "frame": 66
+  },
+  {
+    "id": "check",
+    "frame": 67
+  },
+  {
+    "id": "chevronline",
+    "frame": 68
+  },
+  {
+    "id": "arrow",
+    "frame": 69
+  },
+  {
+    "id": "pin",
+    "frame": 70
+  },
+  {
+    "id": "eye",
+    "frame": 71
+  },
+  {
+    "id": "bell",
+    "frame": 72
+  },
+  {
+    "id": "crown",
+    "frame": 73
+  },
+  {
+    "id": "note",
+    "frame": 74
+  }
+]

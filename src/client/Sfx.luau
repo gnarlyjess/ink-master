@@ -30,7 +30,7 @@ local function soundFor(cue: string): Sound?
 		return nil
 	end
 	local sound = Instance.new("Sound")
-	sound.Name = `InkMasters_{cue}`
+	sound.Name = `InkRivalry_{cue}`
 	sound.SoundId = info.id
 	sound.Volume = info.volume
 	sound.Parent = SoundService

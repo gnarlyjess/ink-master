@@ -85,7 +85,7 @@ export type ProfileView = {
 local ProfileTypes = {}
 
 ProfileTypes.VERSION = 1
-ProfileTypes.EQUIP_SLOTS = { "title", "frame", "confetti", "emote" }
+ProfileTypes.EQUIP_SLOTS = { "title", "aura", "frame", "confetti", "emote" }
 
 local STAT_KEYS = {
 	"rounds",
@@ -103,6 +103,7 @@ local STAT_KEYS = {
 
 local SLOT_CATEGORY: { [string]: string } = {
 	title = "title",
+	aura = "aura",
 	frame = "frame",
 	confetti = "confetti",
 	emote = "emote",
@@ -124,7 +125,7 @@ function ProfileTypes.new(): ProfileData
 		lifetimeEarned = 0,
 		lifetimeSpent = 0,
 		owned = {},
-		equipped = { title = "", frame = "", confetti = "", emote = "" },
+		equipped = { title = "", aura = "", frame = "", confetti = "", emote = "" },
 		stats = stats,
 		achievements = {},
 		daily = { day = 0, progress = {}, claimed = {}, firstRoundDone = false },

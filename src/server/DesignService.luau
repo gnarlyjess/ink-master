@@ -30,7 +30,7 @@ type Person = {
 	name: string,
 }
 
-local PREFIX = "[InkMasters]"
+local PREFIX = "[InkRivalry]"
 local SUBMIT_COOLDOWN_SECONDS = 0.25
 
 local stored: { [Player]: StoredDesign } = {}

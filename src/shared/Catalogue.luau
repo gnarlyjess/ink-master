@@ -7,7 +7,7 @@
 local InkColors = require(script.Parent.InkColors)
 local StencilDefinitions = require(script.Parent.StencilDefinitions)
 
-export type Category = "ink" | "pack" | "title" | "frame" | "confetti" | "emote"
+export type Category = "ink" | "pack" | "title" | "frame" | "confetti" | "emote" | "aura"
 
 export type Rgb = {
 	r: number,
@@ -29,8 +29,10 @@ export type Item = {
 	text: string?,
 	accent: Rgb?,
 	palette: { Rgb }?,
-	-- How a frame is drawn, or how a win emote moves.
+	-- How a frame / emote / aura is drawn, or a title nameplate flair.
 	style: string?,
+	-- Title nameplate tier: plain | mist | neon | gold | icon
+	flair: string?,
 }
 
 export type CategoryInfo = {
@@ -46,6 +48,7 @@ Catalogue.categories = {
 	{ id = "ink", label = "Inks" },
 	{ id = "pack", label = "Shape packs" },
 	{ id = "title", label = "Titles" },
+	{ id = "aura", label = "Auras" },
 	{ id = "frame", label = "Frames" },
 	{ id = "confetti", label = "Party" },
 	{ id = "emote", label = "Emotes" },
@@ -60,10 +63,10 @@ local items: { Item } = {}
 local function ink(inkId: string, price: number, level: number, description: string)
 	local swatch = InkColors.get(inkId)
 	if swatch == nil then
-		error(`[InkMasters] Catalogue ink {inkId} has no swatch`)
+		error(`[InkRivalry] Catalogue ink {inkId} has no swatch`)
 	end
 	if swatch.starter then
-		error(`[InkMasters] Starter ink {inkId} must not be sold or earned`)
+		error(`[InkRivalry] Starter ink {inkId} must not be sold or earned`)
 	end
 	table.insert(items, {
 		id = `ink:{inkId}`,
@@ -81,10 +84,10 @@ end
 local function earnedInk(inkId: string, unlockText: string, description: string)
 	local swatch = InkColors.get(inkId)
 	if swatch == nil then
-		error(`[InkMasters] Catalogue ink {inkId} has no swatch`)
+		error(`[InkRivalry] Catalogue ink {inkId} has no swatch`)
 	end
 	if swatch.starter then
-		error(`[InkMasters] Starter ink {inkId} must not be sold or earned`)
+		error(`[InkRivalry] Starter ink {inkId} must not be sold or earned`)
 	end
 	table.insert(items, {
 		id = `ink:{inkId}`,
@@ -262,7 +265,15 @@ earnedPack(
 	}
 )
 
-local function earnedTitle(id: string, name: string, text: string, description: string, unlockText: string)
+local function earnedTitle(
+	id: string,
+	name: string,
+	text: string,
+	description: string,
+	unlockText: string,
+	flair: string,
+	accent: Rgb
+)
 	table.insert(items, {
 		id = `title:{id}`,
 		name = name,
@@ -273,21 +284,151 @@ local function earnedTitle(id: string, name: string, text: string, description: 
 		earned = true,
 		unlockText = unlockText,
 		text = text,
-		accent = rgb(242, 196, 122),
+		accent = accent,
+		flair = flair,
 	})
 end
 
--- Titles are earned on the level track (or by wins). None of them are for sale.
-earnedTitle("steady", "Steady Hand", "Steady Hand", "Shown over your head and in the display case.", "Reach level 2")
-earnedTitle("rookie", "Ink Rookie", "Ink Rookie", "Your first milestone title.", "Reach level 3")
-earnedTitle("liner", "Line Wizard", "Line Wizard", "For artists who love a clean line.", "Reach level 5")
-earnedTitle("collector", "Flash Collector", "Flash Collector", "A shelf full of shapes.", "Reach level 7")
-earnedTitle("needle", "Needle Hand", "Needle Hand", "Quick, bold, and confident.", "Reach level 9")
-earnedTitle("legend", "Parlour Legend", "Parlour Legend", "Known by every artist in the shop.", "Reach level 10")
-earnedTitle("parlour", "Parlour Regular", "Parlour Regular", "You practically live here.", "Reach level 12")
-earnedTitle("master", "Ink Master", "Ink Master", "The shop's own title.", "Reach level 20")
-earnedTitle("icon", "Living Icon", "Living Icon", "The top of the level track.", "Reach level 30")
-earnedTitle("gold", "Gold Needle", "Gold Needle", "Awarded for winning five rounds.", "Win 5 rounds")
+-- Titles are earned on the level track (or by wins). Flair drives the overhead plate.
+earnedTitle(
+	"steady",
+	"Steady Hand",
+	"Steady Hand",
+	"Shown over your head — your first nameplate.",
+	"Reach level 2",
+	"plain",
+	rgb(242, 196, 122)
+)
+earnedTitle(
+	"rookie",
+	"Ink Rookie",
+	"Ink Rookie",
+	"Your first milestone title.",
+	"Reach level 3",
+	"plain",
+	rgb(190, 230, 255)
+)
+earnedTitle(
+	"liner",
+	"Line Wizard",
+	"Line Wizard",
+	"Soft pink pulse on your nameplate.",
+	"Reach level 5",
+	"mist",
+	rgb(255, 120, 180)
+)
+earnedTitle(
+	"collector",
+	"Flash Collector",
+	"Flash Collector",
+	"A shelf full of shapes.",
+	"Reach level 7",
+	"mist",
+	rgb(255, 150, 200)
+)
+earnedTitle(
+	"needle",
+	"Needle Hand",
+	"Needle Hand",
+	"Neon rim — people notice you walking in.",
+	"Reach level 9",
+	"neon",
+	rgb(255, 70, 190)
+)
+earnedTitle(
+	"legend",
+	"Parlour Legend",
+	"Parlour Legend",
+	"Known by every artist in the shop.",
+	"Reach level 10",
+	"neon",
+	rgb(64, 220, 255)
+)
+earnedTitle(
+	"parlour",
+	"Parlour Regular",
+	"Parlour Regular",
+	"You practically live here.",
+	"Reach level 12",
+	"neon",
+	rgb(120, 230, 214)
+)
+earnedTitle(
+	"master",
+	"Ink Master",
+	"Ink Master",
+	"Gold nameplate. The shop's own title.",
+	"Reach level 20",
+	"gold",
+	rgb(255, 196, 64)
+)
+earnedTitle(
+	"icon",
+	"Living Icon",
+	"Living Icon",
+	"Rainbow plate. Top of the level track.",
+	"Reach level 30",
+	"icon",
+	rgb(255, 214, 64)
+)
+earnedTitle(
+	"gold",
+	"Gold Needle",
+	"Gold Needle",
+	"Awarded for winning five rounds.",
+	"Win 5 rounds",
+	"gold",
+	rgb(255, 196, 64)
+)
+
+local function earnedAura(id: string, name: string, description: string, unlockText: string, style: string, accent: Rgb)
+	table.insert(items, {
+		id = `aura:{id}`,
+		name = name,
+		description = description,
+		category = "aura",
+		price = 0,
+		level = 1,
+		earned = true,
+		unlockText = unlockText,
+		style = style,
+		accent = accent,
+	})
+end
+
+-- Foot auras — traditional flash that orbits your feet.
+earnedAura(
+	"mist",
+	"Fresh Ink",
+	"Soft ink vapor, stencil dots, and tiny star + heart charms.",
+	"Reach level 8",
+	"mist",
+	rgb(255, 120, 180)
+)
+earnedAura(
+	"neon",
+	"Neon Regular",
+	"Wet ink pool with orbiting rose, dagger, swallow, and star.",
+	"Reach level 10",
+	"neon",
+	rgb(255, 70, 190)
+)
+earnedAura(
+	"gold",
+	"Gold Needle",
+	"Gold flash sheet — rose, dagger, swallow, anchor, skull, banner.",
+	"Reach level 20",
+	"gold",
+	rgb(255, 196, 64)
+)
+earnedAura(
+	"icon",
+	"Living Icon",
+	"Full flash wall: nine classic motifs, rainbow rim, densest ink.",
+	"Reach level 30",
+	"icon",
+	rgb(255, 214, 64)
+)
 
 local FRAME_STYLES: { [string]: boolean } = {
 	line = true,
@@ -310,7 +451,7 @@ local function frame(
 	style: string
 )
 	if FRAME_STYLES[style] ~= true then
-		error(`[InkMasters] Frame {id} has unknown style {style}`)
+		error(`[InkRivalry] Frame {id} has unknown style {style}`)
 	end
 	table.insert(items, {
 		id = `frame:{id}`,
@@ -334,7 +475,7 @@ local function earnedFrame(
 	style: string
 )
 	if FRAME_STYLES[style] ~= true then
-		error(`[InkMasters] Frame {id} has unknown style {style}`)
+		error(`[InkRivalry] Frame {id} has unknown style {style}`)
 	end
 	table.insert(items, {
 		id = `frame:{id}`,
@@ -437,7 +578,7 @@ local function emote(
 	accent: Rgb
 )
 	if EMOTE_STYLES[style] ~= true then
-		error(`[InkMasters] Emote {id} has unknown style {style}`)
+		error(`[InkRivalry] Emote {id} has unknown style {style}`)
 	end
 	table.insert(items, {
 		id = `emote:{id}`,
@@ -482,14 +623,14 @@ end
 
 for _, item in items do
 	if lookup(item.id) ~= nil then
-		error(`[InkMasters] Duplicate catalogue id {item.id}`)
+		error(`[InkRivalry] Duplicate catalogue id {item.id}`)
 	end
 	byId[item.id] = item
 	local stencils = item.stencils
 	if stencils ~= nil then
 		for _, stencilId in stencils do
 			if StencilDefinitions.get(stencilId) == nil then
-				error(`[InkMasters] Pack {item.id} lists unknown shape {stencilId}`)
+				error(`[InkRivalry] Pack {item.id} lists unknown shape {stencilId}`)
 			end
 			packByStencil[stencilId] = item
 		end
@@ -547,12 +688,12 @@ end
 function Catalogue.featuredId(day: number): string
 	local list = buyable()
 	if #list == 0 then
-		error("[InkMasters] Catalogue has nothing to feature")
+		error("[InkRivalry] Catalogue has nothing to feature")
 	end
 	local index = (day * 7 + 3) % #list + 1
 	local chosen = list[index]
 	if chosen == nil or chosen.earned then
-		error("[InkMasters] Featured pick must be a buyable item")
+		error("[InkRivalry] Featured pick must be a buyable item")
 	end
 	return chosen.id
 end

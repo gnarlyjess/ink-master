@@ -39,7 +39,7 @@ type Line = {
 	xp: number,
 }
 
-local PREFIX = "[InkMasters]"
+local PREFIX = "[InkRivalry]"
 
 local paid: { [Player]: { [number]: boolean } } = {}
 

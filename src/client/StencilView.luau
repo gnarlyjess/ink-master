@@ -750,18 +750,77 @@ local function solidFor(shape: string): Mask?
 	return solids[shape]
 end
 
-local function packSilhouette(shape: string): EditableImage?
-	local entry = StencilPack.byId[shape]
-	if entry == nil then
-		return nil
+local function packInkGrid(maskB64: string): { boolean }
+	local bits = decodeBase64(maskB64)
+	local total = PACK_SIZE * PACK_SIZE
+	local grid = table.create(total, false)
+	for i = 0, total - 1 do
+		local byte = buffer.readu8(bits, i // 8)
+		grid[i + 1] = bit32.band(byte, bit32.lshift(1, i % 8)) ~= 0
 	end
-	if unavailable then
-		return nil
+	return grid
+end
+
+-- Flood from the edges through empty pixels so the enclosed interior can be filled.
+local function packSolidPixels(maskB64: string): buffer
+	local outline = packInkGrid(maskB64)
+	local total = PACK_SIZE * PACK_SIZE
+	local outside = table.create(total, false)
+	local queue: { number } = {}
+	local function push(index: number)
+		if index < 1 or index > total or outside[index] or outline[index] then
+			return
+		end
+		outside[index] = true
+		table.insert(queue, index)
 	end
-	local key = `pack:{shape}`
+	for x = 0, PACK_SIZE - 1 do
+		push(x + 1)
+		push((PACK_SIZE - 1) * PACK_SIZE + x + 1)
+	end
+	for y = 0, PACK_SIZE - 1 do
+		push(y * PACK_SIZE + 1)
+		push(y * PACK_SIZE + PACK_SIZE)
+	end
+	local head = 1
+	while head <= #queue do
+		local index = queue[head]
+		head += 1
+		local x = (index - 1) % PACK_SIZE
+		local y = (index - 1) // PACK_SIZE
+		if x > 0 then
+			push(index - 1)
+		end
+		if x < PACK_SIZE - 1 then
+			push(index + 1)
+		end
+		if y > 0 then
+			push(index - PACK_SIZE)
+		end
+		if y < PACK_SIZE - 1 then
+			push(index + PACK_SIZE)
+		end
+	end
+	local pixels = buffer.create(total * 4)
+	for i = 1, total do
+		if outline[i] or not outside[i] then
+			local offset = (i - 1) * 4
+			buffer.writeu8(pixels, offset, 255)
+			buffer.writeu8(pixels, offset + 1, 255)
+			buffer.writeu8(pixels, offset + 2, 255)
+			buffer.writeu8(pixels, offset + 3, 255)
+		end
+	end
+	return pixels
+end
+
+local function writePackImage(key: string, pixels: buffer): EditableImage?
 	local cached = cachedImage(key)
 	if cached ~= nil then
 		return cached
+	end
+	if unavailable then
+		return nil
 	end
 	local created: EditableImage? = nil
 	local ok = pcall(function()
@@ -769,16 +828,32 @@ local function packSilhouette(shape: string): EditableImage?
 			Size = Vector2.new(PACK_SIZE, PACK_SIZE),
 		})
 		if created ~= nil then
-			created:WritePixelsBuffer(Vector2.zero, Vector2.new(PACK_SIZE, PACK_SIZE), packPixels(entry.mask))
+			created:WritePixelsBuffer(Vector2.zero, Vector2.new(PACK_SIZE, PACK_SIZE), pixels)
 		end
 	end)
 	if not ok or created == nil then
 		unavailable = true
-		warn("[InkMasters] Clean stencils need Allow Mesh / Image APIs, in Experience Settings, Security")
+		warn("[InkRivalry] Clean stencils need Allow Mesh / Image APIs, in Experience Settings, Security")
 		return nil
 	end
 	images[key] = created
 	return created
+end
+
+local function packSilhouette(shape: string): EditableImage?
+	local entry = StencilPack.byId[shape]
+	if entry == nil then
+		return nil
+	end
+	return writePackImage(`pack:{shape}`, packPixels(entry.mask))
+end
+
+local function packSolidSilhouette(shape: string): EditableImage?
+	local entry = StencilPack.byId[shape]
+	if entry == nil then
+		return nil
+	end
+	return writePackImage(`packSolid:{shape}`, packSolidPixels(entry.mask))
 end
 
 local function silhouette(shape: string): EditableImage?
@@ -812,7 +887,7 @@ local function silhouette(shape: string): EditableImage?
 	end)
 	if not ok or created == nil then
 		unavailable = true
-		warn("[InkMasters] Clean stencils need Allow Mesh / Image APIs, in Experience Settings, Security")
+		warn("[InkRivalry] Clean stencils need Allow Mesh / Image APIs, in Experience Settings, Security")
 		return nil
 	end
 	images[shape] = created
@@ -820,7 +895,7 @@ local function silhouette(shape: string): EditableImage?
 end
 
 local function solidSilhouette(shape: string): EditableImage?
-	local fromPack = packSilhouette(shape)
+	local fromPack = packSolidSilhouette(shape)
 	if fromPack ~= nil then
 		return fromPack
 	end
@@ -850,7 +925,7 @@ local function solidSilhouette(shape: string): EditableImage?
 	end)
 	if not ok or created == nil then
 		unavailable = true
-		warn("[InkMasters] Clean stencils need Allow Mesh / Image APIs, in Experience Settings, Security")
+		warn("[InkRivalry] Clean stencils need Allow Mesh / Image APIs, in Experience Settings, Security")
 		return nil
 	end
 	images[key] = created
@@ -937,6 +1012,8 @@ export type MarkStyle = {
 	thickness: number,
 	opacity: number,
 	flip: boolean,
+	-- On-screen mark width in pixels. When set, outline weight stays constant as the mark scales.
+	markWidthPx: number?,
 }
 
 local styled: { [string]: EditableImage } = {}
@@ -1060,7 +1137,7 @@ local function styledImage(shape: string, kind: "fill" | "line", pixels: number,
 	end)
 	if not ok or created == nil then
 		unavailable = true
-		warn("[InkMasters] Clean stencils need Allow Mesh / Image APIs, in Experience Settings, Security")
+		warn("[InkRivalry] Clean stencils need Allow Mesh / Image APIs, in Experience Settings, Security")
 		return nil
 	end
 	styled[key] = created
@@ -1091,6 +1168,20 @@ local function glyphLayer(
 	glyph.Parent = parent
 end
 
+local function outlineDesiredPx(thickness: number): number
+	return 0.55 * math.clamp(thickness, 1, 10)
+end
+
+local function outlineRadius(thickness: number, markWidthPx: number?): number
+	-- Radius is in EditableImage pixels. Target ~0.55 screen-px per thickness step.
+	local desiredPx = outlineDesiredPx(thickness)
+	local width = markWidthPx
+	if width ~= nil and width > 4 then
+		return math.max(1, math.floor(desiredPx * (SIZE / width) + 0.5))
+	end
+	return 1
+end
+
 function StencilView.drawMark(
 	parent: GuiObject,
 	shape: string,
@@ -1102,35 +1193,93 @@ function StencilView.drawMark(
 	clearGlyphs(parent)
 
 	local transparency = 1 - math.clamp(style.opacity, 0, 1)
-	if typeof(asset) == "string" and asset ~= "" then
-		-- Imported outlines: tint the white silhouette. Fill uses ink colour; outline uses line colour.
-		if style.fill then
-			assetGlyph(parent, "FillGlyph", asset, fillColor, transparency, 2, style.flip)
-		end
-		if style.outline then
-			assetGlyph(parent, "LineGlyph", asset, lineColor, transparency, 3, style.flip)
-		end
-		if not style.fill and not style.outline then
-			assetGlyph(parent, "Glyph", asset, lineColor, transparency, 2, style.flip)
-		end
-		return
-	end
-
 	local thickness = math.clamp(math.floor(style.thickness + 0.5), 1, 10)
+	local hasAsset = typeof(asset) == "string" and asset ~= ""
+	local radius = outlineRadius(thickness, style.markWidthPx)
+
+	-- Fill must be a solid interior (flood-filled pack / procedural solid), not the outline PNG.
 	if style.fill then
-		local spread = if style.outline then 0 else (thickness - 1) * 2
-		local image = if spread == 0 then solidSilhouette(shape) else styledImage(shape, "fill", spread, true)
+		local image = solidSilhouette(shape)
+		if image == nil and StencilPack.byId[shape] == nil then
+			image = styledImage(shape, "fill", 0, true)
+		end
 		if image ~= nil then
 			glyphLayer(parent, "FillGlyph", image, fillColor, transparency, 2, style.flip)
+		elseif hasAsset then
+			-- EditableImage off: fall back to tinted outline asset so Fill still does something.
+			assetGlyph(parent, "FillGlyph", asset :: string, fillColor, transparency, 2, style.flip)
 		end
 	end
 	if style.outline then
-		local spread = (thickness - 1) * 2
-		local image = if spread == 0 then silhouette(shape) else styledImage(shape, "fill", spread, false)
+		-- Ring around the solid silhouette — radius tracks screen px, not mark scale.
+		local image = styledImage(shape, "line", radius, true)
+		if image == nil then
+			image = styledImage(shape, "line", radius, false)
+		end
 		if image ~= nil then
 			glyphLayer(parent, "LineGlyph", image, lineColor, transparency, 3, style.flip)
+		elseif hasAsset then
+			assetGlyph(parent, "LineGlyph", asset :: string, lineColor, transparency, 3, style.flip)
 		end
 	end
+	if not style.fill and not style.outline then
+		if hasAsset then
+			assetGlyph(parent, "Glyph", asset :: string, lineColor, transparency, 2, style.flip)
+		else
+			local image = silhouette(shape)
+			if image ~= nil then
+				glyphLayer(parent, "Glyph", image, lineColor, transparency, 2, style.flip)
+			end
+		end
+	end
+end
+
+local packHitGrids: { [string]: { boolean } } = {}
+
+local function packHitGrid(shape: string): { boolean }?
+	local cached = packHitGrids[shape]
+	if cached ~= nil then
+		return cached
+	end
+	local entry = StencilPack.byId[shape]
+	if entry == nil then
+		return nil
+	end
+	local bits = decodeBase64(entry.mask)
+	local grid = table.create(PACK_SIZE * PACK_SIZE, false)
+	local total = PACK_SIZE * PACK_SIZE
+	for i = 0, total - 1 do
+		local byte = buffer.readu8(bits, i // 8)
+		grid[i + 1] = bit32.band(byte, bit32.lshift(1, i % 8)) ~= 0
+	end
+	packHitGrids[shape] = grid
+	return grid
+end
+
+-- True when (u, v) in 0–1 mark space lands on ink (not empty padding around the silhouette).
+function StencilView.contains(shape: string, u: number, v: number): boolean
+	if u < 0 or v < 0 or u > 1 or v > 1 then
+		return false
+	end
+	local pack = packHitGrid(shape)
+	if pack ~= nil then
+		local x = math.clamp(math.floor(u * PACK_SIZE), 0, PACK_SIZE - 1)
+		local y = math.clamp(math.floor(v * PACK_SIZE), 0, PACK_SIZE - 1)
+		return pack[y * PACK_SIZE + x + 1] == true
+	end
+	local inside = solidFor(shape)
+	if inside == nil then
+		inside = maskFor(shape)
+	end
+	if inside == nil then
+		inside = maskFor("disc")
+	end
+	if inside == nil then
+		local dx = u - 0.5
+		local dy = v - 0.5
+		return dx * dx + dy * dy <= 0.22
+	end
+	return inside(u, v)
 end
 
 return StencilView

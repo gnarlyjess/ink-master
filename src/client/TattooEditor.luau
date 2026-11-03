@@ -29,7 +29,7 @@ local UiTheme = require(script.Parent.UiTheme)
 type TattooDesign = DesignDocument.TattooDesign
 type RoundSnapshot = RoundTypes.RoundSnapshot
 
-local PREFIX = "[InkMasters]"
+local PREFIX = "[InkRivalry]"
 
 local TattooEditor = {}
 local started = false
@@ -57,7 +57,7 @@ function TattooEditor.start()
 
 	local player = Players.LocalPlayer
 	if player == nil then
-		error("[InkMasters] The tattoo editor must run on the client")
+		error("[InkRivalry] The tattoo editor must run on the client")
 	end
 
 	local design = DesignDocument.createEmpty()
@@ -66,6 +66,9 @@ function TattooEditor.start()
 	local selectedColorId = "black"
 	local selectedRegion = "LeftForearm"
 	local selectedSkinId = "peach"
+	local activeLayer = 1
+	local layerCount = 1
+	local lockedLayers: { [number]: boolean } = {}
 	local editing = false
 	local roundId = 0
 	local designRound = 0
@@ -75,7 +78,9 @@ function TattooEditor.start()
 	local statusOverride: string? = nil
 	local markPanel: {
 		show: (MarkInspector.MarkState) -> (),
+		idle: () -> (),
 		hide: () -> (),
+		layout: (UiTheme.EditorLayout) -> (),
 	}? = nil
 
 	local stencilStrokes: { [string]: UIStroke } = {}
@@ -98,13 +103,13 @@ function TattooEditor.start()
 	end
 
 	local playerGui = player:WaitForChild("PlayerGui")
-	local existing = playerGui:FindFirstChild("InkMastersEditor")
+	local existing = playerGui:FindFirstChild("InkRivalryEditor")
 	if existing ~= nil then
 		existing:Destroy()
 	end
 
 	local screenGui = Instance.new("ScreenGui")
-	screenGui.Name = "InkMastersEditor"
+	screenGui.Name = "InkRivalryEditor"
 	screenGui.ResetOnSpawn = false
 	screenGui.IgnoreGuiInset = true
 	screenGui.DisplayOrder = 20
@@ -221,6 +226,8 @@ function TattooEditor.start()
 	skinScroll.Size = UDim2.new(1, 0, 0, CHIP)
 	skinScroll.ElasticBehavior = Enum.ElasticBehavior.Never
 	skinScroll.ScrollingEnabled = true
+	skinScroll.Active = true
+	skinScroll.Selectable = false
 	skinScroll.Parent = holder
 	freezeFlex(skinScroll)
 	local skinLayout = Instance.new("UIListLayout")
@@ -420,20 +427,36 @@ function TattooEditor.start()
 		TattooCanvas.setCaseFrame(if wornId ~= "" then wornId else nil)
 	end
 
+	local function applyEditorLayout()
+		local view = screenGui.AbsoluteSize
+		if view.X < 2 or view.Y < 2 then
+			local camera = workspace.CurrentCamera
+			view = if camera ~= nil then camera.ViewportSize else Vector2.new(1280, 720)
+		end
+		local chrome = UiTheme.editorLayout(view)
+		holder.Position = UDim2.new(1, -chrome.side, 0, chrome.top)
+		holder.Size = UDim2.new(0, chrome.rightWidth, 1, -(chrome.top + chrome.bottom))
+		TattooCanvas.setChrome(chrome)
+		local panel = markPanel
+		if panel ~= nil then
+			panel.layout(chrome)
+		end
+	end
+
 	local function syncInspector()
 		local panel = markPanel
 		if panel == nil then
 			return
 		end
+		-- Left tools stay open for the whole round; chrome scales with the phone screen.
+		applyEditorLayout()
 		if selectedIndex == nil then
-			panel.hide()
-			TattooCanvas.setMargins(0)
+			panel.idle()
 			return
 		end
 		local element = design.elements[selectedIndex]
 		if element == nil then
-			panel.hide()
-			TattooCanvas.setMargins(0)
+			panel.idle()
 			return
 		end
 		local stencil = StencilDefinitions.get(element.stencilId)
@@ -447,7 +470,6 @@ function TattooEditor.start()
 			color = element.color,
 			line = element.line,
 		})
-		TattooCanvas.setMargins(268)
 	end
 
 	local function updateStatus()
@@ -461,10 +483,186 @@ function TattooEditor.start()
 		local inkName = if ink ~= nil then ink.name else "Ink"
 		local count = #design.elements
 		local maxCount = GameConfig.getMaxElements()
-		status.Text = `{markName} · {inkName} · {count}/{maxCount}`
+		status.Text = `{markName} · {inkName} · Layer {activeLayer} · {count}/{maxCount}`
+	end
+
+	local function layerOf(element: DesignDocument.DesignElement): number
+		return DesignDocument.clampLayer(element.layer or 1)
+	end
+
+	local function isLayerLocked(layer: number): boolean
+		return lockedLayers[layer] == true
+	end
+
+	local function deleteLayer(layer: number)
+		if layerCount <= 1 then
+			statusOverride = "Keep at least one layer."
+			updateStatus()
+			return
+		end
+		if layer < 1 or layer > layerCount then
+			return
+		end
+		-- Remove marks on this layer (Photoshop: deleting a layer drops its contents).
+		for index = #design.elements, 1, -1 do
+			if layerOf(design.elements[index]) == layer then
+				table.remove(design.elements, index)
+				if selectedIndex == index then
+					selectedIndex = nil
+				elseif selectedIndex ~= nil and selectedIndex > index then
+					selectedIndex -= 1
+				end
+			end
+		end
+		-- Shift higher layers down and rewrite lock map.
+		for _, element in design.elements do
+			local current = layerOf(element)
+			if current > layer then
+				element.layer = current - 1
+			end
+		end
+		local nextLocks: { [number]: boolean } = {}
+		for id, locked in lockedLayers do
+			if locked == true and id < layer then
+				nextLocks[id] = true
+			elseif locked == true and id > layer then
+				nextLocks[id - 1] = true
+			end
+		end
+		lockedLayers = nextLocks
+		layerCount -= 1
+		if activeLayer > layerCount then
+			activeLayer = layerCount
+		elseif activeLayer > layer then
+			activeLayer -= 1
+		elseif activeLayer == layer then
+			activeLayer = math.clamp(layer, 1, layerCount)
+		end
+		statusOverride = `Layer {layer} deleted`
+		refresh()
+	end
+
+	local function syncLayers()
+		local marks: { [number]: number } = {}
+		for i = 1, layerCount do
+			marks[i] = 0
+		end
+		for _, element in design.elements do
+			local layer = layerOf(element)
+			if layer > layerCount then
+				layerCount = layer
+			end
+			marks[layer] = (marks[layer] or 0) + 1
+		end
+		local function reorderLayer(fromLayer: number, toLayer: number)
+			fromLayer = DesignDocument.clampLayer(fromLayer)
+			toLayer = DesignDocument.clampLayer(toLayer)
+			if fromLayer == toLayer or fromLayer > layerCount or toLayer > layerCount then
+				return
+			end
+			-- Display stack top→bottom = count…1. Rebuild that order, move, reassign ids.
+			local order: { number } = {}
+			for layer = layerCount, 1, -1 do
+				table.insert(order, layer)
+			end
+			local fromVis = nil
+			local toVis = nil
+			for vis, id in order do
+				if id == fromLayer then
+					fromVis = vis
+				end
+				if id == toLayer then
+					toVis = vis
+				end
+			end
+			if fromVis == nil or toVis == nil then
+				return
+			end
+			local moved = table.remove(order, fromVis)
+			if moved == nil then
+				return
+			end
+			table.insert(order, toVis, moved)
+			local remap: { [number]: number } = {}
+			for vis, oldId in order do
+				remap[oldId] = layerCount - vis + 1
+			end
+			for _, element in design.elements do
+				local old = layerOf(element)
+				local nextId = remap[old]
+				if nextId ~= nil then
+					element.layer = nextId
+				end
+			end
+			local nextLocks: { [number]: boolean } = {}
+			for oldId, locked in lockedLayers do
+				if locked == true then
+					local nextId = remap[oldId]
+					if nextId ~= nil then
+						nextLocks[nextId] = true
+					end
+				end
+			end
+			lockedLayers = nextLocks
+			activeLayer = remap[activeLayer] or activeLayer
+			statusOverride = `Layer order updated`
+			refresh()
+		end
+
+		TattooCanvas.setLayers({
+			active = activeLayer,
+			count = layerCount,
+			locked = lockedLayers,
+			marks = marks,
+		}, function(layer: number)
+			activeLayer = layer
+			statusOverride = `Drawing on Layer {layer}`
+			syncLayers()
+			updateStatus()
+		end, function(layer: number)
+			local id = DesignDocument.clampLayer(layer)
+			local nowLocked = not isLayerLocked(id)
+			-- Rebuild a clean number-keyed map so canvas + editor stay in sync.
+			local nextLocks: { [number]: boolean } = {}
+			for i = 1, DesignDocument.MAX_LAYERS do
+				if i == id then
+					if nowLocked then
+						nextLocks[i] = true
+					end
+				elseif lockedLayers[i] == true then
+					nextLocks[i] = true
+				end
+			end
+			lockedLayers = nextLocks
+			-- Drop selection whenever the active mark sits on a locked layer.
+			if selectedIndex ~= nil then
+				local selected = design.elements[selectedIndex]
+				if selected ~= nil and isLayerLocked(layerOf(selected)) then
+					selectedIndex = nil
+				end
+			end
+			-- Abort any in-progress drag on a newly locked mark.
+			statusOverride = if nowLocked then `Layer {id} locked` else `Layer {id} unlocked`
+			refresh()
+		end, function()
+			if layerCount >= DesignDocument.MAX_LAYERS then
+				statusOverride = "Max layers reached."
+				updateStatus()
+				return
+			end
+			layerCount += 1
+			activeLayer = layerCount
+			statusOverride = `Layer {layerCount} added`
+			syncLayers()
+			updateStatus()
+		end, function(layer: number)
+			deleteLayer(layer)
+		end, reorderLayer)
 	end
 
 	local function refresh()
+		-- Push lock state before render so handles / hit-tests match the padlock.
+		syncLayers()
 		local character = player.Character
 		if character ~= nil then
 			TattooCanvas.show(character, design, selectedIndex)
@@ -489,6 +687,11 @@ function TattooEditor.start()
 			return
 		end
 		local color = swatchColor()
+		if isLayerLocked(activeLayer) then
+			statusOverride = `Layer {activeLayer} is locked.`
+			updateStatus()
+			return
+		end
 		table.insert(design.elements, {
 			stencilId = selectedStencilId,
 			x = math.clamp(x, 0.06, 0.94),
@@ -502,6 +705,7 @@ function TattooEditor.start()
 			thickness = 1,
 			opacity = 1,
 			flip = false,
+			layer = activeLayer,
 		})
 		selectedIndex = #design.elements
 		statusOverride = nil
@@ -524,15 +728,22 @@ function TattooEditor.start()
 	end
 
 	local function grab(index: number)
-		if design.elements[index] == nil then
+		local element = design.elements[index]
+		if element == nil then
+			return
+		end
+		if isLayerLocked(layerOf(element)) then
+			statusOverride = `Layer {layerOf(element)} is locked.`
+			updateStatus()
 			return
 		end
 		local already = selectedIndex == index
 		selectedIndex = index
+		activeLayer = layerOf(element)
 		statusOverride = nil
-		-- Rebuilding marks mid-press destroys the × button and eats the delete click.
 		if not already then
 			TattooCanvas.render(design, selectedIndex)
+			syncLayers()
 			updateStatus()
 			syncInspector()
 		end
@@ -549,7 +760,7 @@ function TattooEditor.start()
 	TattooCanvas.setHandlers(grab, deselect)
 	TattooCanvas.setMoveHandler(function(index: number, x: number, y: number)
 		local element = design.elements[index]
-		if element == nil then
+		if element == nil or isLayerLocked(layerOf(element)) then
 			return
 		end
 		element.x = x
@@ -557,7 +768,7 @@ function TattooEditor.start()
 	end)
 	TattooCanvas.setTransformHandlers(function(index: number, rotation: number, scale: number)
 		local element = design.elements[index]
-		if element == nil then
+		if element == nil or isLayerLocked(layerOf(element)) then
 			return
 		end
 		element.rotation = rotation
@@ -579,6 +790,11 @@ function TattooEditor.start()
 			updateStatus()
 			return
 		end
+		if isLayerLocked(layerOf(element)) then
+			statusOverride = `Layer {layerOf(element)} is locked.`
+			updateStatus()
+			return
+		end
 		element.rotation = (element.rotation + degrees) % 360
 		statusOverride = nil
 		refresh()
@@ -591,6 +807,11 @@ function TattooEditor.start()
 			updateStatus()
 			return
 		end
+		if isLayerLocked(layerOf(element)) then
+			statusOverride = `Layer {layerOf(element)} is locked.`
+			updateStatus()
+			return
+		end
 		element.scale = clampScale(element.scale * factor)
 		statusOverride = nil
 		refresh()
@@ -598,7 +819,13 @@ function TattooEditor.start()
 
 	local deleteLock = false
 	local function removeAt(index: number)
-		if deleteLock or design.elements[index] == nil then
+		local element = design.elements[index]
+		if deleteLock or element == nil then
+			return
+		end
+		if isLayerLocked(layerOf(element)) then
+			statusOverride = `Layer {layerOf(element)} is locked.`
+			updateStatus()
 			return
 		end
 		deleteLock = true
@@ -627,6 +854,11 @@ function TattooEditor.start()
 		if element == nil then
 			return
 		end
+		if isLayerLocked(layerOf(element)) then
+			statusOverride = `Layer {layerOf(element)} is locked.`
+			updateStatus()
+			return
+		end
 		mutate(element)
 		statusOverride = nil
 		refresh()
@@ -646,6 +878,7 @@ function TattooEditor.start()
 			thickness = element.thickness,
 			opacity = element.opacity,
 			flip = element.flip,
+			layer = layerOf(element),
 		}
 	end
 
@@ -682,12 +915,6 @@ function TattooEditor.start()
 				local stepped = math.floor((element.opacity + delta) * 10 + 0.5) / 10
 				element.opacity = DesignDocument.clampOpacity(stepped)
 			end)
-		end,
-		onScale = function(direction: number)
-			scaleBy(if direction < 0 then 0.85 else 1.18)
-		end,
-		onRotate = function(degrees: number)
-			rotateBy(degrees)
 		end,
 		onFlip = function(enabled: boolean)
 			editSelected(function(element)
@@ -729,32 +956,50 @@ function TattooEditor.start()
 			if element == nil then
 				return
 			end
+			if isLayerLocked(layerOf(element)) then
+				statusOverride = `Layer {layerOf(element)} is locked.`
+				updateStatus()
+				return
+			end
+			if isLayerLocked(activeLayer) then
+				statusOverride = `Layer {activeLayer} is locked.`
+				updateStatus()
+				return
+			end
 			if #design.elements >= GameConfig.getMaxElements() then
 				statusOverride = "This design is full."
 				updateStatus()
 				return
 			end
-			table.insert(design.elements, copyElement(element))
+			local copy = copyElement(element)
+			copy.layer = activeLayer
+			table.insert(design.elements, copy)
 			selectedIndex = #design.elements
 			statusOverride = nil
 			refresh()
 		end,
-		onOrder = function(direction: number)
-			if selectedIndex == nil then
-				return
-			end
-			local nextIndex = selectedIndex + direction
-			local current = design.elements[selectedIndex]
-			local neighbor = design.elements[nextIndex]
-			if current == nil or neighbor == nil then
-				return
-			end
-			design.elements[selectedIndex] = neighbor
-			design.elements[nextIndex] = current
-			selectedIndex = nextIndex
-			refresh()
-		end,
 	})
+
+	applyEditorLayout()
+	screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		if editing or screenGui.Enabled then
+			applyEditorLayout()
+		end
+	end)
+	local function bindCameraLayout(camera: Camera?)
+		if camera == nil then
+			return
+		end
+		camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+			if editing or screenGui.Enabled then
+				applyEditorLayout()
+			end
+		end)
+	end
+	bindCameraLayout(workspace.CurrentCamera)
+	workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+		bindCameraLayout(workspace.CurrentCamera)
+	end)
 
 	local function requestClear()
 		if not clearArmed then
@@ -786,10 +1031,12 @@ function TattooEditor.start()
 		if roundId <= 0 then
 			return
 		end
+		design.canvasAspect = TattooCanvas.stageAspect()
 		Remotes.SubmitDesign:FireServer({
 			roundId = roundId,
 			region = design.region,
 			elements = design.elements,
+			canvasAspect = design.canvasAspect,
 		})
 	end
 
@@ -876,11 +1123,46 @@ function TattooEditor.start()
 		button.BorderSizePixel = 0
 		button.Text = ""
 		button.AutoButtonColor = false
+		button.Active = true
 		button.Selectable = false
 		button.Parent = parent
 		freezeFlex(button)
 		corner(button, 8)
 		return button
+	end
+
+	-- Mobile ScrollingFrames often swallow one of these; bind both so a tap always lands.
+	local function bindTap(button: GuiButton, callback: () -> ())
+		button.Active = true
+		button.Selectable = true
+		local locked = false
+		local function fire()
+			if locked then
+				return
+			end
+			locked = true
+			callback()
+			task.delay(0.12, function()
+				locked = false
+			end)
+		end
+		button.Activated:Connect(fire)
+		button.MouseButton1Click:Connect(fire)
+	end
+
+	local function pickSkin(toneId: string)
+		selectedSkinId = toneId
+		TattooCanvas.setSkin(toneId)
+		local label = toneId
+		for _, tone in TattooCanvas.skinChoices() do
+			if tone.id == toneId then
+				label = tone.name
+				break
+			end
+		end
+		statusOverride = `Skin · {label}`
+		updateChrome()
+		updateStatus()
 	end
 
 	do
@@ -939,17 +1221,14 @@ function TattooEditor.start()
 		local toneButton = squareChip(skinScroll, index)
 		toneButton.Name = tone.id
 		toneButton.BackgroundColor3 = if tone.color ~= nil then tone.color else Color3.fromRGB(232, 184, 150)
+		toneButton.AutoButtonColor = true
 		skinStrokes[tone.id] = stroke(toneButton, ed.hairline)
 		skinStrokes[tone.id].Transparency = 0
 		local toneId = tone.id
-		toneButton.MouseButton1Click:Connect(function()
+		bindTap(toneButton, function()
 			Sfx.play("click")
 			Juice.punch(toneButton, 1.15)
-			selectedSkinId = toneId
-			TattooCanvas.setSkin(toneId)
-			statusOverride = nil
-			updateChrome()
-			updateStatus()
+			pickSkin(toneId)
 		end)
 	end
 
@@ -1046,15 +1325,20 @@ function TattooEditor.start()
 		design = DesignDocument.createEmpty()
 		design.region = selectedRegion
 		selectedIndex = nil
+		activeLayer = 1
+		layerCount = 1
+		table.clear(lockedLayers)
 		selectedSkinId = "peach"
 		TattooCanvas.setSkin("peach")
+		TattooCanvas.setLayersVisible(true)
 		clearArmed = false
 		statusOverride = nil
 		-- Welcome / daily cards sit above the editor; clear them so design can start.
 		Fanfare.setHold("design", true)
 		screenGui.Enabled = true
 		TattooCanvas.setInteractive(true)
-		TattooCanvas.setCameraLocked(false)
+		TattooCanvas.setCameraLocked(true)
+		applyEditorLayout()
 		Juice.punch(holder, 1.06)
 		refresh()
 		print(
@@ -1071,6 +1355,7 @@ function TattooEditor.start()
 		screenGui.Enabled = false
 		TattooCanvas.setMargins(0)
 		TattooCanvas.setInteractive(false)
+		TattooCanvas.setLayersVisible(false)
 		TattooCanvas.clear()
 		TattooCanvas.setCameraLocked(false)
 		Fanfare.setHold("design", false)
@@ -1120,10 +1405,12 @@ function TattooEditor.start()
 				screenGui.Enabled = true
 				TattooCanvas.setVisible(true)
 				TattooCanvas.setInteractive(true)
+				TattooCanvas.setCameraLocked(true)
 			else
 				screenGui.Enabled = false
 				TattooCanvas.setVisible(false)
 				TattooCanvas.setInteractive(false)
+				TattooCanvas.setCameraLocked(false)
 			end
 			roundId = snapshot.roundId
 			designRound = snapshot.designRound
@@ -1149,6 +1436,7 @@ function TattooEditor.start()
 			screenGui.Enabled = true
 			TattooCanvas.setVisible(true)
 			TattooCanvas.setInteractive(true)
+			TattooCanvas.setCameraLocked(true)
 		end
 		roundId = snapshot.roundId
 		designRound = snapshot.designRound

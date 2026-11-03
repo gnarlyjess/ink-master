@@ -1,4 +1,4 @@
-# Build stylized limb stills for Ink-Off design canvas.
+# Build stylized limb stills for Ink Rivalry design canvas.
 # Run inside Blender via MCP / Text Editor.
 
 import bpy

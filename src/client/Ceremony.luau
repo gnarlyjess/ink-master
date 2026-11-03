@@ -1,9 +1,7 @@
 --!strict
 
--- Time's up, then the display case, then the vote board, then the winner and the podium.
--- Display case: the tattoo on the left, the artist on the right.
--- Vote board: one card per tattoo with a vote button and a countdown.
--- Party: the cards fly together, the winner card pops, then the camera cuts to the podium hall.
+-- Time's up, then the display case, then the vote board.
+-- Mid-match: voting ends → lobby → next theme. Final design round only: podium party.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -36,10 +34,10 @@ type Card = {
 	button: TextButton,
 }
 
-local CARD_W = 196
-local CARD_H = 292
-local CARD_GAP = 18
-local BOARD_TOP = 188
+local CARD_W = 168
+local CARD_H = 248
+local CARD_GAP = 14
+local BOARD_TOP = 92
 local COLLAPSE_SECONDS = 0.55
 local REVEAL_HOLD = 3.2
 local STACK_W = 420
@@ -95,6 +93,8 @@ local avatarToken = 0
 
 local voteRoot: Frame
 local voteHeader: Frame
+local voteTitle: TextLabel
+local voteTheme: TextLabel
 local clockLabel: TextLabel
 local clockScale: UIScale
 local clockStroke: UIStroke
@@ -558,12 +558,15 @@ local function layoutBoard()
 	local width = boardColumns * CARD_W + (boardColumns - 1) * CARD_GAP
 	local height = boardRows * CARD_H + (boardRows - 1) * CARD_GAP
 	local area = screen.AbsoluteSize
-	local roomW = area.X - 64
-	local roomH = area.Y - BOARD_TOP - UiTheme.safe.bottom
+	local top = UiTheme.safe.top + BOARD_TOP
+	local roomW = area.X - 48
+	local roomH = area.Y - top - UiTheme.safe.bottom - 12
 	local fit = math.min(roomW / math.max(width, 1), roomH / math.max(height, 1))
 	board.Size = UDim2.fromOffset(width, height)
-	boardScale.Scale = math.clamp(fit, 0.35, 1.15)
-	board.Position = UDim2.fromOffset(area.X / 2, BOARD_TOP + roomH / 2)
+	boardScale.Scale = math.clamp(fit, 0.4, 1.1)
+	-- Hang cards under the title — never center over the header text.
+	board.AnchorPoint = Vector2.new(0.5, 0)
+	board.Position = UDim2.fromOffset(area.X / 2, top)
 end
 
 local function refreshCards()
@@ -748,6 +751,8 @@ local function presentVoting(snapshot: CeremonySnapshot)
 	voteRoot.Visible = true
 	dim.Visible = true
 	dim.BackgroundTransparency = 0.12
+	voteTitle.Text = "VOTE"
+	voteTheme.Text = if snapshot.themeName ~= "" then snapshot.themeName else "This round"
 	buildBoard(snapshot)
 	refreshCards()
 	updateHint(snapshot)
@@ -836,38 +841,18 @@ local function fillYourLine(snapshot: CeremonySnapshot)
 end
 
 local function fillWinner(snapshot: CeremonySnapshot)
-	winnerThumb:ClearAllChildren()
-	corner(winnerThumb, 12)
 	local winner = snapshot.places[1]
 	local entry = if winner ~= nil then entryFor(snapshot, winner.userId) else nil
 	if winner == nil or entry == nil then
 		winnerTitle.Text = "NO WINNER"
-		winnerName.Text = "Empty case"
-		winnerTag.Text = "No tattoos were locked in."
-		winnerStats.Text = ""
 		hideEmote()
 		paintConfetti(nil)
 		return
 	end
-	winnerTitle.Text = if snapshot.matchFinal then "WINNER" else "ROUND LEAD"
+	winnerTitle.Text = "WINNER"
+	-- Name rides under the title on the podium camera — no tattoo card.
 	winnerName.Text = winner.name
-	local title = titleOf(entry)
-	if title ~= "" then
-		winnerTag.Text = title
-		Juice.dressTitle(winnerTag)
-	elseif snapshot.matchFinal then
-		winnerTag.Text = "Most votes across the match"
-	else
-		winnerTag.Text = `Design {snapshot.designRound} of {snapshot.designRounds}`
-	end
-	local voteWord = if winner.votes == 1 then "vote" else "votes"
-	local voteLabel = if snapshot.matchFinal then "total" else "this round"
-	winnerStats.Text = `{winner.votes} {voteWord} {voteLabel}`
-	local character = modelFor(entry.userId)
-	if character ~= nil then
-		TattooCanvas.snapshot(winnerThumb, character, entry.design)
-	end
-	applyEmote(entry)
+	hideEmote()
 	paintConfetti(entry)
 end
 
@@ -875,11 +860,10 @@ local function settleReveal(token: number)
 	if token ~= revealToken then
 		return
 	end
-	-- Soft fade of rays only — keep the winner card centered and big.
 	for _, ray in rays do
 		tween(ray, 0.5, { BackgroundTransparency = 1 })
 	end
-	tween(dim, 0.6, { BackgroundTransparency = 0.55 })
+	tween(dim, 0.45, { BackgroundTransparency = 0.72 })
 	takeCamera()
 end
 
@@ -889,24 +873,27 @@ local function startReveal(snapshot: CeremonySnapshot, token: number)
 	end
 	fillWinner(snapshot)
 	fillYourLine(snapshot)
+	-- Skip the tattoo card — cut straight to the podium with a short title beat.
+	winnerCard.Visible = false
 	revealRoot.Visible = true
 	dim.Visible = true
-	dim.BackgroundTransparency = 0.25
-	stack.Position = UDim2.fromScale(0.5, 0.5)
+	dim.BackgroundTransparency = 0.45
+	stack.Position = UDim2.fromScale(0.5, 0.16)
+	stack.Size = UDim2.fromOffset(math.min(STACK_W, 420), 100)
 	stackScale.Scale = 1
 	for _, ray in rays do
 		ray.BackgroundTransparency = 1
-		tween(ray, 0.6, { BackgroundTransparency = 0.82 })
 	end
-	winnerCardScale.Scale = 0
-	tween(winnerCardScale, 0.65, { Scale = 1 }, Enum.EasingStyle.Back)
-	winnerTitleScale.Scale = 3
+	winnerTitleScale.Scale = 2.2
 	winnerTitle.TextTransparency = 1
-	tween(winnerTitleScale, 0.4, { Scale = 1 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out, 0.2)
-	tween(winnerTitle, 0.3, { TextTransparency = 0 }, nil, nil, 0.2)
+	winnerName.TextTransparency = 1
+	tween(winnerTitleScale, 0.35, { Scale = 1 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+	tween(winnerTitle, 0.25, { TextTransparency = 0 })
+	tween(winnerName, 0.3, { TextTransparency = 0 }, nil, nil, 0.12)
 	burstFlash()
 	Sfx.play("level")
-	task.delay(REVEAL_HOLD, settleReveal, token)
+	takeCamera()
+	task.delay(1.0, settleReveal, token)
 end
 
 local function hideReveal()
@@ -996,7 +983,7 @@ end
 
 local function buildArtistPanel()
 	artistGui = Instance.new("ScreenGui")
-	artistGui.Name = "InkMastersArtist"
+	artistGui.Name = "InkRivalryArtist"
 	artistGui.ResetOnSpawn = false
 	artistGui.IgnoreGuiInset = true
 	artistGui.DisplayOrder = 40
@@ -1142,25 +1129,42 @@ local function buildVoteBoard()
 	voteRoot.ZIndex = 10
 	voteRoot.Parent = screen
 
+	-- Slim top bar: title + theme + clock. Cards live below — no middle mash-up.
 	voteHeader = Instance.new("Frame")
 	voteHeader.Name = "Header"
 	voteHeader.AnchorPoint = Vector2.new(0.5, 0)
-	voteHeader.Position = UDim2.new(0.5, 0, 0, UiTheme.safe.top + 6)
-	voteHeader.Size = UDim2.fromOffset(640, 156)
+	voteHeader.Position = UDim2.new(0.5, 0, 0, UiTheme.safe.top + 4)
+	voteHeader.Size = UDim2.new(1, -32, 0, 78)
 	voteHeader.BackgroundTransparency = 1
 	voteHeader.ZIndex = 10
 	voteHeader.Parent = voteRoot
 
-	local title = text(voteHeader, "VOTE", 36, UiTheme.font.heavy, UiTheme.color.gold)
-	title.Size = UDim2.new(1, 0, 0, 40)
-	title.ZIndex = 11
-	textStroke(title, 2)
+	voteTitle = text(voteHeader, "VOTE", 28, UiTheme.font.heavy, UiTheme.color.gold)
+	voteTitle.Size = UDim2.new(1, 0, 0, 30)
+	voteTitle.TextXAlignment = Enum.TextXAlignment.Center
+	voteTitle.ZIndex = 11
+	textStroke(voteTitle, 2)
+
+	voteTheme = text(voteHeader, "", 16, UiTheme.font.bold, UiTheme.color.text)
+	voteTheme.Position = UDim2.fromOffset(0, 30)
+	voteTheme.Size = UDim2.new(1, 0, 0, 22)
+	voteTheme.TextXAlignment = Enum.TextXAlignment.Center
+	voteTheme.TextTruncate = Enum.TextTruncate.AtEnd
+	voteTheme.ZIndex = 11
+	textStroke(voteTheme, 1)
+
+	voteHint = text(voteHeader, "", 13, UiTheme.font.medium, UiTheme.color.muted)
+	voteHint.Position = UDim2.fromOffset(0, 52)
+	voteHint.Size = UDim2.new(1, 0, 0, 18)
+	voteHint.TextXAlignment = Enum.TextXAlignment.Center
+	voteHint.TextTruncate = Enum.TextTruncate.AtEnd
+	voteHint.ZIndex = 11
 
 	local clock = Instance.new("Frame")
 	clock.Name = "Clock"
-	clock.AnchorPoint = Vector2.new(0.5, 0)
-	clock.Position = UDim2.new(0.5, 0, 0, 44)
-	clock.Size = UDim2.fromOffset(68, 68)
+	clock.AnchorPoint = Vector2.new(1, 0.5)
+	clock.Position = UDim2.new(1, -4, 0.5, 0)
+	clock.Size = UDim2.fromOffset(64, 64)
 	clock.BackgroundColor3 = UiTheme.color.ink
 	clock.ZIndex = 11
 	clock.Parent = voteHeader
@@ -1168,36 +1172,32 @@ local function buildVoteBoard()
 	clockStroke = outline(clock, UiTheme.color.gold, 3)
 	clockScale = Instance.new("UIScale")
 	clockScale.Parent = clock
-	clockLabel = text(clock, "10", 32, UiTheme.font.heavy, UiTheme.color.text)
+	clockLabel = text(clock, "10", 28, UiTheme.font.heavy, UiTheme.color.text)
 	clockLabel.Size = UDim2.fromScale(1, 1)
+	clockLabel.TextXAlignment = Enum.TextXAlignment.Center
+	clockLabel.TextYAlignment = Enum.TextYAlignment.Center
 	clockLabel.ZIndex = 12
 
 	local track = Instance.new("Frame")
-	track.AnchorPoint = Vector2.new(0.5, 0)
-	track.Position = UDim2.new(0.5, 0, 0, 122)
-	track.Size = UDim2.fromOffset(280, 6)
+	track.AnchorPoint = Vector2.new(0.5, 1)
+	track.Position = UDim2.new(0.5, 0, 1, 0)
+	track.Size = UDim2.new(1, 0, 0, 4)
 	track.BackgroundColor3 = UiTheme.color.track
 	track.BorderSizePixel = 0
 	track.ZIndex = 11
 	track.Parent = voteHeader
-	corner(track, 3)
+	corner(track, 2)
 	timerFill = Instance.new("Frame")
 	timerFill.Size = UDim2.fromScale(1, 1)
 	timerFill.BackgroundColor3 = UiTheme.color.gold
 	timerFill.BorderSizePixel = 0
 	timerFill.ZIndex = 12
 	timerFill.Parent = track
-	corner(timerFill, 3)
-
-	voteHint = text(voteHeader, "", 15, UiTheme.font.medium, UiTheme.color.text)
-	voteHint.Position = UDim2.fromOffset(0, 134)
-	voteHint.Size = UDim2.new(1, 0, 0, 20)
-	voteHint.ZIndex = 11
-	textStroke(voteHint, 1)
+	corner(timerFill, 2)
 
 	board = Instance.new("Frame")
 	board.Name = "Cards"
-	board.AnchorPoint = Vector2.new(0.5, 0.5)
+	board.AnchorPoint = Vector2.new(0.5, 0)
 	board.BackgroundTransparency = 1
 	board.ZIndex = 11
 	board.Parent = voteRoot
@@ -1205,6 +1205,7 @@ local function buildVoteBoard()
 	boardScale.Parent = board
 	local rowsLayout = Instance.new("UIListLayout")
 	rowsLayout.FillDirection = Enum.FillDirection.Vertical
+	rowsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	rowsLayout.Padding = UDim.new(0, CARD_GAP)
 	rowsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	rowsLayout.Parent = board
@@ -1327,52 +1328,35 @@ local function buildReveal()
 	stackScale = Instance.new("UIScale")
 	stackScale.Parent = stack
 
-	winnerTitle = text(stack, "WINNER", 64, UiTheme.font.heavy, UiTheme.color.gold)
-	winnerTitle.Size = UDim2.new(1, 0, 0, 72)
+	winnerTitle = text(stack, "WINNER", 48, UiTheme.font.heavy, UiTheme.color.gold)
+	winnerTitle.Size = UDim2.new(1, 0, 0, 56)
+	winnerTitle.TextXAlignment = Enum.TextXAlignment.Center
 	winnerTitle.ZIndex = 25
 	textStroke(winnerTitle, 3)
 	winnerTitleScale = Instance.new("UIScale")
 	winnerTitleScale.Parent = winnerTitle
 
+	-- Name under the title during podium — no tattoo card.
+	winnerName = text(stack, "", 22, UiTheme.font.heavy, UiTheme.color.text)
+	winnerName.Position = UDim2.fromOffset(0, 58)
+	winnerName.Size = UDim2.new(1, 0, 0, 28)
+	winnerName.TextXAlignment = Enum.TextXAlignment.Center
+	winnerName.ZIndex = 25
+	textStroke(winnerName, 2)
+
+	-- Kept for legacy layout hooks; never shown (podium-only party).
 	winnerCard = Instance.new("Frame")
 	winnerCard.Name = "Card"
-	winnerCard.Position = UDim2.fromOffset(0, 80)
-	winnerCard.Size = UDim2.new(1, 0, 1, -80)
-	winnerCard.BackgroundColor3 = UiTheme.color.panel
-	winnerCard.ZIndex = 22
+	winnerCard.Visible = false
 	winnerCard.Parent = stack
-	corner(winnerCard, 18)
-	outline(winnerCard, UiTheme.color.gold, 3)
 	winnerCardScale = Instance.new("UIScale")
 	winnerCardScale.Parent = winnerCard
-
-	winnerName = text(winnerCard, "", 34, UiTheme.font.heavy, UiTheme.color.text)
-	winnerName.Position = UDim2.fromOffset(16, 14)
-	winnerName.Size = UDim2.new(1, -32, 0, 40)
-	winnerName.TextScaled = true
-	winnerName.ZIndex = 23
-	local nameCap = Instance.new("UITextSizeConstraint")
-	nameCap.MaxTextSize = 34
-	nameCap.Parent = winnerName
-
 	winnerTag = text(winnerCard, "", 14, UiTheme.font.bold, UiTheme.color.magenta)
-	winnerTag.Position = UDim2.fromOffset(16, 56)
-	winnerTag.Size = UDim2.new(1, -32, 0, 18)
-	winnerTag.ZIndex = 23
-
 	winnerThumb = Instance.new("Frame")
 	winnerThumb.Name = "Thumb"
-	winnerThumb.Position = UDim2.fromOffset(16, 84)
-	winnerThumb.Size = UDim2.new(1, -32, 0, 290)
-	winnerThumb.BackgroundColor3 = UiTheme.color.ink
-	winnerThumb.ClipsDescendants = true
-	winnerThumb.ZIndex = 23
+	winnerThumb.Visible = false
 	winnerThumb.Parent = winnerCard
-
 	winnerStats = text(winnerCard, "", 18, UiTheme.font.bold, UiTheme.color.gold)
-	winnerStats.Position = UDim2.fromOffset(16, 386)
-	winnerStats.Size = UDim2.new(1, -32, 0, 24)
-	winnerStats.ZIndex = 23
 
 	buildEmote(stack)
 
@@ -1398,17 +1382,17 @@ local function build()
 		return
 	end
 	local playerGui = player:WaitForChild("PlayerGui")
-	local existing = playerGui:FindFirstChild("InkMastersCeremony")
+	local existing = playerGui:FindFirstChild("InkRivalryCeremony")
 	if existing ~= nil then
 		existing:Destroy()
 	end
-	local existingArtist = playerGui:FindFirstChild("InkMastersArtist")
+	local existingArtist = playerGui:FindFirstChild("InkRivalryArtist")
 	if existingArtist ~= nil then
 		existingArtist:Destroy()
 	end
 
 	screen = Instance.new("ScreenGui")
-	screen.Name = "InkMastersCeremony"
+	screen.Name = "InkRivalryCeremony"
 	screen.ResetOnSpawn = false
 	screen.IgnoreGuiInset = true
 	screen.DisplayOrder = 36

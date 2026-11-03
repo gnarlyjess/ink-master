@@ -36,11 +36,16 @@ type HudRefs = {
 	subtitle: TextLabel,
 	track: Frame,
 	fill: Frame,
+	divider: Frame,
+	accent: Frame,
+	contentPad: UIPadding,
+	contentList: UIListLayout,
 	artistsChip: Frame,
 	artistsValue: TextLabel,
 	themeChip: Frame,
 	themeValue: TextLabel,
 	card: Frame,
+	cardFace: Frame,
 	banner: Frame,
 	bannerState: TextLabel,
 	bannerTime: TextLabel,
@@ -53,8 +58,10 @@ type HudRefs = {
 	themeSet: TextButton,
 }
 
-local PREFIX = "[InkMasters]"
+local PREFIX = "[InkRivalry]"
 local CARD_WIDTH = 420
+local THEME_CARD_WIDTH = 340
+local THEME_PILL_HEIGHT = 44
 local CHIP_WIDTH = 160
 
 local PRESENTATION: { [string]: Presentation } = {
@@ -87,11 +94,15 @@ local PRESENTATION: { [string]: Presentation } = {
 		accent = UiTheme.color.magenta,
 	},
 	Results = {
-		subtitle = "Votes add up. Most across the match wins.",
+		subtitle = "Votes are banked. Head back to the parlour for the next theme.",
+		accent = UiTheme.color.gold,
+	},
+	ResultsFinal = {
+		subtitle = "Votes across every theme — the match podium is set.",
 		accent = UiTheme.color.gold,
 	},
 	Cleanup = {
-		subtitle = "Clearing the stations for the next round.",
+		subtitle = "Clearing the stations for the next theme.",
 		accent = UiTheme.color.muted,
 	},
 }
@@ -121,13 +132,14 @@ local function addStroke(parent: Instance, color: Color3, thickness: number, tra
 	return stroke
 end
 
-local function addPadding(parent: Instance, top: number, right: number, bottom: number, left: number)
+local function addPadding(parent: Instance, top: number, right: number, bottom: number, left: number): UIPadding
 	local padding = Instance.new("UIPadding")
 	padding.PaddingTop = UDim.new(0, top)
 	padding.PaddingRight = UDim.new(0, right)
 	padding.PaddingBottom = UDim.new(0, bottom)
 	padding.PaddingLeft = UDim.new(0, left)
 	padding.Parent = parent
+	return padding
 end
 
 local function addList(parent: Instance, direction: Enum.FillDirection, padding: number): UIListLayout
@@ -178,6 +190,13 @@ local function formatClock(totalSeconds: number): string
 	return string.format("%d:%02d", minutes, remainder)
 end
 
+local function isSlimTheme(snapshot: RoundSnapshot): boolean
+	local matchFinal = snapshot.designRound >= snapshot.designRounds
+	return snapshot.state == "ThemeReveal"
+		or snapshot.state == "Intermission"
+		or (snapshot.state == "Results" and not matchFinal)
+end
+
 local function renderClock(refs: HudRefs, snapshot: RoundSnapshot)
 	local stateEndsAt = snapshot.endsAt
 	local stateDuration = snapshot.duration
@@ -187,7 +206,10 @@ local function renderClock(refs: HudRefs, snapshot: RoundSnapshot)
 
 	local remaining = math.max(0, stateEndsAt - Workspace:GetServerTimeNow())
 	local clock = formatClock(remaining)
-	if snapshot.state == "ThemeReveal" or snapshot.state == "Submission" then
+	-- Slim top-bar chip owns heroValue (theme name) — don't overwrite it with the timer.
+	if isSlimTheme(snapshot) then
+		-- no-op for hero
+	elseif snapshot.state == "ThemeReveal" or snapshot.state == "Submission" then
 		refs.secondaryTime.Text = `{clock} left`
 	else
 		refs.heroValue.Text = clock
@@ -197,7 +219,10 @@ local function renderClock(refs: HudRefs, snapshot: RoundSnapshot)
 end
 
 local function apply(refs: HudRefs, snapshot: RoundSnapshot)
-	local presentation = PRESENTATION[snapshot.state]
+	local matchFinal = snapshot.designRound >= snapshot.designRounds
+	local presentation = if snapshot.state == "Results" and matchFinal
+		then PRESENTATION.ResultsFinal
+		else PRESENTATION[snapshot.state]
 	local accent = if presentation ~= nil then presentation.accent else UiTheme.color.muted
 	local fallbackSubtitle = if presentation ~= nil then presentation.subtitle else ""
 
@@ -206,7 +231,11 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 	refs.roundLabel.Text = if snapshot.state == "WaitingForPlayers"
 		then "Lobby"
 		else `Match {formatCount(snapshot.roundId)} · Design {formatCount(snapshot.designRound)}/{formatCount(snapshot.designRounds)}`
-	refs.pillLabel.Text = RoundTypes.getLabel(snapshot.state)
+	refs.pillLabel.Text = if snapshot.state == "Results" and matchFinal
+		then "Podium"
+		elseif snapshot.state == "Results"
+		then "Next theme"
+		else RoundTypes.getLabel(snapshot.state)
 	refs.pill.BackgroundColor3 = accent
 	refs.pillLabel.TextColor3 = accent
 	refs.pillStroke.Color = accent
@@ -227,8 +256,8 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 		refs.heroValue.Text = `{formatCount(snapshot.playerCount)} / {formatCount(snapshot.minPlayers)}`
 		refs.secondaryTime.Visible = false
 	elseif snapshot.state == "ThemeReveal" then
-		refs.heroCaption.Text = "NEXT THEME COMING UP:"
-		refs.heroValue.TextSize = 40
+		refs.heroCaption.Text = "NEXT UP"
+		refs.heroValue.TextSize = 15
 		refs.heroValue.Text = snapshot.themeName or "Theme"
 		refs.secondaryTime.Visible = false
 	elseif snapshot.state == "Submission" then
@@ -246,41 +275,113 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 	local designing = snapshot.state == "TattooCreation"
 	local inLobby = snapshot.state == "WaitingForPlayers" or snapshot.state == "Intermission"
 	local revealing = snapshot.state == "ThemeReveal"
-	refs.track.Visible = hasTimer and not designing and not inLobby and not revealing and not snapshot.paused
+	-- Quiet parlour beat after a mid-match vote: next theme + request only.
+	local themeLobby = snapshot.state == "Intermission"
+		or (snapshot.state == "Results" and not matchFinal)
+	local slimTheme = revealing or themeLobby
+	refs.track.Visible = hasTimer and not designing and not inLobby and not revealing and not snapshot.paused and not themeLobby
 	refs.artistsValue.Text = `{formatCount(snapshot.playerCount)} / {formatCount(snapshot.maxPlayers)}`
 	refs.themeValue.Text = snapshot.themeName or "Incoming"
-	refs.themeChip.Visible = not revealing and not designing and not inLobby and not snapshot.paused
-	refs.artistsChip.Visible = not revealing
-	refs.roundLabel.Visible = not revealing
-	refs.pill.Visible = not revealing
-	refs.heroCaption.Visible = true
-	refs.subtitle.Visible = not revealing
-	refs.eyebrow.Visible = not revealing
-	refs.wordmark.Visible = not revealing
+	refs.themeChip.Visible = not revealing and not designing and not inLobby and not snapshot.paused and not themeLobby
+	refs.artistsChip.Visible = not revealing and not themeLobby
+	refs.roundLabel.Visible = not revealing and not themeLobby
+	refs.pill.Visible = not slimTheme
+	-- Slim mode is one line in the top bar (same band as chat / menu).
+	refs.heroCaption.Visible = not slimTheme
+	refs.subtitle.Visible = not slimTheme
+	refs.eyebrow.Visible = not slimTheme
+	refs.wordmark.Visible = not slimTheme
+	refs.divider.Visible = not slimTheme
+	refs.accent.Visible = not slimTheme
+	-- Final Results owns the podium ceremony UI; mid-match Results is lobby downtime.
 	local ceremony = snapshot.state == "Submission"
 		or snapshot.state == "Showcase"
 		or snapshot.state == "Voting"
-		or snapshot.state == "Results"
-	-- Theme reveal sits top-centre: caption + theme name only.
-	refs.card.Visible = revealing or (not designing and not inLobby and not snapshot.paused and not ceremony)
-	local top = math.max(UiTheme.safe.top, GuiService:GetGuiInset().Y + 12)
-	refs.card.Position = if revealing
-		then UDim2.new(0.5, 0, 0, top + 8)
-		else UDim2.new(0.5, 0, 0, top + 56)
-	-- The ceremony owns the screen. Keep the pause chip only while the lobby is paused.
-	refs.banner.Visible = (designing or inLobby or snapshot.paused or snapshot.devMode) and not ceremony and not revealing
+		or (snapshot.state == "Results" and matchFinal)
+	-- Theme reveal / post-round lobby: caption + theme name only (no other chrome).
+	refs.card.Visible = revealing
+		or themeLobby
+		or (not designing and not inLobby and not snapshot.paused and not ceremony)
+	local insetY = GuiService:GetGuiInset().Y
+	local lobbyTop = math.max(UiTheme.safe.top, insetY + 4)
+	-- Content frame is a sibling of cardFace; size it so slim text can truly centre.
+	local contentFrame = refs.heroValue.Parent
+	if slimTheme then
+		-- Fat pill, centred on the CoreGui top bar (chat / hamburger band).
+		refs.card.AnchorPoint = Vector2.new(0.5, 0.5)
+		refs.card.AutomaticSize = Enum.AutomaticSize.None
+		refs.card.Size = UDim2.fromOffset(THEME_CARD_WIDTH, THEME_PILL_HEIGHT)
+		refs.card.Position = UDim2.new(0.5, 0, 0, math.max(22, insetY * 0.5))
+		if contentFrame ~= nil and contentFrame:IsA("GuiObject") then
+			contentFrame.AutomaticSize = Enum.AutomaticSize.None
+			contentFrame.Size = UDim2.fromScale(1, 1)
+		end
+		refs.heroValue.AutomaticSize = Enum.AutomaticSize.None
+		refs.heroValue.Size = UDim2.fromScale(1, 1)
+		refs.heroValue.TextXAlignment = Enum.TextXAlignment.Center
+		refs.heroValue.TextYAlignment = Enum.TextYAlignment.Center
+		refs.heroValue.TextWrapped = false
+		refs.heroValue.TextTruncate = Enum.TextTruncate.AtEnd
+	else
+		refs.card.AnchorPoint = Vector2.new(0.5, 0)
+		refs.card.AutomaticSize = Enum.AutomaticSize.Y
+		refs.card.Size = UDim2.fromOffset(CARD_WIDTH, 0)
+		refs.card.Position = UDim2.new(0.5, 0, 0, lobbyTop + 52)
+		if contentFrame ~= nil and contentFrame:IsA("GuiObject") then
+			contentFrame.AutomaticSize = Enum.AutomaticSize.Y
+			contentFrame.Size = UDim2.fromScale(1, 0)
+		end
+		refs.heroValue.AutomaticSize = Enum.AutomaticSize.Y
+		refs.heroValue.Size = UDim2.fromScale(1, 0)
+		refs.heroValue.TextWrapped = true
+		refs.heroValue.TextTruncate = Enum.TextTruncate.None
+	end
+	refs.cardFace.BackgroundTransparency = if slimTheme then 0.12 else 0.08
+	refs.contentPad.PaddingTop = UDim.new(0, if slimTheme then 0 else 16)
+	refs.contentPad.PaddingBottom = UDim.new(0, if slimTheme then 0 else 14)
+	refs.contentPad.PaddingLeft = UDim.new(0, if slimTheme then 18 else 22)
+	refs.contentPad.PaddingRight = UDim.new(0, if slimTheme then 18 else 22)
+	refs.contentList.Padding = UDim.new(0, if slimTheme then 0 else 4)
+	refs.contentList.VerticalAlignment = if slimTheme
+		then Enum.VerticalAlignment.Center
+		else Enum.VerticalAlignment.Top
+	-- Dev pause chip only — keep the post-round lobby uncluttered.
+	refs.banner.Visible = (snapshot.paused or snapshot.devMode) and not ceremony and not revealing and not themeLobby
 	refs.pauseButton.Visible = snapshot.devMode
 	refs.pauseButton.Text = if snapshot.paused then "Resume" else "Pause"
 	refs.bannerTime.TextColor3 = accent
 
-	local showPick = snapshot.themePickOpen and refs.banner.Visible
-	refs.themePick.Visible = showPick
+	local showPick = snapshot.themePickOpen and (themeLobby or inLobby or refs.banner.Visible)
+	refs.themePick.Visible = showPick and not ceremony and not revealing
 	if showPick then
 		local queued = snapshot.myThemePickSpot ~= nil
 		refs.themeBuy.Visible = not queued
 		refs.themeExpand.Visible = queued
-		refs.themeBuy.Text = `Choose theme for a round · {formatCount(snapshot.themePickPrice)}`
+		refs.themeBuy.Text = `Buy next theme · {formatCount(snapshot.themePickPrice)}`
 	end
+	-- Under the next-theme pill when that chip is up; otherwise bottom-right over the banner.
+	if slimTheme and showPick and not ceremony and not revealing then
+		refs.themePick.AnchorPoint = Vector2.new(0.5, 0)
+		local pillBottom = math.max(22, insetY * 0.5) + THEME_PILL_HEIGHT * 0.5 + 8
+		refs.themePick.Position = UDim2.new(0.5, 0, 0, pillBottom)
+	else
+		refs.themePick.AnchorPoint = Vector2.new(1, 1)
+		local gap = if refs.banner.Visible then refs.banner.AbsoluteSize.Y + 10 else 0
+		refs.themePick.Position = UDim2.new(1, -UiTheme.safe.side, 1, -(UiTheme.safe.bottom + gap))
+	end
+
+	if themeLobby then
+		refs.heroValue.TextSize = 16
+		refs.heroValue.Text = `Next theme · {snapshot.themeName or "Incoming"}`
+		refs.secondaryTime.Visible = false
+		return
+	end
+	if revealing then
+		refs.heroValue.TextSize = 16
+		refs.heroValue.Text = `Next up · {snapshot.themeName or "Theme"}`
+		return
+	end
+	refs.heroCaption.TextSize = 11
 
 	if snapshot.paused then
 		refs.bannerState.Text = "Paused"
@@ -307,13 +408,13 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 end
 
 local function buildHud(parent: Instance): HudRefs
-	local existing = parent:FindFirstChild("InkMastersHud")
+	local existing = parent:FindFirstChild("InkRivalryHud")
 	if existing ~= nil then
 		existing:Destroy()
 	end
 
 	local screenGui = Instance.new("ScreenGui")
-	screenGui.Name = "InkMastersHud"
+	screenGui.Name = "InkRivalryHud"
 	screenGui.ResetOnSpawn = false
 	screenGui.IgnoreGuiInset = true
 	screenGui.DisplayOrder = 30
@@ -327,16 +428,8 @@ local function buildHud(parent: Instance): HudRefs
 	holder.Size = UDim2.fromOffset(CARD_WIDTH, 0)
 	holder.AutomaticSize = Enum.AutomaticSize.Y
 	holder.Visible = false
+	holder.ZIndex = 3
 	holder.Parent = screenGui
-
-	local shadow = newFrame("Shadow")
-	shadow.BackgroundColor3 = UiTheme.color.shadow
-	shadow.BackgroundTransparency = 0.45
-	shadow.Size = UDim2.fromScale(1, 1)
-	shadow.Position = UDim2.fromOffset(0, 8)
-	shadow.ZIndex = 1
-	shadow.Parent = holder
-	addCorner(shadow, 22)
 
 	local card = newFrame("Card")
 	card.BackgroundColor3 = UiTheme.color.panel
@@ -387,8 +480,8 @@ local function buildHud(parent: Instance): HudRefs
 	content.AutomaticSize = Enum.AutomaticSize.Y
 	content.ZIndex = 4
 	content.Parent = holder
-	addPadding(content, 16, 22, 14, 22)
-	addList(content, Enum.FillDirection.Vertical, 4)
+	local contentPad = addPadding(content, 16, 22, 14, 22)
+	local contentList = addList(content, Enum.FillDirection.Vertical, 4)
 
 	local eyebrow = createLabel("Eyebrow", 11, UiTheme.font.bold, UiTheme.color.magenta, false)
 	eyebrow.Text = "TATTOO COMPETITION"
@@ -401,7 +494,7 @@ local function buildHud(parent: Instance): HudRefs
 	addList(titleRow, Enum.FillDirection.Horizontal, 0).HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 	local wordmarkLabel = createLabel("Title", 28, UiTheme.font.heavy, UiTheme.color.magenta, true)
-	wordmarkLabel.Text = "INK-OFF"
+	wordmarkLabel.Text = "INK RIVALRY"
 	wordmarkLabel.Parent = titleRow
 
 	local roundLabel = createLabel("Round", 13, UiTheme.font.medium, UiTheme.color.muted, false)
@@ -485,10 +578,10 @@ local function buildHud(parent: Instance): HudRefs
 	local artistsChip, artistsValue = createChip("Artists", "ARTISTS")
 	local themeChip, themeValue = createChip("Theme", "THEME")
 
-	-- Banner text stays centred; Pause sits outside so it never shifts the copy.
+	-- Dev / lobby pill sits bottom-right so it never crowds the title card.
 	local banner = newFrame("Banner")
-	banner.AnchorPoint = Vector2.new(0.5, 0)
-	banner.Position = UDim2.new(0.5, 0, 0, top)
+	banner.AnchorPoint = Vector2.new(1, 1)
+	banner.Position = UDim2.new(1, -UiTheme.safe.side, 1, -UiTheme.safe.bottom)
 	banner.AutomaticSize = Enum.AutomaticSize.XY
 	banner.BackgroundColor3 = UiTheme.color.panel
 	banner.BackgroundTransparency = 0.12
@@ -521,29 +614,22 @@ local function buildHud(parent: Instance): HudRefs
 	pauseButton.Text = "Pause"
 	pauseButton.AutomaticSize = Enum.AutomaticSize.XY
 	pauseButton.Size = UDim2.fromOffset(0, 0)
-	pauseButton.AnchorPoint = Vector2.new(0, 0.5)
-	pauseButton.Position = UDim2.new(0.5, 0, 0, top + 16)
 	pauseButton.Visible = false
 	pauseButton.ZIndex = 7
-	pauseButton.Parent = screenGui
+	pauseButton.LayoutOrder = 10
+	pauseButton.Parent = banner
 	addCorner(pauseButton, 999)
 	addPadding(pauseButton, 4, 12, 4, 12)
 
-	-- Keep Pause tucked just to the right of the centred banner.
-	banner:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-		pauseButton.Position = UDim2.new(0.5, math.floor(banner.AbsoluteSize.X * 0.5) + 10, 0, top + 16)
-	end)
-	pauseButton.Position = UDim2.new(0.5, math.floor(banner.AbsoluteSize.X * 0.5) + 10, 0, top + 16)
-
 	local themePick = newFrame("ThemePick")
 	themePick.AnchorPoint = Vector2.new(0.5, 0)
-	themePick.Position = UDim2.new(0.5, 0, 0, top + 44)
+	themePick.Position = UDim2.new(0.5, 0, 0, 56)
 	themePick.AutomaticSize = Enum.AutomaticSize.XY
 	themePick.BackgroundTransparency = 1
 	themePick.Visible = false
 	themePick.ZIndex = 6
 	themePick.Parent = screenGui
-	addList(themePick, Enum.FillDirection.Vertical, 4)
+	addList(themePick, Enum.FillDirection.Vertical, 4).HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 	local themeBuy = Instance.new("TextButton")
 	themeBuy.Name = "ThemeBuy"
@@ -553,13 +639,13 @@ local function buildHud(parent: Instance): HudRefs
 	themeBuy.FontFace = UiTheme.font.bold
 	themeBuy.TextSize = 13
 	themeBuy.TextColor3 = UiTheme.color.ink
-	themeBuy.Text = `Choose theme for a round · {Economy.THEME_PICK_PRICE}`
+	themeBuy.Text = `Buy next theme · {Economy.THEME_PICK_PRICE}`
 	themeBuy.AutomaticSize = Enum.AutomaticSize.XY
 	themeBuy.Size = UDim2.fromOffset(0, 0)
 	themeBuy.Parent = themePick
 	addCorner(themeBuy, 999)
 	addStroke(themeBuy, UiTheme.color.stroke, 1, 0.45)
-	addPadding(themeBuy, 6, 14, 6, 14)
+	addPadding(themeBuy, 8, 16, 8, 16)
 
 	local themeExpand = newFrame("ThemeExpand")
 	themeExpand.AutomaticSize = Enum.AutomaticSize.XY
@@ -621,11 +707,16 @@ local function buildHud(parent: Instance): HudRefs
 		subtitle = subtitle,
 		track = track,
 		fill = fill,
+		divider = divider,
+		accent = accent,
+		contentPad = contentPad,
+		contentList = contentList,
 		artistsChip = artistsChip,
 		artistsValue = artistsValue,
 		themeChip = themeChip,
 		themeValue = themeValue,
 		card = holder,
+		cardFace = card,
 		banner = banner,
 		bannerState = bannerState,
 		bannerTime = bannerTime,
@@ -650,7 +741,7 @@ function RoundHud.start()
 
 	local player = Players.LocalPlayer
 	if player == nil then
-		error("[InkMasters] The lobby HUD must run on the client")
+		error("[InkRivalry] The lobby HUD must run on the client")
 	end
 
 	local playerGui = player:WaitForChild("PlayerGui")

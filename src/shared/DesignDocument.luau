@@ -24,12 +24,16 @@ export type DesignElement = {
 	thickness: number,
 	opacity: number,
 	flip: boolean,
+	-- 1 = bottom. Higher draws / picks on top. Editor locks are session-only.
+	layer: number,
 }
 
 export type TattooDesign = {
 	version: number,
 	region: string,
 	elements: { DesignElement },
+	-- Editor canvas width/height when the design was made. Snapshots reuse it so crops match.
+	canvasAspect: number?,
 }
 
 local DesignDocument = {}
@@ -37,6 +41,14 @@ local DesignDocument = {}
 local MIN_THICKNESS = 1
 local MAX_THICKNESS = 10
 local MIN_OPACITY = 0.2
+local MIN_LAYER = 1
+local MAX_LAYER = 5
+
+DesignDocument.MAX_LAYERS = MAX_LAYER
+
+function DesignDocument.clampLayer(value: number): number
+	return math.clamp(math.floor(value + 0.5), MIN_LAYER, MAX_LAYER)
+end
 
 local function readUnit(value: any): number?
 	if typeof(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then
@@ -90,6 +102,7 @@ function DesignDocument.createEmpty(): TattooDesign
 		version = 1,
 		region = GameConfig.getDesignRegion(),
 		elements = {},
+		canvasAspect = nil,
 	}
 end
 
@@ -148,6 +161,8 @@ function DesignDocument.sanitize(payload: any, roundId: number): TattooDesign?
 		if not fill and not outline then
 			fill = true
 		end
+		local layerValue = readUnit(item.layer)
+		local layer = if layerValue == nil then MIN_LAYER else DesignDocument.clampLayer(layerValue)
 
 		table.insert(elements, {
 			stencilId = item.stencilId,
@@ -162,13 +177,20 @@ function DesignDocument.sanitize(payload: any, roundId: number): TattooDesign?
 			thickness = readThickness(item.thickness),
 			opacity = readOpacity(item.opacity),
 			flip = item.flip == true,
+			layer = layer,
 		})
 	end
+
+	local aspectValue = readUnit(payload.canvasAspect)
+	local canvasAspect = if aspectValue ~= nil and aspectValue > 0.2 and aspectValue < 5
+		then aspectValue
+		else nil
 
 	return {
 		version = 1,
 		region = region,
 		elements = elements,
+		canvasAspect = canvasAspect,
 	}
 end
 

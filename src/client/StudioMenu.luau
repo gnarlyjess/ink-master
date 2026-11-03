@@ -28,13 +28,13 @@ function StudioMenu.start()
 		return
 	end
 	local playerGui = player:WaitForChild("PlayerGui")
-	local existing = playerGui:FindFirstChild("InkMastersStudio")
+	local existing = playerGui:FindFirstChild("InkRivalryStudio")
 	if existing ~= nil then
 		existing:Destroy()
 	end
 
 	local gui = Instance.new("ScreenGui")
-	gui.Name = "InkMastersStudio"
+	gui.Name = "InkRivalryStudio"
 	gui.ResetOnSpawn = false
 	gui.IgnoreGuiInset = true
 	gui.DisplayOrder = 42
@@ -118,7 +118,7 @@ function StudioMenu.start()
 	crop(0, 1, 18, -18)
 	crop(1, 1, -18, -18)
 
-	local kicker = UiKit.label(panel, "INK-OFF · TREATS", 11, UiTheme.font.heavy, UiTheme.color.sunshine)
+	local kicker = UiKit.label(panel, "INK RIVALRY · TREATS", 11, UiTheme.font.heavy, UiTheme.color.sunshine)
 	kicker.Position = UDim2.fromOffset(28, 14)
 	kicker.Size = UDim2.fromOffset(260, 14)
 
@@ -297,10 +297,11 @@ function StudioMenu.start()
 		if snapshot == nil then
 			return
 		end
+		local matchFinal = snapshot.designRound >= snapshot.designRounds
 		local ceremony = snapshot.state == "Submission"
 			or snapshot.state == "Showcase"
 			or snapshot.state == "Voting"
-			or snapshot.state == "Results"
+			or (snapshot.state == "Results" and matchFinal)
 		bar.Visible = not ceremony
 		if ceremony then
 			setOpen(false)

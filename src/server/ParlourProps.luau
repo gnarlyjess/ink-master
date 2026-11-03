@@ -9,7 +9,7 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local Surfaces = require(script.Parent.Surfaces)
 
-local PREFIX = "[InkMasters]"
+local PREFIX = "[InkRivalry]"
 
 -- Texture values read from the Decal instances after insert, not guessed.
 local ParlourProps = {

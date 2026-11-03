@@ -241,8 +241,9 @@ function RewardsTab.build(parent: Frame): { render: (ProfileView) -> () }
 
 		local reward = Economy.levelReward(level)
 		local text = `+{reward.coins} coins`
-		if reward.itemId ~= nil then
-			local item = Catalogue.get(reward.itemId)
+		local ids = reward.itemIds or (if reward.itemId ~= nil then { reward.itemId } else {})
+		for _, itemId in ids do
+			local item = Catalogue.get(itemId)
 			if item ~= nil then
 				text ..= `  ·  {item.name}`
 			end

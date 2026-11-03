@@ -19,7 +19,7 @@ type RoundState = RoundTypes.RoundState
 type RoundSnapshot = RoundTypes.RoundSnapshot
 type ThemeDefinition = Themes.ThemeDefinition
 
-local PREFIX = "[InkMasters]"
+local PREFIX = "[InkRivalry]"
 local REQUEST_COOLDOWN_SECONDS = 0.5
 
 local stateRemote = Remotes.RoundStateUpdated
@@ -86,7 +86,8 @@ local function buildSnapshot(forPlayer: Player?): RoundSnapshot
 		themeTagline = themeTagline,
 		themePickPrice = Economy.THEME_PICK_PRICE,
 		themeQueueCount = ThemeQueue.getCount(),
-		themePickOpen = RoundTypes.themePickOpen(currentState, paused),
+		themePickOpen = RoundTypes.themePickOpen(currentState, paused)
+			and not (currentState == "Results" and designRound >= GameConfig.getDesignRoundsPerMatch()),
 		myThemePickSpot = mySpot,
 	}
 end
@@ -142,7 +143,7 @@ function machine.publishWaiting()
 end
 
 function machine.transitionTo(state: RoundState)
-	local stateDuration = GameConfig.getDuration(state)
+	local stateDuration = GameConfig.getDuration(state, designRound)
 	if prepareState ~= nil then
 		local override = prepareState(state)
 		if override ~= nil and override > 0 then
@@ -159,8 +160,8 @@ function machine.transitionTo(state: RoundState)
 	scheduleToken += 1
 	local token = scheduleToken
 	currentState = state
-	if state == "ThemeReveal" and activeTheme == nil then
-		-- Paid FIFO claim first; blank custom text still resolves to a random theme.
+	-- Pick early so Intermission / mid-round lobby can show the next theme.
+	if (state == "Intermission" or state == "ThemeReveal") and activeTheme == nil then
 		activeTheme = ThemeQueue.consumeNext()
 	end
 	currentDuration = stateDuration
@@ -219,7 +220,7 @@ function machine.advance()
 		-- More design rounds left in this match: new theme → draw → vote again.
 		if designRound < GameConfig.getDesignRoundsPerMatch() then
 			designRound += 1
-			activeTheme = nil
+			-- Theme already rolled during the Results lobby beat when possible.
 			print(
 				`{PREFIX} Match {roundId} | starting design {designRound}/{GameConfig.getDesignRoundsPerMatch()}`
 			)
@@ -364,11 +365,26 @@ function RoundManager.getDesignRounds(): number
 	return GameConfig.getDesignRoundsPerMatch()
 end
 
+function RoundManager.getThemeName(): string
+	if activeTheme == nil then
+		return ""
+	end
+	return activeTheme.name
+end
+
+-- Mid-match lobby: swap to the upcoming theme so the parlour can show it.
+function RoundManager.rollNextTheme()
+	activeTheme = ThemeQueue.consumeNext()
+end
+
 function RoundManager.isMatchFinal(): boolean
 	return designRound >= GameConfig.getDesignRoundsPerMatch()
 end
 
 function RoundManager.canBuyThemePick(): boolean
+	if currentState == "Results" and RoundManager.isMatchFinal() then
+		return false
+	end
 	return RoundTypes.themePickOpen(currentState, paused)
 end
 

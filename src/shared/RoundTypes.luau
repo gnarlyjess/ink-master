@@ -55,7 +55,7 @@ local LABELS: { [string]: string } = {
 	Submission = "Time's up",
 	Showcase = "Display case",
 	Voting = "Voting",
-	Results = "Party",
+	Results = "Round wrap",
 	Cleanup = "Clearing up",
 }
 
@@ -78,13 +78,14 @@ function RoundTypes.nextInRound(state: RoundState): RoundState?
 end
 
 function RoundTypes.showsTheme(state: RoundState): boolean
-	return state ~= "WaitingForPlayers" and state ~= "Intermission"
+	-- Intermission shows the upcoming theme once it has been picked.
+	return state ~= "WaitingForPlayers"
 end
 
 -- Theme picks are sold while the lobby is waiting on the next reveal.
--- Paused lobby still counts (dev hold / walk-around) so artists can queue up.
+-- Mid-match Results is the quiet parlour beat between design rounds.
 function RoundTypes.themePickOpen(state: RoundState, _paused: boolean): boolean
-	return state == "WaitingForPlayers" or state == "Intermission"
+	return state == "WaitingForPlayers" or state == "Intermission" or state == "Results"
 end
 
 function RoundTypes.isRoundState(value: any): boolean

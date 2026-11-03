@@ -81,12 +81,20 @@ local function confettiAllowed(): boolean
 	return view == nil or view.settings.confetti
 end
 
-local function coinJewel(parent: Instance, amount: number): Frame
+local function coinJewel(parent: Instance, amount: number, compact: boolean?): Frame
 	-- Circle on top, +amount under it — nothing overlapping the coin art.
+	local slim = compact == true
+	local outer = if slim then 96 else 120
+	local plateSize = if slim then 80 else 100
+	local innerSize = if slim then 62 else 78
+	local holderH = if slim then 140 else 178
+	local amountY = if slim then 100 else 128
+	local amountSize = if slim then 20 else 24
+
 	local holder = Instance.new("Frame")
 	holder.Name = "RewardArt"
 	holder.BackgroundTransparency = 1
-	holder.Size = UDim2.fromOffset(148, 178)
+	holder.Size = UDim2.fromOffset(148, holderH)
 	holder.ZIndex = 5
 	holder.Parent = parent
 
@@ -95,14 +103,14 @@ local function coinJewel(parent: Instance, amount: number): Frame
 	jewel.BackgroundTransparency = 1
 	jewel.AnchorPoint = Vector2.new(0.5, 0)
 	jewel.Position = UDim2.fromScale(0.5, 0)
-	jewel.Size = UDim2.fromOffset(120, 120)
+	jewel.Size = UDim2.fromOffset(outer, outer)
 	jewel.ZIndex = 5
 	jewel.Parent = holder
 
 	local plate = UiKit.frame(jewel, UiTheme.color.panelTop, 0)
 	plate.AnchorPoint = Vector2.new(0.5, 0.5)
 	plate.Position = UDim2.fromScale(0.5, 0.5)
-	plate.Size = UDim2.fromOffset(100, 100)
+	plate.Size = UDim2.fromOffset(plateSize, plateSize)
 	plate.ZIndex = 5
 	UiKit.corner(plate, 999)
 	local ring = UiKit.stroke(plate, UiTheme.color.gold, 3.5, 0)
@@ -111,7 +119,7 @@ local function coinJewel(parent: Instance, amount: number): Frame
 	local inner = UiKit.frame(plate, UiTheme.color.sunshine, 0)
 	inner.AnchorPoint = Vector2.new(0.5, 0.5)
 	inner.Position = UDim2.fromScale(0.5, 0.5)
-	inner.Size = UDim2.fromOffset(78, 78)
+	inner.Size = UDim2.fromOffset(innerSize, innerSize)
 	inner.ZIndex = 6
 	UiKit.corner(inner, 999)
 	UiKit.stroke(inner, UiTheme.color.hotPink, 2, 0.15)
@@ -120,7 +128,7 @@ local function coinJewel(parent: Instance, amount: number): Frame
 	stack.BackgroundTransparency = 1
 	stack.AnchorPoint = Vector2.new(0.5, 0.5)
 	stack.Position = UDim2.fromScale(0.5, 0.5)
-	stack.Size = UDim2.fromOffset(48, 34)
+	stack.Size = UDim2.fromOffset(if slim then 38 else 48, if slim then 28 else 34)
 	stack.ZIndex = 7
 	stack.Parent = inner
 
@@ -128,15 +136,15 @@ local function coinJewel(parent: Instance, amount: number): Frame
 		local coin = UiKit.frame(stack, UiTheme.color.gold, 0)
 		coin.AnchorPoint = Vector2.new(0.5, 0.5)
 		coin.Position = UDim2.fromScale(0.5, 0.22 + (i - 1) * 0.28)
-		coin.Size = UDim2.fromOffset(44 - (i - 1) * 2, 11)
+		coin.Size = UDim2.fromOffset((if slim then 34 else 44) - (i - 1) * 2, if slim then 9 else 11)
 		coin.ZIndex = 7
 		UiKit.corner(coin, 999)
 		UiKit.stroke(coin, Color3.fromRGB(200, 120, 30), 1, 0.2)
 	end
 
-	local amountLabel = UiKit.label(holder, "+0", 24, UiTheme.font.heavy, UiTheme.color.sunshine)
+	local amountLabel = UiKit.label(holder, "+0", amountSize, UiTheme.font.heavy, UiTheme.color.sunshine)
 	amountLabel.AnchorPoint = Vector2.new(0.5, 0)
-	amountLabel.Position = UDim2.new(0.5, 0, 0, 128)
+	amountLabel.Position = UDim2.new(0.5, 0, 0, amountY)
 	amountLabel.Size = UDim2.new(1, 0, 0, 28)
 	amountLabel.TextXAlignment = Enum.TextXAlignment.Center
 	amountLabel.TextYAlignment = Enum.TextYAlignment.Center
@@ -178,8 +186,14 @@ local function present(payload: FanfarePayload)
 	dim.ZIndex = 1
 	dim.Active = true
 
-	local cardW = 340
-	local cardH = 420
+	-- Fit phones: never wider/taller than ~86% of the screen.
+	local view = root.AbsoluteSize
+	if view.X < 2 or view.Y < 2 then
+		local camera = workspace.CurrentCamera
+		view = if camera ~= nil then camera.ViewportSize else Vector2.new(1280, 720)
+	end
+	local cardW = math.clamp(math.floor(math.min(340, view.X * 0.86)), 240, 340)
+	local cardH = math.clamp(math.floor(math.min(420, view.Y * 0.78)), 300, 420)
 	-- Soft centred shadow — same anchor as the card, no sideways smear.
 	local shadow = Juice.shadow(dim, UDim2.fromOffset(cardW + 16, cardH + 16), UDim2.fromScale(0.5, 0.5), 24)
 	shadow.BackgroundTransparency = 1
@@ -217,21 +231,26 @@ local function present(payload: FanfarePayload)
 		{ 0.88, 0.86 },
 	})
 
-	-- One centred column so text, jewel, and CTA share the same axis.
+	local compact = cardH < 360 or cardW < 300
+	local btnH = if compact then 40 else 46
+	-- Pin CTA to the bottom so streak/detail never bury the only exit.
+	local footerH = btnH + 18
+
 	local column = Instance.new("Frame")
 	column.Name = "Column"
 	column.BackgroundTransparency = 1
-	column.AnchorPoint = Vector2.new(0.5, 0.5)
-	column.Position = UDim2.fromScale(0.5, 0.5)
-	column.Size = UDim2.new(1, -28, 1, -24)
+	column.AnchorPoint = Vector2.new(0.5, 0)
+	column.Position = UDim2.new(0.5, 0, 0, 8)
+	column.Size = UDim2.new(1, -28, 1, -(footerH + 16))
 	column.ZIndex = 5
+	column.ClipsDescendants = true
 	column.Parent = face
-	local list = UiKit.list(column, Enum.FillDirection.Vertical, 8)
+	local list = UiKit.list(column, Enum.FillDirection.Vertical, if compact then 6 else 8)
 	list.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	list.VerticalAlignment = Enum.VerticalAlignment.Center
-	list.Padding = UDim.new(0, 8)
+	list.Padding = UDim.new(0, if compact then 6 else 8)
 
-	local kickerText = KIND_KICKER[payload.kind] or "INK-OFF"
+	local kickerText = KIND_KICKER[payload.kind] or "INK RIVALRY"
 	local kicker = UiKit.label(column, kickerText, 12, UiTheme.font.heavy, UiTheme.color.sunshine)
 	kicker.Size = UDim2.new(1, 0, 0, 16)
 	kicker.TextXAlignment = Enum.TextXAlignment.Center
@@ -239,8 +258,8 @@ local function present(payload: FanfarePayload)
 	kicker.TextStrokeTransparency = 1
 	kicker.LayoutOrder = 1
 
-	local titleSize = if #payload.title > 28 then 20 else 28
-	local titleHeight = if #payload.title > 28 then 44 else 32
+	local titleSize = if compact then (if #payload.title > 28 then 17 else 22) else (if #payload.title > 28 then 20 else 28)
+	local titleHeight = if #payload.title > 28 then (if compact then 36 else 44) else (if compact then 26 else 32)
 	local title = UiKit.label(column, payload.title, titleSize, UiTheme.font.heavy, UiTheme.color.text)
 	title.Size = UDim2.new(1, 0, 0, titleHeight)
 	title.TextWrapped = true
@@ -258,8 +277,10 @@ local function present(payload: FanfarePayload)
 	end
 
 	local coins = payload.coins or 0
+	-- Day 2+ adds streak text; shrink the jewel so the card still fits phones.
+	local slimArt = compact or (payload.streak ~= nil and payload.streak > 0)
 	if coins > 0 then
-		local art = coinJewel(column, coins)
+		local art = coinJewel(column, coins, slimArt)
 		art.LayoutOrder = 4
 	else
 		local badge = starBadge(column)
@@ -278,7 +299,7 @@ local function present(payload: FanfarePayload)
 
 	if payload.detail ~= nil and payload.detail ~= "" then
 		local detail = UiKit.label(column, payload.detail, 13, UiTheme.font.medium, UiTheme.color.muted)
-		detail.Size = UDim2.new(1, -8, 0, 40)
+		detail.Size = UDim2.new(1, -8, 0, if compact then 32 else 40)
 		detail.TextWrapped = true
 		detail.TextXAlignment = Enum.TextXAlignment.Center
 		detail.TextYAlignment = Enum.TextYAlignment.Top
@@ -286,9 +307,11 @@ local function present(payload: FanfarePayload)
 	end
 
 	local primaryLabel = if payload.claimLogin then "CLAIM NOW!" else "AWESOME!"
-	local primary = UiKit.button(column, primaryLabel, 16, UiTheme.color.ink, UiTheme.color.gold, 12)
-	primary.LayoutOrder = 7
-	primary.Size = UDim2.fromOffset(200, 46)
+	local primary = UiKit.button(face, primaryLabel, if compact then 14 else 16, UiTheme.color.ink, UiTheme.color.gold, 12)
+	primary.Name = "Primary"
+	primary.AnchorPoint = Vector2.new(0.5, 1)
+	primary.Position = UDim2.new(0.5, 0, 1, -10)
+	primary.Size = UDim2.fromOffset(math.min(200, cardW - 48), btnH)
 	primary.ZIndex = 10
 	primary.TextXAlignment = Enum.TextXAlignment.Center
 	primary.TextYAlignment = Enum.TextYAlignment.Center
@@ -331,21 +354,24 @@ local function present(payload: FanfarePayload)
 		end)
 	end
 
-	primary.MouseButton1Click:Connect(function()
-		Sfx.play("good")
+	local function accept()
+		if closing then
+			return
+		end
+		Sfx.play(if payload.claimLogin then "good" else "click")
 		Juice.punch(primary, 1.2)
 		claimIfNeeded(payload)
 		close()
-	end)
+	end
+
+	primary.MouseButton1Click:Connect(accept)
+	-- Outside tap always dismisses (and claims daily ink if that was the card).
 	dim.InputBegan:Connect(function(input)
 		if
 			input.UserInputType == Enum.UserInputType.MouseButton1
 			or input.UserInputType == Enum.UserInputType.Touch
 		then
-			if not payload.claimLogin then
-				Sfx.play("click")
-				close()
-			end
+			accept()
 		end
 	end)
 
@@ -423,13 +449,13 @@ function Fanfare.start()
 		return
 	end
 	local playerGui = player:WaitForChild("PlayerGui")
-	local existing = playerGui:FindFirstChild("InkMastersFanfare")
+	local existing = playerGui:FindFirstChild("InkRivalryFanfare")
 	if existing ~= nil then
 		existing:Destroy()
 	end
 
 	local screen = Instance.new("ScreenGui")
-	screen.Name = "InkMastersFanfare"
+	screen.Name = "InkRivalryFanfare"
 	screen.ResetOnSpawn = false
 	screen.IgnoreGuiInset = true
 	screen.DisplayOrder = 80

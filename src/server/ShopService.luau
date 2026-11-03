@@ -15,7 +15,7 @@ local PlayerEconomy = require(script.Parent.PlayerEconomy)
 local Profiles = require(script.Parent.Profiles)
 local RoundManager = require(script.Parent.RoundManager)
 
-local PREFIX = "[InkMasters]"
+local PREFIX = "[InkRivalry]"
 local ACTION_COOLDOWN_SECONDS = 0.2
 
 local revisions: { [Player]: number } = {}
@@ -203,17 +203,18 @@ end
 -- Milestone and achievement rewards must point at real, earned catalogue items.
 local function validateRewards()
 	for level = 1, Economy.MAX_LEVEL do
-		local itemId = Economy.levelReward(level).itemId
-		if itemId ~= nil then
+		local reward = Economy.levelReward(level)
+		local ids = reward.itemIds or (if reward.itemId ~= nil then { reward.itemId } else {})
+		for _, itemId in ids do
 			local item = Catalogue.get(itemId)
 			if item == nil or not item.earned then
-				error(`[InkMasters] Level {level} reward {itemId} is not an earned catalogue item`)
+				error(`[InkRivalry] Level {level} reward {itemId} is not an earned catalogue item`)
 			end
 		end
 	end
 	for _, achievement in Quests.achievements do
 		if achievement.itemId ~= nil and Catalogue.get(achievement.itemId) == nil then
-			error(`[InkMasters] Achievement {achievement.id} rewards a missing item`)
+			error(`[InkRivalry] Achievement {achievement.id} rewards a missing item`)
 		end
 	end
 end
@@ -221,6 +222,8 @@ end
 function ShopService.start()
 	validateRewards()
 	NameTags.start()
+	local Auras = require(script.Parent.Auras)
+	Auras.start()
 	Profiles.onLoaded(function(player: Player, data)
 		PlayerEconomy.onProfileLoaded(player, data)
 		if synced[player] == true then
@@ -230,6 +233,7 @@ function ShopService.start()
 	PlayerEconomy.onChanged(function(player: Player)
 		push(player)
 		NameTags.refresh(player)
+		Auras.refresh(player)
 	end)
 	Remotes.ProfileAction.OnServerEvent:Connect(onAction)
 	Players.PlayerRemoving:Connect(function(player: Player)

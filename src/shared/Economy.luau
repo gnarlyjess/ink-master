@@ -13,7 +13,9 @@ export type Reward = {
 
 export type LevelReward = {
 	coins: number,
+	-- Primary cosmetic for UI copy; itemIds may grant extras at the same level.
 	itemId: string?,
+	itemIds: { string }?,
 }
 
 local Economy = {}
@@ -66,6 +68,16 @@ function Economy.xpToNext(level: number): number
 	return 120 + 30 * (level - 1)
 end
 
+-- Total XP required to *be* this level (start of the level).
+function Economy.xpToReach(level: number): number
+	local target = math.clamp(math.floor(level), 1, Economy.MAX_LEVEL)
+	local total = 0
+	for at = 1, target - 1 do
+		total += Economy.xpToNext(at)
+	end
+	return total
+end
+
 export type LevelInfo = {
 	level: number,
 	into: number,
@@ -88,16 +100,17 @@ function Economy.levelInfo(totalXp: number): LevelInfo
 end
 
 -- Coins for every level, plus milestone cosmetics / inks that cannot be bought.
-local MILESTONES: { [number]: string } = {
+-- Prestige auras stack with titles at key levels — motion is the flex, text is flavor.
+local MILESTONES: { [number]: string | { string } } = {
 	[2] = "title:steady",
 	[3] = "title:rookie",
 	[4] = "pack:geometry",
 	[5] = "title:liner",
 	[6] = "pack:starter_tools",
 	[7] = "title:collector",
-	[8] = "frame:rose",
+	[8] = { "frame:rose", "aura:mist" },
 	[9] = "title:needle",
-	[10] = "title:legend",
+	[10] = { "title:legend", "aura:neon" },
 	[11] = "confetti:aqua",
 	[12] = "title:parlour",
 	[13] = "ink:lemon",
@@ -107,26 +120,47 @@ local MILESTONES: { [number]: string } = {
 	[17] = "ink:lime",
 	[18] = "ink:lavender",
 	[19] = "ink:bubble",
-	[20] = "title:master",
+	[20] = { "title:master", "aura:gold" },
 	[21] = "ink:cream",
 	[22] = "ink:indigo",
 	[23] = "ink:ice",
 	[24] = "ink:silver",
 	[25] = "frame:midnight",
-	[30] = "title:icon",
+	[30] = { "title:icon", "aura:icon" },
 }
 
+local function milestoneList(level: number): { string }
+	local raw = MILESTONES[level]
+	if raw == nil then
+		return {}
+	end
+	if typeof(raw) == "string" then
+		return { raw }
+	end
+	return raw
+end
+
 function Economy.levelReward(level: number): LevelReward
+	local ids = milestoneList(level)
 	return {
 		coins = 20 + level * 5,
-		itemId = MILESTONES[level],
+		itemId = ids[1],
+		itemIds = if #ids > 0 then ids else nil,
 	}
 end
 
 function Economy.milestoneLevel(itemId: string): number?
-	for level, id in MILESTONES do
-		if id == itemId then
-			return level
+	for level, raw in MILESTONES do
+		if typeof(raw) == "string" then
+			if raw == itemId then
+				return level
+			end
+		else
+			for _, id in raw do
+				if id == itemId then
+					return level
+				end
+			end
 		end
 	end
 	return nil

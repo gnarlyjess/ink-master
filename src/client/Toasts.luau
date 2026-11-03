@@ -130,7 +130,7 @@ local function routeNotice(payload: any)
 			kind = "welcome",
 			title = if typeof(payload.text) == "string" and payload.text ~= ""
 				then payload.text
-				else "Welcome to Ink-Off!",
+				else "Welcome to Ink Rivalry!",
 			subtitle = "Starter coins unlocked",
 			coins = if typeof(payload.coins) == "number" then payload.coins else nil,
 		})
@@ -182,13 +182,13 @@ function Toasts.start()
 		return
 	end
 	local playerGui = player:WaitForChild("PlayerGui")
-	local existing = playerGui:FindFirstChild("InkMastersToasts")
+	local existing = playerGui:FindFirstChild("InkRivalryToasts")
 	if existing ~= nil then
 		existing:Destroy()
 	end
 
 	local screen = Instance.new("ScreenGui")
-	screen.Name = "InkMastersToasts"
+	screen.Name = "InkRivalryToasts"
 	screen.ResetOnSpawn = false
 	screen.IgnoreGuiInset = true
 	screen.DisplayOrder = 60
@@ -199,10 +199,14 @@ function Toasts.start()
 	holder.Name = "Stack"
 	holder.AnchorPoint = Vector2.new(0.5, 1)
 	holder.Position = UDim2.new(0.5, 0, 1, -UiTheme.safe.bottom)
-	holder.Size = UDim2.fromOffset(520, 0)
+	holder.Size = UDim2.new(0.92, 0, 0, 0)
 	holder.AutomaticSize = Enum.AutomaticSize.Y
 	holder.BackgroundTransparency = 1
 	holder.Parent = screen
+	local toastCap = Instance.new("UISizeConstraint")
+	toastCap.MaxSize = Vector2.new(520, math.huge)
+	toastCap.MinSize = Vector2.new(200, 0)
+	toastCap.Parent = holder
 	local layout = UiKit.list(holder, Enum.FillDirection.Vertical, 8)
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	layout.VerticalAlignment = Enum.VerticalAlignment.Bottom

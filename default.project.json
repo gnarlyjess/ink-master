@@ -53,6 +53,11 @@
     "MaterialService": {
       "$path": "src/materials"
     },
+    "StarterGui": {
+      "$properties": {
+        "ScreenOrientation": "LandscapeSensor"
+      }
+    },
     "StarterPlayer": {
       "StarterPlayerScripts": {
         "$path": "src/client"

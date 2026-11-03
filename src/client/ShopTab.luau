@@ -244,6 +244,29 @@ local function paintPreview(area: Frame, item: Item, large: boolean?)
 				dot.Rotation = indexBar * 18
 			end
 		end
+	elseif item.category == "aura" then
+		-- Concentric glow rings — the shop preview of foot prestige.
+		local sizes = if big then { 0.78, 0.55, 0.32 } else { 0.7, 0.48, 0.28 }
+		for indexBar, scale in sizes do
+			local ring = Instance.new("Frame")
+			ring.AnchorPoint = Vector2.new(0.5, 0.5)
+			ring.Position = UDim2.fromScale(0.5, 0.52)
+			ring.Size = UDim2.fromScale(scale, scale * 0.55)
+			ring.BackgroundTransparency = 1
+			ring.Parent = area
+			local stroke = UiKit.stroke(ring, accent, if indexBar == 1 then 3 else 2, 0.15 * indexBar)
+			if indexBar == 1 then
+				Juice.glowStroke(stroke, accent, accent:Lerp(Color3.new(1, 1, 1), 0.35))
+			end
+		end
+		local core = UiKit.frame(area, accent, 0.15)
+		core.AnchorPoint = Vector2.new(0.5, 0.5)
+		core.Position = UDim2.fromScale(0.5, 0.52)
+		core.Size = UDim2.fromOffset(if big then 18 else 12, if big then 18 else 12)
+		UiKit.corner(core, 999)
+		if big then
+			Juice.sparkles(area, { { 0.2, 0.3 }, { 0.8, 0.35 }, { 0.5, 0.78 } })
+		end
 	end
 end
 

@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Catalogue = require(ReplicatedStorage.Shared.Catalogue)
 local Economy = require(ReplicatedStorage.Shared.Economy)
 local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
+local Prestige = require(ReplicatedStorage.Shared.Prestige)
 local ProfileTypes = require(ReplicatedStorage.Shared.ProfileTypes)
 local Quests = require(ReplicatedStorage.Shared.Quests)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
@@ -116,8 +117,19 @@ local function giveItem(player: Player, data: ProfileData, itemId: string, annou
 	end
 	data.owned[itemId] = true
 	local slot = slotFor(item)
-	if slot ~= nil and data.equipped[slot] == "" then
-		data.equipped[slot] = itemId
+	if slot ~= nil then
+		local currentId = data.equipped[slot]
+		if currentId == "" then
+			data.equipped[slot] = itemId
+		elseif slot == "aura" then
+			-- Newer / higher prestige aura wins so catch-up doesn't leave Fresh Ink on a Lv30.
+			local current = Catalogue.get(currentId)
+			local curRank = Prestige.auraRank(if current ~= nil then current.style else nil)
+			local newRank = Prestige.auraRank(item.style)
+			if newRank >= curRank then
+				data.equipped[slot] = itemId
+			end
+		end
 	end
 	if announce then
 		PlayerEconomy.notify(player, "item", `New: {item.name}`)
@@ -154,15 +166,28 @@ local function settleLevels(player: Player, data: ProfileData)
 		data.rewardedLevel = nextLevel
 		local reward = Economy.levelReward(nextLevel)
 		giveCoins(data, reward.coins)
-		local itemId = reward.itemId
-		local extra = ""
-		if itemId ~= nil and giveItem(player, data, itemId, false) then
-			local item = Catalogue.get(itemId)
-			if item ~= nil then
-				extra = ` and {item.name}`
+		local extras: { string } = {}
+		local ids = reward.itemIds or (if reward.itemId ~= nil then { reward.itemId } else {})
+		for _, itemId in ids do
+			if giveItem(player, data, itemId, false) then
+				local item = Catalogue.get(itemId)
+				if item ~= nil then
+					table.insert(extras, item.name)
+				end
 			end
 		end
+		local extra = if #extras > 0 then ` and {table.concat(extras, " + ")}` else ""
 		PlayerEconomy.notify(player, "level", `Level {nextLevel}! +{reward.coins} coins{extra}`)
+	end
+	-- Catch up newly added milestone cosmetics (e.g. prestige auras) without re-paying coins.
+	for past = 1, data.rewardedLevel do
+		local reward = Economy.levelReward(past)
+		local ids = reward.itemIds or (if reward.itemId ~= nil then { reward.itemId } else {})
+		for _, itemId in ids do
+			if giveItem(player, data, itemId, true) then
+				-- announce once via giveItem
+			end
+		end
 	end
 end
 
@@ -362,7 +387,7 @@ function PlayerEconomy.refundThemePickOnLeave(player: Player)
 	end
 	giveCoins(data, refund)
 	changed(player)
-	print(`[InkMasters] Theme pick refund | {player.Name} | +{refund} coins`)
+	print(`[InkRivalry] Theme pick refund | {player.Name} | +{refund} coins`)
 end
 
 function PlayerEconomy.purchase(player: Player, itemId: string): (boolean, string)
@@ -395,6 +420,10 @@ function PlayerEconomy.purchase(player: Player, itemId: string): (boolean, strin
 	data.stats.purchases = statOf(data, "purchases") + 1
 	checkAchievements(player, data)
 	changed(player)
+	Profiles.flush(player)
+	if not Profiles.isPersistent(player) then
+		return true, `Bought {item.name} (Studio save off — Enable API Services to keep it)`
+	end
 	return true, `Bought {item.name} for {price} coins`
 end
 
@@ -416,6 +445,7 @@ function PlayerEconomy.equip(player: Player, itemId: string): (boolean, string)
 	end
 	data.equipped[slot] = itemId
 	changed(player)
+	Profiles.flush(player)
 	return true, `Equipped {item.name}`
 end
 
@@ -458,9 +488,15 @@ end
 -- Settles any level rewards that a crash might have left behind.
 function PlayerEconomy.onProfileLoaded(player: Player, data: ProfileData)
 	PlayerEconomy.ensureDaily(data)
-	-- Dev testing: top up so shop / theme picks are easy to try without wiping the save.
-	if GameConfig.DevMode and data.coins < Economy.START_COINS then
-		giveCoins(data, Economy.START_COINS - data.coins)
+	-- Dev testing: top up coins + jump to max level so prestige auras / titles are easy to try.
+	if GameConfig.DevMode then
+		if data.coins < Economy.START_COINS then
+			giveCoins(data, Economy.START_COINS - data.coins)
+		end
+		local wantXp = Economy.xpToReach(Economy.MAX_LEVEL)
+		if data.xp < wantXp then
+			data.xp = wantXp
+		end
 	end
 	settleLevels(player, data)
 	checkAchievements(player, data)
@@ -475,7 +511,7 @@ function PlayerEconomy.welcome(player: Player)
 		return
 	end
 	data.welcomed = true
-	PlayerEconomy.notify(player, "welcome", "Welcome to Ink-Off, here are some coins to start!", {
+	PlayerEconomy.notify(player, "welcome", "Welcome to Ink Rivalry, here are some coins to start!", {
 		title = "Welcome",
 		coins = data.coins,
 	})

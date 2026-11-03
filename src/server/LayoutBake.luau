@@ -4,7 +4,7 @@
 -- Keys are stable paths under the root (sibling #index when names collide).
 -- Models use PivotTo; loose BaseParts under Folders set CFrame.
 
-local PREFIX = "[InkMasters]"
+local PREFIX = "[InkRivalry]"
 
 export type Pose = { number }
 export type PoseMap = { [string]: Pose }

@@ -70,7 +70,7 @@ end
 function Surfaces.apply(part: BasePart, key: string, tint: Color3?)
 	local surface = SURFACES[key]
 	if surface == nil then
-		warn(`[InkMasters] Unknown surface {key}`)
+		warn(`[InkRivalry] Unknown surface {key}`)
 		return
 	end
 	local shade = tint or DEFAULT_TINT[key] or WHITE

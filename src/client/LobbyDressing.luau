@@ -15,7 +15,7 @@ local UiTheme = require(script.Parent.UiTheme)
 
 type RoundSnapshot = RoundTypes.RoundSnapshot
 
-local PREFIX = "[InkMasters]"
+local PREFIX = "[InkRivalry]"
 
 local latest: RoundSnapshot? = nil
 local eyebrowLabel: TextLabel? = nil
@@ -45,7 +45,7 @@ local function renderBoard()
 
 	eyebrow.Text = ""
 	eyebrow.Visible = false
-	title.Text = "Ink-Off"
+	title.Text = "Ink Rivalry"
 	subtitle.Visible = true
 	subtitle.Text = "Walk in. The next theme goes up here."
 end

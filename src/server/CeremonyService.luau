@@ -37,7 +37,7 @@ type ScoredRow = {
 	order: number,
 }
 
-local PREFIX = "[InkMasters]"
+local PREFIX = "[InkRivalry]"
 local VOTE_COOLDOWN_SECONDS = 0.3
 
 local phase = "Idle"
@@ -125,6 +125,7 @@ local function broadcast()
 			secondsEach = GameConfig.getShowcaseSlice(),
 			showcaseStart = showcaseStart,
 			phaseEnds = phaseEnds,
+			themeName = RoundManager.getThemeName(),
 			yourVote = choice,
 			yourTotal = PlayerEconomy.getCoins(player),
 			entries = entries,
@@ -289,7 +290,7 @@ local function tally()
 		local label = if index == 1 then "1st" elseif index == 2 then "2nd" else "3rd"
 		summary ..= `{label} {row.name} +{awarded} ({row.votes} votes) `
 	end
-	local kind = if matchFinal then "Match party" else "Round party"
+	local kind = if matchFinal then "Match podium" else "Round banked"
 	if summary == "" then
 		print(`{PREFIX} {kind} | no tattoos to place`)
 	else
@@ -387,17 +388,28 @@ local function prepare(state: RoundState): number?
 	end
 	if state == "Results" then
 		tally()
-		if staged then
-			local podium = {}
-			for _, place in places do
-				table.insert(podium, place.userId)
+		local matchFinal = RoundManager.isMatchFinal()
+		if matchFinal then
+			-- Final design round only: crown the match on the podium.
+			if staged then
+				local podium = {}
+				for _, place in places do
+					table.insert(podium, place.userId)
+				end
+				WinnerStage.crown(podium)
 			end
-			WinnerStage.crown(podium)
+			phase = "Party"
+			phaseEnds = endsIn(GameConfig.getDuration(state))
+			broadcast()
+			return nil
 		end
-		phase = "Party"
-		phaseEnds = endsIn(GameConfig.getDuration(state))
+		-- Mid-match: bank votes, roll the next theme, quiet 7s lobby beat (no podium).
+		leaveStage()
+		RoundManager.rollNextTheme()
+		phase = "Idle"
+		phaseEnds = nil
 		broadcast()
-		return nil
+		return 7
 	end
 	leaveStage()
 	phase = "Idle"

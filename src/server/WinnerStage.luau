@@ -233,7 +233,7 @@ local function buildShell(model: Model)
 		Enum.Material.SmoothPlastic
 	)
 	sign.CanCollide = false
-	lettering(sign, "INK-OFF", PALETTE.gold, Enum.NormalId.Front)
+	lettering(sign, "INK RIVALRY", PALETTE.gold, Enum.NormalId.Front)
 	sign.CFrame = CFrame.lookAt(sign.Position, sign.Position - Vector3.zAxis)
 	faceLight(sign, Enum.NormalId.Front, PALETTE.gold, 1.8, 16)
 	trim(model, "SignGlow", Vector3.new(28.6, 0.28, 0.28), at(0, 15.75, HALF_D - 2.3), PALETTE.gold)

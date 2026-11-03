@@ -25,7 +25,8 @@ type Session = {
 	saveQueued: boolean,
 }
 
-local PREFIX = "[InkMasters]"
+local PREFIX = "[InkRivalry]"
+-- Keep the legacy DataStore key so existing player saves stay linked after the rename.
 local STORE_NAME = "InkMastersProfiles1"
 local LOCK_SECONDS = 120
 local AUTOSAVE_SECONDS = 60
@@ -265,6 +266,17 @@ function Profiles.markDirty(player: Player)
 	session.changes += 1
 	session.dirty = true
 	queueSave(player, session)
+end
+
+-- Immediate write (purchases / unlocks). Queued autosave alone can miss a quick leave.
+function Profiles.flush(player: Player)
+	local session = sessions[player]
+	if session == nil or not session.persistent then
+		return
+	end
+	session.dirty = true
+	session.changes += 1
+	task.spawn(saveSession, player.UserId, session, false)
 end
 
 function Profiles.onLoaded(callback: (Player, ProfileData) -> ())

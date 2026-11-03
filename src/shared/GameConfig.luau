@@ -18,10 +18,13 @@ local MAX_PLAYERS = 10
 local LIVE_SHOWCASE_SLICE = 4
 local DEV_SHOWCASE_SLICE = 4
 
+-- Design phase length by match design-round (1st / 2nd / 3rd).
+local CREATION_SECONDS = { 300, 240, 180 }
+
 local LIVE_TIMERS: { [string]: number } = {
-	Intermission = 15,
-	ThemeReveal = 10,
-	TattooCreation = 180,
+	Intermission = 7,
+	ThemeReveal = 6,
+	TattooCreation = CREATION_SECONDS[1],
 	Submission = 5,
 	Showcase = LIVE_SHOWCASE_SLICE,
 	Voting = 10,
@@ -30,9 +33,9 @@ local LIVE_TIMERS: { [string]: number } = {
 }
 
 local DEV_TIMERS: { [string]: number } = {
-	Intermission = 5,
+	Intermission = 7,
 	ThemeReveal = 5,
-	TattooCreation = 180,
+	TattooCreation = CREATION_SECONDS[1],
 	Submission = 10,
 	Showcase = DEV_SHOWCASE_SLICE,
 	Voting = 10,
@@ -43,8 +46,8 @@ local DEV_TIMERS: { [string]: number } = {
 -- One match = several design → vote rounds. Votes add up; the final party crowns the match winner.
 local DESIGN_ROUNDS_PER_MATCH = 3
 
--- The forearm panel is a placement prototype. These limits are what the server enforces.
-local MAX_ELEMENTS = 20
+-- Canvas mark budget. Server enforces the same ceiling on submit.
+local MAX_ELEMENTS = 100
 local MIN_ELEMENT_SCALE = 0.015
 local MAX_ELEMENT_SCALE = 0.7
 local DESIGN_REGION = "LeftForearm"
@@ -102,26 +105,34 @@ function GameConfig.getShowcaseSlice(): number
 	return LIVE_SHOWCASE_SLICE
 end
 
-function GameConfig.getDuration(state: string): number?
+function GameConfig.getCreationSeconds(designRound: number): number
+	local index = math.clamp(math.floor(designRound + 0.5), 1, #CREATION_SECONDS)
+	return CREATION_SECONDS[index]
+end
+
+function GameConfig.getDuration(state: string, designRound: number?): number?
+	if state == "TattooCreation" then
+		return GameConfig.getCreationSeconds(designRound or 1)
+	end
 	local timers = if GameConfig.DevMode then DEV_TIMERS else LIVE_TIMERS
 	return timers[state]
 end
 
 function GameConfig.validate()
 	if DEV_MIN_PLAYERS < 1 or LIVE_MIN_PLAYERS < 1 then
-		error("[InkMasters] Minimum player counts must be at least 1")
+		error("[InkRivalry] Minimum player counts must be at least 1")
 	end
 	if MAX_PLAYERS < LIVE_MIN_PLAYERS or MAX_PLAYERS < DEV_MIN_PLAYERS then
-		error("[InkMasters] MaxPlayers must be at least the live and dev minimums")
+		error("[InkRivalry] MaxPlayers must be at least the live and dev minimums")
 	end
 	if MAX_ELEMENTS < 1 or MIN_ELEMENT_SCALE <= 0 or MAX_ELEMENT_SCALE <= MIN_ELEMENT_SCALE then
-		error("[InkMasters] Design limits are invalid")
+		error("[InkRivalry] Design limits are invalid")
 	end
 	if not GameConfig.isDesignRegion(DESIGN_REGION) then
-		error("[InkMasters] Default design region is not a known body part")
+		error("[InkRivalry] Default design region is not a known body part")
 	end
 	if DESIGN_ROUNDS_PER_MATCH < 1 then
-		error("[InkMasters] Design rounds per match must be at least 1")
+		error("[InkRivalry] Design rounds per match must be at least 1")
 	end
 
 	local profiles: { [string]: { [string]: number } } = {
@@ -133,7 +144,7 @@ function GameConfig.validate()
 		for profileName, timers in profiles do
 			local duration = timers[state]
 			if typeof(duration) ~= "number" or duration <= 0 then
-				error(`[InkMasters] {profileName} timer for {state} must be a positive number of seconds`)
+				error(`[InkRivalry] {profileName} timer for {state} must be a positive number of seconds`)
 			end
 		end
 	end
