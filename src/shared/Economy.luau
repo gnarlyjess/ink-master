@@ -28,6 +28,29 @@ Economy.COIN_CEILING = 1000000000
 Economy.THEME_PICK_PRICE = 80
 Economy.THEME_PICK_MAX_CHARS = 32
 
+-- Design-phase time boost. One purchase per design round for the whole lobby.
+export type TimeBoostOption = {
+	id: string,
+	seconds: number,
+	price: number,
+	label: string,
+}
+
+Economy.TIME_BOOST_OPTIONS = {
+	{ id = "30", seconds = 30, price = 40, label = "+30 secs" },
+	{ id = "45", seconds = 45, price = 55, label = "+45 secs" },
+	{ id = "60", seconds = 60, price = 70, label = "+1 min" },
+} :: { TimeBoostOption }
+
+function Economy.getTimeBoost(id: string): TimeBoostOption?
+	for _, option in Economy.TIME_BOOST_OPTIONS do
+		if option.id == id then
+			return option
+		end
+	end
+	return nil
+end
+
 -- Round rewards. A round is about five minutes live, so a typical player earns 30 to 60 coins.
 Economy.PARTICIPATION = { coins = 20, xp = 30 } :: Reward
 Economy.VOTE_CAST = { coins = 5, xp = 10 } :: Reward

@@ -56,6 +56,13 @@ type HudRefs = {
 	themeInput: TextBox,
 	themeBuy: TextButton,
 	themeSet: TextButton,
+	timeBoost: Frame,
+	timeBoostButtons: { TextButton },
+	confirmDim: Frame,
+	confirmTitle: TextLabel,
+	confirmPrice: TextLabel,
+	confirmBuy: TextButton,
+	confirmCancel: TextButton,
 }
 
 local PREFIX = "[InkRivalry]"
@@ -273,6 +280,8 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 
 	local hasTimer = snapshot.endsAt ~= nil and snapshot.duration ~= nil
 	local designing = snapshot.state == "TattooCreation"
+	-- Sit just above the bottom-left shop bar (56px tall + side margin).
+	refs.timeBoost.Visible = designing and snapshot.timeBoostOpen
 	local inLobby = snapshot.state == "WaitingForPlayers" or snapshot.state == "Intermission"
 	local revealing = snapshot.state == "ThemeReveal"
 	-- Quiet parlour beat after a mid-match vote: next theme + request only.
@@ -693,6 +702,121 @@ local function buildHud(parent: Instance): HudRefs
 	addCorner(themeSet, 8)
 	addPadding(themeSet, 0, 12, 0, 12)
 
+	-- Extra time: sits above the bottom-left shop bar. Labels only — cost is in the confirm.
+	local SHOP_BAR_HEIGHT = 56
+	local timeBoost = newFrame("TimeBoost")
+	timeBoost.AnchorPoint = Vector2.new(0, 1)
+	timeBoost.Position = UDim2.new(0, UiTheme.safe.side, 1, -(UiTheme.safe.side + SHOP_BAR_HEIGHT + 10))
+	timeBoost.AutomaticSize = Enum.AutomaticSize.XY
+	timeBoost.BackgroundColor3 = UiTheme.color.panel
+	timeBoost.BackgroundTransparency = 0.08
+	timeBoost.Visible = false
+	timeBoost.ZIndex = 6
+	timeBoost.Parent = screenGui
+	addCorner(timeBoost, 12)
+	addStroke(timeBoost, UiTheme.color.stroke, 1, 0.35)
+	addPadding(timeBoost, 6, 8, 6, 8)
+	addList(timeBoost, Enum.FillDirection.Horizontal, 6).HorizontalAlignment = Enum.HorizontalAlignment.Left
+
+	local timeBoostButtons: { TextButton } = {}
+	for index, option in Economy.TIME_BOOST_OPTIONS do
+		local button = Instance.new("TextButton")
+		button.Name = `Boost_{option.id}`
+		button.BackgroundColor3 = UiTheme.color.gold
+		button.BackgroundTransparency = 0.05
+		button.BorderSizePixel = 0
+		button.FontFace = UiTheme.font.bold
+		button.TextSize = 12
+		button.TextColor3 = UiTheme.color.ink
+		button.Text = option.label
+		button.AutomaticSize = Enum.AutomaticSize.XY
+		button.Size = UDim2.fromOffset(0, 0)
+		button.LayoutOrder = index
+		button.Parent = timeBoost
+		addCorner(button, 999)
+		addStroke(button, UiTheme.color.stroke, 1, 0.45)
+		addPadding(button, 6, 12, 6, 12)
+		table.insert(timeBoostButtons, button)
+	end
+
+	-- Center confirm: cost + buy / cancel.
+	local confirmDim = newFrame("TimeBoostConfirm")
+	confirmDim.Size = UDim2.fromScale(1, 1)
+	confirmDim.BackgroundColor3 = Color3.fromRGB(12, 4, 24)
+	confirmDim.BackgroundTransparency = 0.45
+	confirmDim.Visible = false
+	confirmDim.Active = true
+	confirmDim.ZIndex = 40
+	confirmDim.Parent = screenGui
+
+	local confirmCard = newFrame("Card")
+	confirmCard.AnchorPoint = Vector2.new(0.5, 0.5)
+	confirmCard.Position = UDim2.fromScale(0.5, 0.5)
+	confirmCard.AutomaticSize = Enum.AutomaticSize.XY
+	confirmCard.BackgroundColor3 = UiTheme.color.panel
+	confirmCard.BackgroundTransparency = 0.02
+	confirmCard.Active = true
+	confirmCard.ZIndex = 41
+	confirmCard.Parent = confirmDim
+	addCorner(confirmCard, 16)
+	addStroke(confirmCard, UiTheme.color.gold, 1.5, 0.2)
+	addPadding(confirmCard, 20, 24, 20, 24)
+	addList(confirmCard, Enum.FillDirection.Vertical, 10).HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+	local confirmTitle = createLabel("Title", 18, UiTheme.font.heavy, UiTheme.color.text, true)
+	confirmTitle.Text = "Buy extra time?"
+	confirmTitle.LayoutOrder = 1
+	confirmTitle.ZIndex = 42
+	confirmTitle.Parent = confirmCard
+
+	local confirmPrice = createLabel("Price", 14, UiTheme.font.medium, UiTheme.color.muted, true)
+	confirmPrice.Text = "40 coins · once for everyone"
+	confirmPrice.LayoutOrder = 2
+	confirmPrice.ZIndex = 42
+	confirmPrice.Parent = confirmCard
+
+	local confirmRow = newFrame("Actions")
+	confirmRow.LayoutOrder = 3
+	confirmRow.AutomaticSize = Enum.AutomaticSize.XY
+	confirmRow.BackgroundTransparency = 1
+	confirmRow.ZIndex = 42
+	confirmRow.Parent = confirmCard
+	addList(confirmRow, Enum.FillDirection.Horizontal, 8)
+
+	local confirmCancel = Instance.new("TextButton")
+	confirmCancel.Name = "Cancel"
+	confirmCancel.BackgroundColor3 = UiTheme.color.chip
+	confirmCancel.BackgroundTransparency = 0
+	confirmCancel.BorderSizePixel = 0
+	confirmCancel.FontFace = UiTheme.font.bold
+	confirmCancel.TextSize = 14
+	confirmCancel.TextColor3 = UiTheme.color.text
+	confirmCancel.Text = "Cancel"
+	confirmCancel.AutomaticSize = Enum.AutomaticSize.XY
+	confirmCancel.Size = UDim2.fromOffset(0, 36)
+	confirmCancel.LayoutOrder = 1
+	confirmCancel.ZIndex = 43
+	confirmCancel.Parent = confirmRow
+	addCorner(confirmCancel, 10)
+	addPadding(confirmCancel, 0, 16, 0, 16)
+
+	local confirmBuy = Instance.new("TextButton")
+	confirmBuy.Name = "Buy"
+	confirmBuy.BackgroundColor3 = UiTheme.color.gold
+	confirmBuy.BackgroundTransparency = 0
+	confirmBuy.BorderSizePixel = 0
+	confirmBuy.FontFace = UiTheme.font.bold
+	confirmBuy.TextSize = 14
+	confirmBuy.TextColor3 = UiTheme.color.ink
+	confirmBuy.Text = "Buy"
+	confirmBuy.AutomaticSize = Enum.AutomaticSize.XY
+	confirmBuy.Size = UDim2.fromOffset(0, 36)
+	confirmBuy.LayoutOrder = 2
+	confirmBuy.ZIndex = 43
+	confirmBuy.Parent = confirmRow
+	addCorner(confirmBuy, 10)
+	addPadding(confirmBuy, 0, 18, 0, 18)
+
 	return {
 		badge = badge,
 		eyebrow = eyebrow,
@@ -727,6 +851,13 @@ local function buildHud(parent: Instance): HudRefs
 		themeInput = themeInput,
 		themeBuy = themeBuy,
 		themeSet = themeSet,
+		timeBoost = timeBoost,
+		timeBoostButtons = timeBoostButtons,
+		confirmDim = confirmDim,
+		confirmTitle = confirmTitle,
+		confirmPrice = confirmPrice,
+		confirmBuy = confirmBuy,
+		confirmCancel = confirmCancel,
 	}
 end
 
@@ -749,6 +880,28 @@ function RoundHud.start()
 	local currentSnapshot: RoundSnapshot? = nil
 	local lastLogKey = ""
 	local wasQueued = false
+	local pendingBoostId: string? = nil
+	local hudGui = refs.timeBoost.Parent
+	local baseDisplayOrder = if hudGui ~= nil and hudGui:IsA("ScreenGui") then hudGui.DisplayOrder else 30
+
+	local function closeConfirm()
+		pendingBoostId = nil
+		refs.confirmDim.Visible = false
+		if hudGui ~= nil and hudGui:IsA("ScreenGui") then
+			hudGui.DisplayOrder = baseDisplayOrder
+		end
+	end
+
+	local function openConfirm(option: Economy.TimeBoostOption)
+		pendingBoostId = option.id
+		refs.confirmTitle.Text = `Buy {option.label}?`
+		refs.confirmPrice.Text = `{formatCount(option.price)} coins · once for everyone`
+		refs.confirmBuy.Text = `Buy · {formatCount(option.price)}`
+		refs.confirmDim.Visible = true
+		if hudGui ~= nil and hudGui:IsA("ScreenGui") then
+			hudGui.DisplayOrder = 55
+		end
+	end
 
 	local function onSnapshot(payload: any)
 		local snapshot = RoundTypes.readSnapshot(payload)
@@ -763,6 +916,9 @@ function RoundHud.start()
 		local nowQueued = snapshot.myThemePickSpot ~= nil
 		currentSnapshot = snapshot
 		apply(refs, snapshot)
+		if not snapshot.timeBoostOpen then
+			closeConfirm()
+		end
 		if nowQueued and not wasQueued and snapshot.themePickOpen then
 			refs.themeInput:CaptureFocus()
 		end
@@ -842,6 +998,35 @@ function RoundHud.start()
 		if enterPressed then
 			submitThemeText()
 		end
+	end)
+
+	for index, button in refs.timeBoostButtons do
+		local option = Economy.TIME_BOOST_OPTIONS[index]
+		if option ~= nil then
+			button.MouseButton1Click:Connect(function()
+				local snapshot = currentSnapshot
+				if snapshot == nil or not snapshot.timeBoostOpen then
+					return
+				end
+				openConfirm(option)
+			end)
+		end
+	end
+
+	refs.confirmCancel.MouseButton1Click:Connect(closeConfirm)
+	refs.confirmDim.InputBegan:Connect(function(input: InputObject)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			closeConfirm()
+		end
+	end)
+	refs.confirmBuy.MouseButton1Click:Connect(function()
+		local id = pendingBoostId
+		local snapshot = currentSnapshot
+		closeConfirm()
+		if id == nil or snapshot == nil or not snapshot.timeBoostOpen then
+			return
+		end
+		PlayerData.buyTimeBoost(id)
 	end)
 
 	print(`{PREFIX} HUD ready | waiting for the server snapshot`)

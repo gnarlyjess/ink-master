@@ -82,6 +82,11 @@ function PlayerData.setThemePick(themeText: string?)
 	Remotes.ProfileAction:FireServer({ kind = "setThemePick", id = themeText })
 end
 
+-- Design-phase extra time (one buy for the whole lobby). optionId: "30" | "45" | "60".
+function PlayerData.buyTimeBoost(optionId: string)
+	Remotes.ProfileAction:FireServer({ kind = "buyTimeBoost", id = optionId })
+end
+
 function PlayerData.start()
 	if started then
 		return

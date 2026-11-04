@@ -40,6 +40,8 @@ local activeTheme: ThemeDefinition? = nil
 local joinedPlayers: { [Player]: boolean } = {}
 local lastRequestAt: { [Player]: number } = {}
 local prepareState: ((RoundState) -> number?)? = nil
+-- One extra-time purchase for the whole lobby per design round.
+local timeBoostUsed = false
 
 local machine = {}
 
@@ -89,6 +91,8 @@ local function buildSnapshot(forPlayer: Player?): RoundSnapshot
 		themePickOpen = RoundTypes.themePickOpen(currentState, paused)
 			and not (currentState == "Results" and designRound >= GameConfig.getDesignRoundsPerMatch()),
 		myThemePickSpot = mySpot,
+		timeBoostOpen = currentState == "TattooCreation" and not paused and not timeBoostUsed and endsAt ~= nil,
+		timeBoostUsed = timeBoostUsed,
 	}
 end
 
@@ -132,6 +136,7 @@ function machine.publishWaiting()
 	endsAt = nil
 	currentDuration = nil
 	activeTheme = nil
+	timeBoostUsed = false
 	announcedWaiting = true
 	if prepareState ~= nil then
 		prepareState("WaitingForPlayers")
@@ -160,6 +165,10 @@ function machine.transitionTo(state: RoundState)
 	scheduleToken += 1
 	local token = scheduleToken
 	currentState = state
+	-- Fresh slot each design round — only one player in the lobby can buy it.
+	if state == "TattooCreation" then
+		timeBoostUsed = false
+	end
 	-- Pick early so Intermission / mid-round lobby can show the next theme.
 	if (state == "Intermission" or state == "ThemeReveal") and activeTheme == nil then
 		activeTheme = ThemeQueue.consumeNext()
@@ -391,6 +400,38 @@ end
 -- Creation, plus the Time's up beat so a late save still reaches the display case.
 function RoundManager.isDesignWindowOpen(): boolean
 	return currentState == "TattooCreation" or currentState == "Submission"
+end
+
+function RoundManager.canBuyTimeBoost(): boolean
+	return currentState == "TattooCreation" and not paused and not timeBoostUsed and endsAt ~= nil
+end
+
+-- Claim the single lobby-wide boost and push the design clock forward.
+-- Returns false if someone else already claimed it (or design isn't open).
+function RoundManager.tryClaimTimeBoost(seconds: number): boolean
+	local add = math.floor(seconds)
+	if add < 1 or not RoundManager.canBuyTimeBoost() or endsAt == nil then
+		return false
+	end
+
+	timeBoostUsed = true
+	scheduleToken += 1
+	local token = scheduleToken
+	local remaining = math.max(0, endsAt - Workspace:GetServerTimeNow())
+	local newRemaining = remaining + add
+	currentDuration = (currentDuration or remaining) + add
+	endsAt = Workspace:GetServerTimeNow() + newRemaining
+
+	task.delay(newRemaining, function()
+		if token ~= scheduleToken or currentState ~= "TattooCreation" or not inRound or paused then
+			return
+		end
+		machine.advance()
+	end)
+
+	machine.broadcast(nil)
+	print(`{PREFIX} Time boost | +{add}s | {string.format("%.1f", newRemaining)}s left`)
+	return true
 end
 
 function RoundManager.getContestants(): { Player }

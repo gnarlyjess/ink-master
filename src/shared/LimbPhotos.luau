@@ -17,63 +17,26 @@ local TONES: { SkinToneId } = {
 	"deep",
 }
 
--- regionId -> toneId -> rbxassetid
-local photos: { [string]: { [string]: string } } = {
-	LeftForearm = {
-		light = "rbxassetid://105725694418928",
-		peach = "rbxassetid://92716745950431",
-		warm = "rbxassetid://95785016954319",
-		tan = "rbxassetid://108561031673527",
-		olive = "rbxassetid://95817517069695",
-		brown = "rbxassetid://79840075103290",
-		deep = "rbxassetid://130189225993849",
-	},
-	LeftUpperArm = {
-		light = "rbxassetid://96793958612236",
-		peach = "rbxassetid://75494655827654",
-		warm = "rbxassetid://130312158953640",
-		tan = "rbxassetid://101564387758923",
-		olive = "rbxassetid://107766824050687",
-		brown = "rbxassetid://99013278385274",
-		deep = "rbxassetid://119286107625110",
-	},
-	LeftThigh = {
-		light = "rbxassetid://105265634640190",
-		peach = "rbxassetid://120588074998974",
-		warm = "rbxassetid://124581724614975",
-		tan = "rbxassetid://105964165114477",
-		olive = "rbxassetid://78930782472497",
-		brown = "rbxassetid://101797459907397",
-		deep = "rbxassetid://127177180415992",
-	},
-	LeftCalf = {
-		light = "rbxassetid://88876246216890",
-		peach = "rbxassetid://91808551297723",
-		warm = "rbxassetid://76467639694051",
-		tan = "rbxassetid://110952942797277",
-		olive = "rbxassetid://133316170445208",
-		brown = "rbxassetid://121113181940526",
-		deep = "rbxassetid://101196815113273",
-	},
-	Chest = {
-		light = "rbxassetid://114167788353512",
-		peach = "rbxassetid://107600178745379",
-		warm = "rbxassetid://78580889693300",
-		tan = "rbxassetid://109374209169427",
-		olive = "rbxassetid://129766109275907",
-		brown = "rbxassetid://86926855561307",
-		deep = "rbxassetid://100919392882441",
-	},
-	Back = {
-		light = "rbxassetid://122191314032622",
-		peach = "rbxassetid://136698860612467",
-		warm = "rbxassetid://87617491164025",
-		tan = "rbxassetid://88594401880491",
-		olive = "rbxassetid://125189876785891",
-		brown = "rbxassetid://90475372546670",
-		deep = "rbxassetid://138083612528671",
-	},
+-- Transparent peach masters (alpha outside the limb). Carousel tones tint these via ImageColor3
+-- so the studio backdrop stays fixed. Older per-tone uploads were nearly identical and useless.
+local PEACH_MASTER: { [string]: string } = {
+	LeftForearm = "rbxassetid://122046948218715",
+	LeftUpperArm = "rbxassetid://110674980538687",
+	LeftThigh = "rbxassetid://107362931437457",
+	LeftCalf = "rbxassetid://130478219774881",
+	Chest = "rbxassetid://112508645495534",
+	Back = "rbxassetid://111156088026511",
 }
+
+-- regionId -> toneId -> rbxassetid (every tone points at the peach master for that region)
+local photos: { [string]: { [string]: string } } = {}
+for regionId, asset in PEACH_MASTER do
+	local byTone: { [string]: string } = {}
+	for _, tone in TONES do
+		byTone[tone] = asset
+	end
+	photos[regionId] = byTone
+end
 
 local LimbPhotos = {}
 

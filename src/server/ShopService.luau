@@ -186,6 +186,15 @@ local function onAction(player: Player, payload: any)
 			text = payload.id
 		end
 		ok, message = PlayerEconomy.setThemePickText(player, text)
+	elseif kind == "buyTimeBoost" then
+		local id = readText(payload.id)
+		if id == nil then
+			return
+		end
+		ok, message = PlayerEconomy.buyTimeBoost(player, id)
+		if ok then
+			print(`{PREFIX} Time boost | {player.Name} | {id}`)
+		end
 	else
 		return
 	end

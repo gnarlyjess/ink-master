@@ -378,6 +378,56 @@ function PlayerEconomy.setThemePickText(player: Player, rawText: string?): (bool
 	return ThemeQueue.setText(player, rawText)
 end
 
+-- One purchase per design round for the whole lobby. Extends TattooCreation for everyone.
+function PlayerEconomy.buyTimeBoost(player: Player, optionId: string): (boolean, string)
+	local RoundManager = require(script.Parent.RoundManager)
+	local data = Profiles.get(player)
+	if data == nil then
+		return false, "Your profile is still loading."
+	end
+
+	local option = Economy.getTimeBoost(optionId)
+	if option == nil then
+		return false, "That time boost isn't available."
+	end
+
+	if not RoundManager.canBuyTimeBoost() then
+		if RoundManager.isDesignWindowOpen() then
+			return false, "Extra time was already bought this round."
+		end
+		return false, "Extra time is only sold during the design phase."
+	end
+
+	if data.coins < option.price then
+		return false, `You need {option.price - data.coins} more coins.`
+	end
+
+	data.coins -= option.price
+	data.lifetimeSpent += option.price
+	data.stats.purchases = statOf(data, "purchases") + 1
+
+	if not RoundManager.tryClaimTimeBoost(option.seconds) then
+		data.coins += option.price
+		data.lifetimeSpent = math.max(0, data.lifetimeSpent - option.price)
+		data.stats.purchases = math.max(0, statOf(data, "purchases") - 1)
+		changed(player)
+		return false, "Extra time was already bought this round."
+	end
+
+	checkAchievements(player, data)
+	changed(player)
+
+	local who = player.DisplayName
+	local notice = `{who} bought {option.label} for everyone!`
+	for _, other in Players:GetPlayers() do
+		if other ~= player then
+			PlayerEconomy.notify(other, "ok", notice)
+		end
+	end
+
+	return true, `{option.label} added for the whole lobby.`
+end
+
 function PlayerEconomy.refundThemePickOnLeave(player: Player)
 	local ThemeQueue = require(script.Parent.ThemeQueue)
 	local data = Profiles.get(player)

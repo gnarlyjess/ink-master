@@ -34,6 +34,9 @@ export type RoundSnapshot = {
 	themeQueueCount: number,
 	themePickOpen: boolean,
 	myThemePickSpot: number?,
+	-- Design-phase extra time: one buy for the whole lobby per design round.
+	timeBoostOpen: boolean,
+	timeBoostUsed: boolean,
 }
 
 local TIMED_ORDER: { RoundState } = {
@@ -183,6 +186,9 @@ function RoundTypes.readSnapshot(payload: any): RoundSnapshot?
 	if typeof(payload.themePickOpen) ~= "boolean" then
 		return nil
 	end
+	if typeof(payload.timeBoostOpen) ~= "boolean" or typeof(payload.timeBoostUsed) ~= "boolean" then
+		return nil
+	end
 	local myThemePickSpot: number? = nil
 	if payload.myThemePickSpot ~= nil then
 		local spot = readFinite(payload.myThemePickSpot)
@@ -196,6 +202,8 @@ function RoundTypes.readSnapshot(payload: any): RoundSnapshot?
 	local paused: boolean = payload.paused
 	local showTheme: boolean = payload.showTheme
 	local themePickOpen: boolean = payload.themePickOpen
+	local timeBoostOpen: boolean = payload.timeBoostOpen
+	local timeBoostUsed: boolean = payload.timeBoostUsed
 	local snapshot: RoundSnapshot = {
 		revision = revision,
 		roundId = roundId,
@@ -217,6 +225,8 @@ function RoundTypes.readSnapshot(payload: any): RoundSnapshot?
 		themeQueueCount = themeQueueCount,
 		themePickOpen = themePickOpen,
 		myThemePickSpot = myThemePickSpot,
+		timeBoostOpen = timeBoostOpen,
+		timeBoostUsed = timeBoostUsed,
 	}
 	return snapshot
 end

@@ -177,7 +177,7 @@ end
 
 type SkinTone = { id: string, name: string, color: Color3? }
 
--- Chip colours are the target look. Limb uses a peach master + ImageColor3 tint to match.
+-- Chip colours are the target look. Transparent peach masters are tinted to match.
 local SKIN_TONES: { SkinTone } = {
 	{ id = "light", name = "Light", color = Color3.fromRGB(244, 204, 176) },
 	{ id = "peach", name = "Peach", color = Color3.fromRGB(232, 184, 150) },
@@ -192,9 +192,9 @@ local PEACH_BASE = Color3.fromRGB(232, 184, 150)
 
 local function skinTint(toneColor: Color3): Color3
 	return Color3.new(
-		math.clamp(toneColor.R / PEACH_BASE.R, 0.18, 1.35),
-		math.clamp(toneColor.G / PEACH_BASE.G, 0.18, 1.35),
-		math.clamp(toneColor.B / PEACH_BASE.B, 0.18, 1.35)
+		math.clamp(toneColor.R / PEACH_BASE.R, 0.2, 1.4),
+		math.clamp(toneColor.G / PEACH_BASE.G, 0.2, 1.4),
+		math.clamp(toneColor.B / PEACH_BASE.B, 0.2, 1.4)
 	)
 end
 
@@ -405,12 +405,13 @@ end
 
 local limbApplyToken = 0
 
--- Fixed board fill — never follows skin tone (that used to darken the whole stage).
+-- Fixed board shows through transparent pixels outside the limb. Skin swaps only
+-- change ImageColor3 on the peach master — no asset reload, no brown flash.
 local LIMB_BOARD = Color3.fromRGB(54, 42, 44)
 
 local function applyLimbStill(image: ImageLabel, regionId: string)
 	local wantedTone = skinToneId
-	-- Peach master + ImageColor3 so the limb matches the chip. Board fill stays LIMB_BOARD.
+	-- Always the transparent peach master for this region.
 	local asset = LimbPhotos.get(regionId, "peach") or LimbPhotos.get(regionId, wantedTone)
 	local toneColor = PEACH_BASE
 	for _, tone in SKIN_TONES do
@@ -419,15 +420,17 @@ local function applyLimbStill(image: ImageLabel, regionId: string)
 			break
 		end
 	end
+	local tint = skinTint(toneColor)
 	image.BackgroundColor3 = LIMB_BOARD
 	image.BackgroundTransparency = 0
-	image.ImageColor3 = skinTint(toneColor)
+	image.ImageColor3 = tint
 	image.ImageTransparency = 0
 	if asset == nil or asset == "" then
 		image.Image = ""
 		image.ImageTransparency = 1
 		return
 	end
+	-- Tone changes only update ImageColor3; keep the loaded still.
 	if image.Image == asset then
 		return
 	end
@@ -438,13 +441,21 @@ local function applyLimbStill(image: ImageLabel, regionId: string)
 		pcall(function()
 			ContentProvider:PreloadAsync({ asset })
 		end)
-		if token ~= limbApplyToken or image.Parent == nil or skinToneId ~= wantedTone then
+		if token ~= limbApplyToken or image.Parent == nil then
 			return
 		end
 		if image.Image ~= asset then
 			image.Image = asset
 		end
-		image.ImageColor3 = skinTint(toneColor)
+		-- Re-apply current tint in case the player clicked again while loading.
+		local liveColor = PEACH_BASE
+		for _, tone in SKIN_TONES do
+			if tone.id == skinToneId and tone.color ~= nil then
+				liveColor = tone.color
+				break
+			end
+		end
+		image.ImageColor3 = skinTint(liveColor)
 		image.ImageTransparency = 0
 	end)
 end

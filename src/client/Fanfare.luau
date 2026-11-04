@@ -5,8 +5,10 @@
 -- Bright candy accents on a dark parlour stage — same game, louder dopamine.
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
+local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
 local Juice = require(script.Parent.Juice)
 local PlayerData = require(script.Parent.PlayerData)
 local Sfx = require(script.Parent.Sfx)
@@ -433,6 +435,10 @@ function Fanfare.setHeld(blocked: boolean)
 end
 
 function Fanfare.show(payload: FanfarePayload)
+	-- Quiet while iterating — DevMode skips welcome / level-up / daily cards.
+	if GameConfig.DevMode then
+		return
+	end
 	if gui == nil then
 		return
 	end
@@ -462,6 +468,10 @@ function Fanfare.start()
 	screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	screen.Parent = playerGui
 	gui = screen
+
+	if GameConfig.DevMode then
+		return
+	end
 
 	-- Offer daily ink after a short beat so the welcome card can land first for new players.
 	PlayerData.changed:Connect(function()
