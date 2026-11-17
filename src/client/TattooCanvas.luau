@@ -12,6 +12,7 @@ local Workspace = game:GetService("Workspace")
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local BodyRegions = require(ReplicatedStorage.Shared.BodyRegions)
+local PrepTypes = require(ReplicatedStorage.Shared.PrepTypes)
 local Catalogue = require(ReplicatedStorage.Shared.Catalogue)
 local DesignDocument = require(ReplicatedStorage.Shared.DesignDocument)
 local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
@@ -19,7 +20,9 @@ local InkColors = require(ReplicatedStorage.Shared.InkColors)
 local LimbPhotos = require(ReplicatedStorage.Shared.LimbPhotos)
 local StencilDefinitions = require(ReplicatedStorage.Shared.StencilDefinitions)
 local UiAssets = require(ReplicatedStorage.Shared.UiAssets)
+local FirstPerson = require(script.Parent.FirstPerson)
 local FrameDress = require(script.Parent.FrameDress)
+local PrepPaint = require(script.Parent.PrepPaint)
 local StencilView = require(script.Parent.StencilView)
 local UiTheme = require(script.Parent.UiTheme)
 
@@ -138,6 +141,12 @@ end
 local photoLayer: GuiObject? = nil
 local canvasDim: GuiObject? = nil
 local surfacePad: GuiObject? = nil
+local prepResidue: PrepTypes.PrepView? = nil
+local prepResidueHair: EditableImage? = nil
+local prepResidueDirt: EditableImage? = nil
+local prepDirtHost: Frame? = nil
+local prepHairHost: Frame? = nil
+local paintPrepResidue: () -> ()
 local worldLocked = false
 local savedWalkSpeed: number? = nil
 local savedJumpHeight: number? = nil
@@ -177,7 +186,7 @@ end
 
 type SkinTone = { id: string, name: string, color: Color3? }
 
--- Chip colours are the target look. Transparent peach masters are tinted to match.
+-- Chip colours match the photoreal still for each tone id.
 local SKIN_TONES: { SkinTone } = {
 	{ id = "light", name = "Light", color = Color3.fromRGB(244, 204, 176) },
 	{ id = "peach", name = "Peach", color = Color3.fromRGB(232, 184, 150) },
@@ -187,16 +196,6 @@ local SKIN_TONES: { SkinTone } = {
 	{ id = "brown", name = "Brown", color = Color3.fromRGB(112, 74, 52) },
 	{ id = "deep", name = "Deep", color = Color3.fromRGB(74, 50, 40) },
 }
-
-local PEACH_BASE = Color3.fromRGB(232, 184, 150)
-
-local function skinTint(toneColor: Color3): Color3
-	return Color3.new(
-		math.clamp(toneColor.R / PEACH_BASE.R, 0.2, 1.4),
-		math.clamp(toneColor.G / PEACH_BASE.G, 0.2, 1.4),
-		math.clamp(toneColor.B / PEACH_BASE.B, 0.2, 1.4)
-	)
-end
 
 local onGrab: (number) -> () = function(_index: number) end
 local onBlank: () -> () = function() end
@@ -368,6 +367,8 @@ local function destroyCanvas()
 	boardStroke = nil
 	photoLayer = nil
 	canvasDim = nil
+	prepDirtHost = nil
+	prepHairHost = nil
 	captionLabel = nil
 	deleteButton = nil
 	viewTools = nil
@@ -378,6 +379,8 @@ local function destroyCanvas()
 	layersOpen = false
 	photoCharacter = nil
 	photoRegionId = nil
+	appliedSkinToneId = ""
+	appliedRegionId = ""
 	viewZoom = 1
 	viewPan = Vector2.zero
 	panDrag = nil
@@ -386,6 +389,8 @@ local function destroyCanvas()
 	hoveredIndex = nil
 	table.clear(elementFrames)
 end
+
+local warmHost: ScreenGui? = nil
 
 local function preloadLimbPhotos()
 	if photoPreloaded then
@@ -400,64 +405,56 @@ local function preloadLimbPhotos()
 		pcall(function()
 			ContentProvider:PreloadAsync(assets)
 		end)
+		-- Keep decoded ImageLabels alive so region/tone swaps stay instant.
+		local player = Players.LocalPlayer
+		local playerGui = if player ~= nil then player:FindFirstChildOfClass("PlayerGui") else nil
+		if playerGui == nil then
+			return
+		end
+		if warmHost ~= nil then
+			warmHost:Destroy()
+		end
+		local host = Instance.new("ScreenGui")
+		host.Name = "InkRivalryLimbWarm"
+		host.ResetOnSpawn = false
+		host.Enabled = false
+		host.Parent = playerGui
+		warmHost = host
+		for _, asset in assets do
+			local img = Instance.new("ImageLabel")
+			img.BackgroundTransparency = 1
+			img.Size = UDim2.fromOffset(2, 2)
+			img.Image = asset
+			img.Visible = false
+			img.Parent = host
+		end
 	end)
 end
 
-local limbApplyToken = 0
+local appliedSkinToneId = ""
+local appliedRegionId = ""
 
--- Fixed board shows through transparent pixels outside the limb. Skin swaps only
--- change ImageColor3 on the peach master — no asset reload, no brown flash.
 local LIMB_BOARD = Color3.fromRGB(54, 42, 44)
 
-local function applyLimbStill(image: ImageLabel, regionId: string)
+local function applyLimbStill(image: ImageLabel, regionId: string, force: boolean?)
 	local wantedTone = skinToneId
-	-- Always the transparent peach master for this region.
-	local asset = LimbPhotos.get(regionId, "peach") or LimbPhotos.get(regionId, wantedTone)
-	local toneColor = PEACH_BASE
-	for _, tone in SKIN_TONES do
-		if tone.id == wantedTone and tone.color ~= nil then
-			toneColor = tone.color
-			break
-		end
-	end
-	local tint = skinTint(toneColor)
-	image.BackgroundColor3 = LIMB_BOARD
-	image.BackgroundTransparency = 0
-	image.ImageColor3 = tint
+	local asset = LimbPhotos.get(regionId, wantedTone)
+	-- Transparent cutouts — never tint; backdrop behind the limb stays fixed.
+	image.BackgroundTransparency = 1
+	image.ImageColor3 = Color3.new(1, 1, 1)
 	image.ImageTransparency = 0
 	if asset == nil or asset == "" then
 		image.Image = ""
-		image.ImageTransparency = 1
+		appliedSkinToneId = wantedTone
+		appliedRegionId = regionId
 		return
 	end
-	-- Tone changes only update ImageColor3; keep the loaded still.
-	if image.Image == asset then
+	if not force and image.Image == asset and appliedSkinToneId == wantedTone and appliedRegionId == regionId then
 		return
 	end
-	limbApplyToken += 1
-	local token = limbApplyToken
+	appliedSkinToneId = wantedTone
+	appliedRegionId = regionId
 	image.Image = asset
-	task.spawn(function()
-		pcall(function()
-			ContentProvider:PreloadAsync({ asset })
-		end)
-		if token ~= limbApplyToken or image.Parent == nil then
-			return
-		end
-		if image.Image ~= asset then
-			image.Image = asset
-		end
-		-- Re-apply current tint in case the player clicked again while loading.
-		local liveColor = PEACH_BASE
-		for _, tone in SKIN_TONES do
-			if tone.id == skinToneId and tone.color ~= nil then
-				liveColor = tone.color
-				break
-			end
-		end
-		image.ImageColor3 = skinTint(liveColor)
-		image.ImageTransparency = 0
-	end)
 end
 
 local function makeLimbStill(parent: GuiObject, regionId: string, zIndex: number): ImageLabel
@@ -466,9 +463,9 @@ local function makeLimbStill(parent: GuiObject, regionId: string, zIndex: number
 	image.AnchorPoint = Vector2.new(0.5, 0.5)
 	image.Position = UDim2.fromScale(0.5, 0.5)
 	image.Size = UDim2.fromScale(1, 1)
-	image.BackgroundColor3 = LIMB_BOARD
-	image.BackgroundTransparency = 0
+	image.BackgroundTransparency = 1
 	image.BorderSizePixel = 0
+	-- Crop keeps prep dirt/hair UVs aligned with the limb frame.
 	image.ScaleType = Enum.ScaleType.Crop
 	image.ResampleMode = Enum.ResamplerMode.Default
 	image.Active = false
@@ -501,8 +498,12 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	photo.Name = "InkRivalryCanvas"
 	photo.ResetOnSpawn = false
 	photo.IgnoreGuiInset = true
+	photo.ClipToDeviceSafeArea = false
 	photo.DisplayOrder = if presentedCaption ~= nil then 37 else 15
 	photo.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	pcall(function()
+		(photo :: any).ScreenInsets = Enum.ScreenInsets.None
+	end)
 	photo.Parent = playerGui
 	photoGui = photo
 
@@ -532,7 +533,7 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	local boardPosition, boardSize = stageFrame()
 	board.Position = boardPosition
 	board.Size = boardSize
-	board.BackgroundColor3 = UiTheme.color.ink
+	board.BackgroundColor3 = LIMB_BOARD
 	board.BorderSizePixel = 0
 	board.ClipsDescendants = true
 	board.Parent = photo
@@ -545,7 +546,22 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	outline.Parent = board
 	boardStroke = outline
 
+	-- Fixed parlour plate under the limb — skin swaps never touch this.
+	local plate = Instance.new("ImageLabel")
+	plate.Name = "BoardPlate"
+	plate.BackgroundColor3 = LIMB_BOARD
+	plate.BackgroundTransparency = 0
+	plate.BorderSizePixel = 0
+	plate.Size = UDim2.fromScale(1, 1)
+	plate.Image = UiAssets.studioBackdrop
+	plate.ScaleType = Enum.ScaleType.Crop
+	plate.ImageTransparency = 0.15
+	plate.ZIndex = 0
+	plate.Active = false
+	plate.Parent = board
+
 	photoLayer = makeLimbStill(board, region.id, 1)
+	paintPrepResidue()
 
 	local caption = Instance.new("TextLabel")
 	caption.Name = "Caption"
@@ -610,8 +626,12 @@ local function buildCanvas(character: Model, region: BodyRegion)
 	ink.Name = "InkRivalryInk"
 	ink.ResetOnSpawn = false
 	ink.IgnoreGuiInset = true
+	ink.ClipToDeviceSafeArea = false
 	ink.DisplayOrder = if presentedCaption ~= nil then 38 else 17
 	ink.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	pcall(function()
+		(ink :: any).ScreenInsets = Enum.ScreenInsets.None
+	end)
 	ink.Parent = playerGui
 	inkGui = ink
 
@@ -2015,9 +2035,39 @@ function TattooCanvas.setSkin(id: string)
 	if regionId == nil then
 		return
 	end
-	if photoLayer ~= nil and photoLayer:IsA("ImageLabel") then
-		applyLimbStill(photoLayer, regionId)
+	local layer = photoLayer
+	if layer == nil then
+		return
 	end
+	local image: ImageLabel? = if layer:IsA("ImageLabel") then layer else layer:FindFirstChildWhichIsA("ImageLabel", true)
+	if image ~= nil then
+		applyLimbStill(image, regionId, true)
+	end
+end
+
+-- Prep limb switch: swap the still only — keep the board / overlays mounted.
+function TattooCanvas.setLimbRegion(regionId: string)
+	if regionId == "" then
+		return
+	end
+	photoRegionId = regionId
+	local region = BodyRegions.get(regionId)
+	if captionLabel ~= nil and region ~= nil then
+		captionLabel.Text = presentedCaption or string.upper(region.label)
+	end
+	local layer = photoLayer
+	if layer == nil then
+		return
+	end
+	local image: ImageLabel? = if layer:IsA("ImageLabel") then layer else layer:FindFirstChildWhichIsA("ImageLabel", true)
+	if image ~= nil then
+		applyLimbStill(image, regionId, true)
+	end
+end
+
+function TattooCanvas.preloadAll()
+	photoPreloaded = false
+	preloadLimbPhotos()
 end
 
 function TattooCanvas.setInteractive(enabled: boolean)
@@ -2046,6 +2096,81 @@ function TattooCanvas.clear()
 	if worldLocked then
 		TattooCanvas.setCameraLocked(false)
 	end
+end
+
+function TattooCanvas.getBoard(): Frame?
+	return stage
+end
+
+function paintPrepResidue()
+	local board = stage
+	if board == nil then
+		return
+	end
+	if prepDirtHost ~= nil then
+		prepDirtHost:Destroy()
+		prepDirtHost = nil
+	end
+	if prepHairHost ~= nil then
+		prepHairHost:Destroy()
+		prepHairHost = nil
+	end
+	local view = prepResidue
+	if view == nil then
+		return
+	end
+	-- Only show residue for the limb that was prepped.
+	if photoRegionId ~= nil and view.regionId ~= photoRegionId then
+		return
+	end
+
+	local hair = Instance.new("Frame")
+	hair.Name = "PrepHairResidue"
+	hair.BackgroundTransparency = 1
+	hair.Size = UDim2.fromScale(1, 1)
+	hair.ZIndex = 2
+	hair.Parent = board
+	prepHairHost = hair
+
+	local dirt = Instance.new("Frame")
+	dirt.Name = "PrepDirtResidue"
+	dirt.BackgroundTransparency = 1
+	dirt.Size = UDim2.fromScale(1, 1)
+	dirt.ZIndex = 3
+	dirt.Parent = board
+	prepDirtHost = dirt
+
+	-- Prefer pixel snapshot from the prep stage so soft shaves match exactly.
+	local hairImage = prepResidueHair
+	local dirtImage = prepResidueDirt
+	if hairImage == nil then
+		hairImage = PrepPaint.drawHair(view.hair, view.hairCols, view.hairRows, view.regionId)
+	end
+	if dirtImage == nil then
+		local dirtList: { PrepPaint.DirtPatch } = {}
+		for _, patch in view.dirt do
+			table.insert(dirtList, patch)
+		end
+		dirtImage = PrepPaint.drawDirt(dirtList, view.regionId)
+	end
+	if hairImage ~= nil then
+		PrepPaint.mount(hairImage, hair, 2, "HairPaint")
+	end
+	if dirtImage ~= nil then
+		PrepPaint.mount(dirtImage, dirt, 3, "DirtPaint")
+	end
+end
+
+function TattooCanvas.setPrepResidue(view: PrepTypes.PrepView?, hairImage: EditableImage?, dirtImage: EditableImage?)
+	prepResidue = view
+	if view == nil then
+		prepResidueHair = nil
+		prepResidueDirt = nil
+	else
+		prepResidueHair = hairImage
+		prepResidueDirt = dirtImage
+	end
+	paintPrepResidue()
 end
 
 -- Showcase mode: only the tattoo, no limb label, zoom tools, or world dim.
@@ -2231,6 +2356,9 @@ function TattooCanvas.setCameraLocked(locked: boolean)
 			if humanoid ~= nil then
 				camera.CameraSubject = humanoid
 			end
+		end
+		if localPlayer ~= nil then
+			FirstPerson.apply(localPlayer)
 		end
 		if humanoid ~= nil then
 			humanoid.WalkSpeed = savedWalkSpeed or 16

@@ -58,6 +58,8 @@ function StudioMenu.start()
 	openButton.LayoutOrder = 1
 	openButton.Size = UDim2.fromOffset(96, 36)
 	openButton.TextStrokeTransparency = 1
+	-- Modal unlocks the FP mouse so this (and other HUD) can be clicked on PC.
+	openButton.Modal = true
 	local shopStroke = UiKit.stroke(openButton, UiTheme.color.hotPink, 2, 0)
 	Juice.glowStroke(shopStroke, UiTheme.color.hotPink, UiTheme.color.sunshine)
 	Juice.pulse(openButton, 1, 1.05)

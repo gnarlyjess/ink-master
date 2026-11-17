@@ -39,9 +39,24 @@ local currentDuration: number? = nil
 local activeTheme: ThemeDefinition? = nil
 local joinedPlayers: { [Player]: boolean } = {}
 local lastRequestAt: { [Player]: number } = {}
-local prepareState: ((RoundState) -> number?)? = nil
+local prepareHooks: { (RoundState) -> number? } = {}
 -- One extra-time purchase for the whole lobby per design round.
 local timeBoostUsed = false
+-- Personal stockroom clear → +tattoo seconds (wired by BlueprintService).
+local blueprintBonusOf: ((Player) -> boolean)? = nil
+-- Extra seconds baked into TattooCreation because at least one artist cleared the set.
+local creationBlueprintHeadroom = 0
+
+local function runPrepare(state: RoundState): number?
+	local override: number? = nil
+	for _, hook in prepareHooks do
+		local result = hook(state)
+		if result ~= nil and result > 0 then
+			override = result
+		end
+	end
+	return override
+end
 
 local machine = {}
 
@@ -65,8 +80,22 @@ local function buildSnapshot(forPlayer: Player?): RoundSnapshot
 	end
 
 	local mySpot: number? = nil
+	local myBlueprintBonus = false
+	local myCreationEndsAt: number? = nil
 	if forPlayer ~= nil then
 		mySpot = ThemeQueue.getPosition(forPlayer)
+		if blueprintBonusOf ~= nil then
+			myBlueprintBonus = blueprintBonusOf(forPlayer)
+		end
+		if endsAt ~= nil and currentDuration ~= nil and currentState == "TattooCreation" then
+			local base = GameConfig.getCreationSeconds(designRound)
+			local phaseStart = endsAt - currentDuration
+			local personalBonus = if myBlueprintBonus then GameConfig.getBlueprintBonusSeconds() else 0
+			local paidExtra = math.max(0, currentDuration - base - creationBlueprintHeadroom)
+			myCreationEndsAt = math.min(endsAt, phaseStart + base + personalBonus + paidExtra)
+		elseif endsAt ~= nil and currentState == "Submission" then
+			myCreationEndsAt = endsAt
+		end
 	end
 
 	return {
@@ -93,6 +122,8 @@ local function buildSnapshot(forPlayer: Player?): RoundSnapshot
 		myThemePickSpot = mySpot,
 		timeBoostOpen = currentState == "TattooCreation" and not paused and not timeBoostUsed and endsAt ~= nil,
 		timeBoostUsed = timeBoostUsed,
+		myCreationEndsAt = myCreationEndsAt,
+		myBlueprintBonus = myBlueprintBonus,
 	}
 end
 
@@ -138,9 +169,7 @@ function machine.publishWaiting()
 	activeTheme = nil
 	timeBoostUsed = false
 	announcedWaiting = true
-	if prepareState ~= nil then
-		prepareState("WaitingForPlayers")
-	end
+	runPrepare("WaitingForPlayers")
 	machine.broadcast(nil)
 	if not alreadyWaiting then
 		print(`{PREFIX} Waiting for players | {countPlayers()}/{GameConfig.getMinPlayers()} to start`)
@@ -149,11 +178,9 @@ end
 
 function machine.transitionTo(state: RoundState)
 	local stateDuration = GameConfig.getDuration(state, designRound)
-	if prepareState ~= nil then
-		local override = prepareState(state)
-		if override ~= nil and override > 0 then
-			stateDuration = override
-		end
+	local override = runPrepare(state)
+	if override ~= nil and override > 0 then
+		stateDuration = override
 	end
 	if stateDuration == nil or stateDuration <= 0 then
 		warn(`{PREFIX} No positive timer for {state}. Returning to the lobby.`)
@@ -168,9 +195,13 @@ function machine.transitionTo(state: RoundState)
 	-- Fresh slot each design round — only one player in the lobby can buy it.
 	if state == "TattooCreation" then
 		timeBoostUsed = false
+		local base = GameConfig.getCreationSeconds(designRound)
+		creationBlueprintHeadroom = math.max(0, stateDuration - base)
+	else
+		creationBlueprintHeadroom = 0
 	end
-	-- Pick early so Intermission / mid-round lobby can show the next theme.
-	if (state == "Intermission" or state == "ThemeReveal") and activeTheme == nil then
+	-- Theme lands on ThemeReveal so the stockroom hunt stays blind.
+	if state == "ThemeReveal" and activeTheme == nil then
 		activeTheme = ThemeQueue.consumeNext()
 	end
 	currentDuration = stateDuration
@@ -226,10 +257,9 @@ function machine.advance()
 			machine.publishWaiting()
 			return
 		end
-		-- More design rounds left in this match: new theme → draw → vote again.
+		-- More design rounds left: theme → prep → draw → vote (stockroom is match-start only).
 		if designRound < GameConfig.getDesignRoundsPerMatch() then
 			designRound += 1
-			-- Theme already rolled during the Results lobby beat when possible.
 			print(
 				`{PREFIX} Match {roundId} | starting design {designRound}/{GameConfig.getDesignRoundsPerMatch()}`
 			)
@@ -398,8 +428,45 @@ function RoundManager.canBuyThemePick(): boolean
 end
 
 -- Creation, plus the Time's up beat so a late save still reaches the display case.
-function RoundManager.isDesignWindowOpen(): boolean
-	return currentState == "TattooCreation" or currentState == "Submission"
+-- When a player is passed, personal blueprint bonus truncates their window early if they missed.
+function RoundManager.isDesignWindowOpen(player: Player?): boolean
+	if currentState == "Submission" then
+		return true
+	end
+	if currentState ~= "TattooCreation" then
+		return false
+	end
+	if player == nil or endsAt == nil or currentDuration == nil then
+		return true
+	end
+	local hasBonus = blueprintBonusOf ~= nil and blueprintBonusOf(player)
+	local base = GameConfig.getCreationSeconds(designRound)
+	local phaseStart = endsAt - currentDuration
+	local personalBonus = if hasBonus then GameConfig.getBlueprintBonusSeconds() else 0
+	local paidExtra = math.max(0, currentDuration - base - creationBlueprintHeadroom)
+	local personalEnds = math.min(endsAt, phaseStart + base + personalBonus + paidExtra)
+	return Workspace:GetServerTimeNow() <= personalEnds + 0.35
+end
+
+function RoundManager.setBlueprintBonusQuery(callback: (Player) -> boolean)
+	blueprintBonusOf = callback
+end
+
+function RoundManager.getState(): RoundState
+	return currentState
+end
+
+-- Cancel the current phase timer and step forward (e.g. all hunters returned early).
+function RoundManager.advanceNow()
+	if paused or not inRound then
+		return
+	end
+	scheduleToken += 1
+	machine.advance()
+end
+
+function RoundManager.isLimbPrepOpen(): boolean
+	return currentState == "LimbPrep" and not paused
 end
 
 function RoundManager.canBuyTimeBoost(): boolean
@@ -448,7 +515,7 @@ function RoundManager.getContestants(): { Player }
 end
 
 function RoundManager.setPrepare(callback: (RoundState) -> number?)
-	prepareState = callback
+	table.insert(prepareHooks, callback)
 end
 
 function RoundManager.start()

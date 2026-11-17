@@ -46,6 +46,7 @@ type HudRefs = {
 	themeValue: TextLabel,
 	card: Frame,
 	cardFace: Frame,
+	cardScale: UIScale,
 	banner: Frame,
 	bannerState: TextLabel,
 	bannerTime: TextLabel,
@@ -68,6 +69,7 @@ type HudRefs = {
 local PREFIX = "[InkRivalry]"
 local CARD_WIDTH = 420
 local THEME_CARD_WIDTH = 340
+local HUNT_CARD_WIDTH = 720
 local THEME_PILL_HEIGHT = 44
 local CHIP_WIDTH = 160
 
@@ -77,12 +79,20 @@ local PRESENTATION: { [string]: Presentation } = {
 		accent = UiTheme.color.gold,
 	},
 	Intermission = {
-		subtitle = "Settle in. The next theme is close.",
+		subtitle = "Settle in. The stockroom opens next.",
 		accent = UiTheme.color.violet,
+	},
+	BlueprintHunt = {
+		subtitle = "Find all the blueprints to build your tattoo machine and gain extra time for later.",
+		accent = UiTheme.color.aqua,
 	},
 	ThemeReveal = {
 		subtitle = "Get ready to ink.",
 		accent = UiTheme.color.magenta,
+	},
+	LimbPrep = {
+		subtitle = "Pick a limb, soap the dirt, wipe, then shave.",
+		accent = UiTheme.color.lime,
 	},
 	TattooCreation = {
 		subtitle = "Place marks on the forearm panel.",
@@ -101,7 +111,7 @@ local PRESENTATION: { [string]: Presentation } = {
 		accent = UiTheme.color.magenta,
 	},
 	Results = {
-		subtitle = "Votes are banked. Head back to the parlour for the next theme.",
+		subtitle = "Votes are banked. Next theme, then prep and ink again.",
 		accent = UiTheme.color.gold,
 	},
 	ResultsFinal = {
@@ -201,11 +211,147 @@ local function isSlimTheme(snapshot: RoundSnapshot): boolean
 	local matchFinal = snapshot.designRound >= snapshot.designRounds
 	return snapshot.state == "ThemeReveal"
 		or snapshot.state == "Intermission"
+		or snapshot.state == "LimbPrep"
+		or snapshot.state == "BlueprintHunt"
 		or (snapshot.state == "Results" and not matchFinal)
 end
 
+local function colorHex(color: Color3): string
+	return string.format(
+		"#%02X%02X%02X",
+		math.floor(color.R * 255 + 0.5),
+		math.floor(color.G * 255 + 0.5),
+		math.floor(color.B * 255 + 0.5)
+	)
+end
+
+local function tint(text: string, color: Color3): string
+	return `<font color="{colorHex(color)}">{text}</font>`
+end
+
+local huntFound = 0
+local huntTotal = 4
+
+local function setHeroText(refs: HudRefs, text: string)
+	-- Avoid rewriting identical RichText every frame (causes flicker).
+	if refs.heroValue.Text == text then
+		return
+	end
+	refs.heroValue.Text = text
+end
+
+local function huntHeroText(clock: string): string
+	local progress = tint(`{huntFound}/{huntTotal}`, UiTheme.color.sunshine)
+	local time = tint(clock, UiTheme.color.electric)
+	return `Find all the blueprints to build your tattoo machine and gain extra time for later · {progress} · {time}`
+end
+
+local function huntWaitingText(): string
+	return `Waiting for others to find {tint("blueprints", UiTheme.color.aqua)}`
+end
+
+local function isLocallyHunting(): boolean
+	return Players.LocalPlayer:GetAttribute("BlueprintHunting") == true
+end
+
+local function startingSoonText(remaining: number): string
+	local seconds = math.max(0, math.ceil(remaining))
+	local n = tint(tostring(seconds), UiTheme.color.sunshine)
+	if seconds == 1 then
+		return `Game starting in {n} second`
+	end
+	return `Game starting in {n} seconds`
+end
+
+local function nextThemeRevealText(themeName: string?, remaining: number): string
+	local name = tint(themeName or "Incoming", UiTheme.color.hotPink)
+	local seconds = math.max(0, math.ceil(remaining))
+	local n = tint(tostring(seconds), UiTheme.color.electric)
+	if seconds == 1 then
+		return `Next theme is {name} · {n} second`
+	end
+	return `Next theme is {name} · {n} seconds`
+end
+
+local function midThemeLobbyText(themeName: string?): string
+	local name = tint(themeName or "Incoming", UiTheme.color.hotPink)
+	return `Next theme · {name}`
+end
+
+local function tattooTopText(themeName: string?, clock: string): string
+	local name = tint(themeName or "Theme", UiTheme.color.hotPink)
+	local time = tint(clock, UiTheme.color.electric)
+	return `{name} · {time}`
+end
+
+local function waitingForPlayersText(playerCount: number, minPlayers: number): string
+	local need = math.max(0, math.ceil(minPlayers - playerCount))
+	local n = tint(tostring(minPlayers), UiTheme.color.sunshine)
+	if need <= 0 then
+		return `Ready — {tint(tostring(playerCount), UiTheme.color.lime)}/{n}`
+	end
+	return `Waiting for {n} players · {tint(tostring(playerCount), UiTheme.color.electric)}/{n}`
+end
+
+local function styleFunTop(refs: HudRefs, accent: Color3, textSize: number?)
+	refs.heroValue.RichText = true
+	refs.heroValue.TextSize = textSize or 20
+	refs.heroValue.FontFace = UiTheme.font.heavy
+	refs.heroValue.TextColor3 = UiTheme.color.text
+	refs.heroValue.TextStrokeTransparency = 0.4
+	refs.heroValue.TextStrokeColor3 = Color3.fromRGB(12, 4, 22)
+	refs.heroValue.TextTruncate = Enum.TextTruncate.None
+	refs.cardScale.Scale = 1
+	refs.cardFace.BackgroundTransparency = 0.12
+	refs.cardFace.BackgroundColor3 = UiTheme.color.panel
+	local cardStroke = refs.cardFace:FindFirstChildOfClass("UIStroke")
+	if cardStroke ~= nil then
+		cardStroke.Color = accent
+		cardStroke.Transparency = 0.2
+		cardStroke.Thickness = 1.5
+	end
+	local cardGradient = refs.cardFace:FindFirstChildOfClass("UIGradient")
+	if cardGradient ~= nil then
+		cardGradient.Enabled = true
+		cardGradient.Rotation = 18
+		cardGradient.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, accent),
+			ColorSequenceKeypoint.new(0.45, UiTheme.color.panelTop),
+			ColorSequenceKeypoint.new(1, UiTheme.color.electric),
+		})
+	end
+end
+
+local function clearFunTop(refs: HudRefs)
+	refs.heroValue.RichText = false
+	refs.heroValue.TextStrokeTransparency = 1
+	refs.cardScale.Scale = 1
+	local cardStroke = refs.cardFace:FindFirstChildOfClass("UIStroke")
+	if cardStroke ~= nil then
+		cardStroke.Color = UiTheme.color.stroke
+		cardStroke.Transparency = 0.25
+		cardStroke.Thickness = 1
+	end
+	local cardGradient = refs.cardFace:FindFirstChildOfClass("UIGradient")
+	if cardGradient ~= nil then
+		cardGradient.Enabled = true
+		cardGradient.Rotation = 100
+		cardGradient.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, UiTheme.color.panelTop),
+			ColorSequenceKeypoint.new(1, UiTheme.color.panel),
+		})
+	end
+end
+
+local function creationEndsAt(snapshot: RoundSnapshot): number?
+	if snapshot.state == "TattooCreation" and snapshot.myCreationEndsAt ~= nil then
+		return snapshot.myCreationEndsAt
+	end
+	return snapshot.endsAt
+end
+
 local function renderClock(refs: HudRefs, snapshot: RoundSnapshot)
-	local stateEndsAt = snapshot.endsAt
+	local stateEndsAt = creationEndsAt(snapshot)
 	local stateDuration = snapshot.duration
 	if stateEndsAt == nil or stateDuration == nil or stateDuration <= 0 then
 		return
@@ -213,16 +359,31 @@ local function renderClock(refs: HudRefs, snapshot: RoundSnapshot)
 
 	local remaining = math.max(0, stateEndsAt - Workspace:GetServerTimeNow())
 	local clock = formatClock(remaining)
-	-- Slim top-bar chip owns heroValue (theme name) — don't overwrite it with the timer.
-	if isSlimTheme(snapshot) then
-		-- no-op for hero
-	elseif snapshot.state == "ThemeReveal" or snapshot.state == "Submission" then
+	-- Slim top-bar: prep/hunt show the clock; intermission counts down to start.
+	if snapshot.state == "BlueprintHunt" then
+		setHeroText(refs, if isLocallyHunting() then huntHeroText(clock) else huntWaitingText())
+	elseif snapshot.state == "ThemeReveal" then
+		setHeroText(refs, nextThemeRevealText(snapshot.themeName, remaining))
+	elseif snapshot.state == "LimbPrep" then
+		setHeroText(refs, clock)
+	elseif snapshot.state == "Intermission" then
+		setHeroText(refs, startingSoonText(remaining))
+	elseif snapshot.state == "TattooCreation" then
+		setHeroText(refs, tattooTopText(snapshot.themeName, clock))
+	elseif isSlimTheme(snapshot) then
+		-- theme name owned by apply()
+	elseif snapshot.state == "Submission" then
 		refs.secondaryTime.Text = `{clock} left`
 	else
-		refs.heroValue.Text = clock
+		setHeroText(refs, clock)
 	end
 	refs.bannerTime.Text = clock
-	refs.fill.Size = UDim2.fromScale(math.clamp(remaining / stateDuration, 0, 1), 1)
+	local fillDenom = stateDuration
+	if snapshot.state == "TattooCreation" and snapshot.endsAt ~= nil and snapshot.myCreationEndsAt ~= nil then
+		local phaseStart = snapshot.endsAt - stateDuration
+		fillDenom = math.max(1, snapshot.myCreationEndsAt - phaseStart)
+	end
+	refs.fill.Size = UDim2.fromScale(math.clamp(remaining / fillDenom, 0, 1), 1)
 end
 
 local function apply(refs: HudRefs, snapshot: RoundSnapshot)
@@ -233,7 +394,11 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 	local accent = if presentation ~= nil then presentation.accent else UiTheme.color.muted
 	local fallbackSubtitle = if presentation ~= nil then presentation.subtitle else ""
 
+	-- DEV chip sits on the title card; hide it while text-only top bands own that space.
 	refs.badge.Visible = snapshot.devMode
+		and snapshot.state ~= "WaitingForPlayers"
+		and snapshot.state ~= "Intermission"
+		and snapshot.state ~= "ThemeReveal"
 	refs.subtitle.TextColor3 = if snapshot.state == "ThemeReveal" then UiTheme.color.text else UiTheme.color.muted
 	refs.roundLabel.Text = if snapshot.state == "WaitingForPlayers"
 		then "Lobby"
@@ -260,7 +425,10 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 	if snapshot.state == "WaitingForPlayers" then
 		refs.heroCaption.Text = "TO START"
 		refs.heroValue.TextSize = 44
-		refs.heroValue.Text = `{formatCount(snapshot.playerCount)} / {formatCount(snapshot.minPlayers)}`
+		refs.heroValue.RichText = true
+		local have = tint(formatCount(snapshot.playerCount), UiTheme.color.sunshine)
+		local need = tint(formatCount(snapshot.minPlayers), UiTheme.color.hotPink)
+		refs.heroValue.Text = `{have} / {need}`
 		refs.secondaryTime.Visible = false
 	elseif snapshot.state == "ThemeReveal" then
 		refs.heroCaption.Text = "NEXT UP"
@@ -280,20 +448,41 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 
 	local hasTimer = snapshot.endsAt ~= nil and snapshot.duration ~= nil
 	local designing = snapshot.state == "TattooCreation"
+	local prepping = snapshot.state == "LimbPrep"
+	local hunting = snapshot.state == "BlueprintHunt"
+	local stillHunting = hunting and isLocallyHunting()
+	local huntWaiting = hunting and not stillHunting
 	-- Sit just above the bottom-left shop bar (56px tall + side margin).
 	refs.timeBoost.Visible = designing and snapshot.timeBoostOpen
-	local inLobby = snapshot.state == "WaitingForPlayers" or snapshot.state == "Intermission"
+	local waitingPlayers = snapshot.state == "WaitingForPlayers"
+	local inLobby = waitingPlayers or snapshot.state == "Intermission"
 	local revealing = snapshot.state == "ThemeReveal"
+	local startingSoon = snapshot.state == "Intermission"
 	-- Quiet parlour beat after a mid-match vote: next theme + request only.
-	local themeLobby = snapshot.state == "Intermission"
-		or (snapshot.state == "Results" and not matchFinal)
-	local slimTheme = revealing or themeLobby
-	refs.track.Visible = hasTimer and not designing and not inLobby and not revealing and not snapshot.paused and not themeLobby
+	local midThemeLobby = snapshot.state == "Results" and not matchFinal
+	local themeLobby = startingSoon or midThemeLobby
+	local slimTheme = revealing or themeLobby or prepping or hunting or waitingPlayers or designing
+	-- All slim top banners share the same candy pill treatment.
+	local textOnlyTop = startingSoon or revealing or hunting or midThemeLobby or prepping or waitingPlayers or designing
+	refs.track.Visible = hasTimer
+		and not designing
+		and not prepping
+		and not hunting
+		and not inLobby
+		and not revealing
+		and not snapshot.paused
+		and not themeLobby
 	refs.artistsValue.Text = `{formatCount(snapshot.playerCount)} / {formatCount(snapshot.maxPlayers)}`
 	refs.themeValue.Text = snapshot.themeName or "Incoming"
-	refs.themeChip.Visible = not revealing and not designing and not inLobby and not snapshot.paused and not themeLobby
-	refs.artistsChip.Visible = not revealing and not themeLobby
-	refs.roundLabel.Visible = not revealing and not themeLobby
+	refs.themeChip.Visible = not revealing
+		and not designing
+		and not prepping
+		and not hunting
+		and not inLobby
+		and not snapshot.paused
+		and not themeLobby
+	refs.artistsChip.Visible = not revealing and not themeLobby and not prepping and not hunting and not waitingPlayers and not designing
+	refs.roundLabel.Visible = not revealing and not themeLobby and not prepping and not hunting and not waitingPlayers and not designing
 	refs.pill.Visible = not slimTheme
 	-- Slim mode is one line in the top bar (same band as chat / menu).
 	refs.heroCaption.Visible = not slimTheme
@@ -307,19 +496,30 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 		or snapshot.state == "Showcase"
 		or snapshot.state == "Voting"
 		or (snapshot.state == "Results" and matchFinal)
-	-- Theme reveal / post-round lobby: caption + theme name only (no other chrome).
+	-- Prep / hunt / theme reveal / design / lobby wait: slim top chip only — keep the view clear.
 	refs.card.Visible = revealing
 		or themeLobby
-		or (not designing and not inLobby and not snapshot.paused and not ceremony)
+		or prepping
+		or hunting
+		or waitingPlayers
+		or designing
+		or (not inLobby and not snapshot.paused and not ceremony)
 	local insetY = GuiService:GetGuiInset().Y
 	local lobbyTop = math.max(UiTheme.safe.top, insetY + 4)
 	-- Content frame is a sibling of cardFace; size it so slim text can truly centre.
 	local contentFrame = refs.heroValue.Parent
 	if slimTheme then
-		-- Fat pill, centred on the CoreGui top bar (chat / hamburger band).
+		-- Fat pill (or text-only), centred on the CoreGui top bar (chat / hamburger band).
 		refs.card.AnchorPoint = Vector2.new(0.5, 0.5)
 		refs.card.AutomaticSize = Enum.AutomaticSize.None
-		refs.card.Size = UDim2.fromOffset(THEME_CARD_WIDTH, THEME_PILL_HEIGHT)
+		local pillWidth = if hunting
+			then HUNT_CARD_WIDTH
+			elseif designing
+			then 460
+			elseif textOnlyTop
+			then 520
+			else THEME_CARD_WIDTH
+		refs.card.Size = UDim2.fromOffset(pillWidth, THEME_PILL_HEIGHT)
 		refs.card.Position = UDim2.new(0.5, 0, 0, math.max(22, insetY * 0.5))
 		if contentFrame ~= nil and contentFrame:IsA("GuiObject") then
 			contentFrame.AutomaticSize = Enum.AutomaticSize.None
@@ -345,7 +545,10 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 		refs.heroValue.TextWrapped = true
 		refs.heroValue.TextTruncate = Enum.TextTruncate.None
 	end
-	refs.cardFace.BackgroundTransparency = if slimTheme then 0.12 else 0.08
+	if not textOnlyTop then
+		clearFunTop(refs)
+		refs.cardFace.BackgroundTransparency = if slimTheme then 0.12 else 0.08
+	end
 	refs.contentPad.PaddingTop = UDim.new(0, if slimTheme then 0 else 16)
 	refs.contentPad.PaddingBottom = UDim.new(0, if slimTheme then 0 else 14)
 	refs.contentPad.PaddingLeft = UDim.new(0, if slimTheme then 18 else 22)
@@ -360,7 +563,8 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 	refs.pauseButton.Text = if snapshot.paused then "Resume" else "Pause"
 	refs.bannerTime.TextColor3 = accent
 
-	local showPick = snapshot.themePickOpen and (themeLobby or inLobby or refs.banner.Visible)
+	-- Buy-next-theme only after stockroom (Results downtime) — never pre-hunt lobby.
+	local showPick = snapshot.themePickOpen and midThemeLobby
 	refs.themePick.Visible = showPick and not ceremony and not revealing
 	if showPick then
 		local queued = snapshot.myThemePickSpot ~= nil
@@ -368,26 +572,75 @@ local function apply(refs: HudRefs, snapshot: RoundSnapshot)
 		refs.themeExpand.Visible = queued
 		refs.themeBuy.Text = `Buy next theme · {formatCount(snapshot.themePickPrice)}`
 	end
-	-- Under the next-theme pill when that chip is up; otherwise bottom-right over the banner.
+	local topBandY = math.max(22, insetY * 0.5)
 	if slimTheme and showPick and not ceremony and not revealing then
 		refs.themePick.AnchorPoint = Vector2.new(0.5, 0)
-		local pillBottom = math.max(22, insetY * 0.5) + THEME_PILL_HEIGHT * 0.5 + 8
+		local pillBottom = topBandY + THEME_PILL_HEIGHT * 0.5 + 8
 		refs.themePick.Position = UDim2.new(0.5, 0, 0, pillBottom)
 	else
 		refs.themePick.AnchorPoint = Vector2.new(1, 1)
 		local gap = if refs.banner.Visible then refs.banner.AbsoluteSize.Y + 10 else 0
 		refs.themePick.Position = UDim2.new(1, -UiTheme.safe.side, 1, -(UiTheme.safe.bottom + gap))
 	end
+	refs.banner.AnchorPoint = Vector2.new(1, 1)
+	refs.banner.Position = UDim2.new(1, -UiTheme.safe.side, 1, -UiTheme.safe.bottom)
 
-	if themeLobby then
-		refs.heroValue.TextSize = 16
-		refs.heroValue.Text = `Next theme · {snapshot.themeName or "Incoming"}`
+	if waitingPlayers then
+		styleFunTop(refs, UiTheme.color.gold)
+		setHeroText(refs, waitingForPlayersText(snapshot.playerCount, snapshot.minPlayers))
 		refs.secondaryTime.Visible = false
 		return
 	end
+	if startingSoon then
+		styleFunTop(refs, UiTheme.color.violet)
+		local ends = snapshot.endsAt
+		local left = if ends ~= nil then math.max(0, ends - Workspace:GetServerTimeNow()) else 0
+		setHeroText(refs, startingSoonText(left))
+		refs.secondaryTime.Visible = false
+		return
+	end
+	if midThemeLobby then
+		styleFunTop(refs, UiTheme.color.gold)
+		setHeroText(refs, midThemeLobbyText(snapshot.themeName))
+		refs.secondaryTime.Visible = false
+		return
+	end
+	if hunting then
+		refs.secondaryTime.Visible = false
+		refs.banner.Visible = false
+		if huntWaiting then
+			styleFunTop(refs, UiTheme.color.aqua)
+			setHeroText(refs, huntWaitingText())
+		else
+			-- Long hunt line — keep it small so it fits the pill.
+			styleFunTop(refs, UiTheme.color.aqua, 13)
+			local ends = snapshot.endsAt
+			local clock = if ends ~= nil then formatClock(math.max(0, ends - Workspace:GetServerTimeNow())) else "0:00"
+			setHeroText(refs, huntHeroText(clock))
+		end
+		return
+	end
+	if prepping then
+		styleFunTop(refs, UiTheme.color.lime)
+		refs.secondaryTime.Visible = false
+		refs.banner.Visible = false
+		return
+	end
+	if designing then
+		styleFunTop(refs, UiTheme.color.aqua)
+		refs.secondaryTime.Visible = false
+		refs.banner.Visible = false
+		local ends = creationEndsAt(snapshot)
+		local clock = if ends ~= nil then formatClock(math.max(0, ends - Workspace:GetServerTimeNow())) else "0:00"
+		setHeroText(refs, tattooTopText(snapshot.themeName, clock))
+		return
+	end
 	if revealing then
-		refs.heroValue.TextSize = 16
-		refs.heroValue.Text = `Next up · {snapshot.themeName or "Theme"}`
+		styleFunTop(refs, UiTheme.color.magenta)
+		local ends = snapshot.endsAt
+		local left = if ends ~= nil then math.max(0, ends - Workspace:GetServerTimeNow()) else 0
+		setHeroText(refs, nextThemeRevealText(snapshot.themeName, left))
+		refs.secondaryTime.Visible = false
 		return
 	end
 	refs.heroCaption.TextSize = 11
@@ -449,6 +702,10 @@ local function buildHud(parent: Instance): HudRefs
 	card.Parent = holder
 	addCorner(card, 22)
 	addStroke(card, UiTheme.color.stroke, 1, 0.25)
+	local cardScale = Instance.new("UIScale")
+	cardScale.Name = "FunPulse"
+	cardScale.Scale = 1
+	cardScale.Parent = holder
 
 	local gradient = Instance.new("UIGradient")
 	gradient.Color = ColorSequence.new({
@@ -624,6 +881,7 @@ local function buildHud(parent: Instance): HudRefs
 	pauseButton.AutomaticSize = Enum.AutomaticSize.XY
 	pauseButton.Size = UDim2.fromOffset(0, 0)
 	pauseButton.Visible = false
+	pauseButton.Modal = true
 	pauseButton.ZIndex = 7
 	pauseButton.LayoutOrder = 10
 	pauseButton.Parent = banner
@@ -841,6 +1099,7 @@ local function buildHud(parent: Instance): HudRefs
 		themeValue = themeValue,
 		card = holder,
 		cardFace = card,
+		cardScale = cardScale,
 		banner = banner,
 		bannerState = bannerState,
 		bannerTime = bannerTime,
@@ -914,6 +1173,11 @@ function RoundHud.start()
 		end
 
 		local nowQueued = snapshot.myThemePickSpot ~= nil
+		if snapshot.state == "BlueprintHunt" and (currentSnapshot == nil or currentSnapshot.state ~= "BlueprintHunt") then
+			huntFound = 0
+		elseif snapshot.state ~= "BlueprintHunt" then
+			huntFound = 0
+		end
 		currentSnapshot = snapshot
 		apply(refs, snapshot)
 		if not snapshot.timeBoostOpen then
@@ -934,6 +1198,26 @@ function RoundHud.start()
 	end
 
 	Remotes.RoundStateUpdated.OnClientEvent:Connect(onSnapshot)
+	Remotes.BlueprintStateUpdated.OnClientEvent:Connect(function(payload: any)
+		if typeof(payload) ~= "table" then
+			return
+		end
+		if typeof(payload.found) == "number" then
+			huntFound = math.floor(payload.found)
+		end
+		if typeof(payload.total) == "number" and payload.total > 0 then
+			huntTotal = math.floor(payload.total)
+		end
+		if currentSnapshot ~= nil and currentSnapshot.state == "BlueprintHunt" then
+			-- Refresh progress digits without restyling the whole card.
+			renderClock(refs, currentSnapshot)
+		end
+	end)
+	Players.LocalPlayer:GetAttributeChangedSignal("BlueprintHunting"):Connect(function()
+		if currentSnapshot ~= nil and currentSnapshot.state == "BlueprintHunt" then
+			apply(refs, currentSnapshot)
+		end
+	end)
 	RunService.Heartbeat:Connect(function()
 		if currentSnapshot ~= nil then
 			renderClock(refs, currentSnapshot)

@@ -32,6 +32,9 @@ local Remotes = {
 	ProfileAction = remoteEvent(remotesFolder, "ProfileAction"),
 	ProfileNotice = remoteEvent(remotesFolder, "ProfileNotice"),
 	RoundRewards = remoteEvent(remotesFolder, "RoundRewards"),
+	PrepAction = remoteEvent(remotesFolder, "PrepAction"),
+	PrepStateUpdated = remoteEvent(remotesFolder, "PrepStateUpdated"),
+	BlueprintStateUpdated = remoteEvent(remotesFolder, "BlueprintStateUpdated"),
 }
 
 return Remotes

@@ -1,7 +1,7 @@
 --!strict
 
--- Equipped title over the head. Flair tier (mist → icon) upgrades the plate so
--- high-level artists read as prestige from across the parlour — not just text.
+-- Equipped title over the head — text only (no pill / chip behind it).
+-- Flair still drives size, studs offset, and text color motion.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -48,7 +48,7 @@ local function candyGradient(parent: Instance)
 	return grad
 end
 
-local function buildTag(head: BasePart, plate: Prestige.PlateStyle): (BillboardGui, TextLabel, UIStroke)
+local function buildTag(head: BasePart, plate: Prestige.PlateStyle): (BillboardGui, TextLabel)
 	local gui = Instance.new("BillboardGui")
 	gui.Name = TAG_NAME
 	gui.Size = UDim2.fromOffset(plate.width, plate.height)
@@ -57,135 +57,19 @@ local function buildTag(head: BasePart, plate: Prestige.PlateStyle): (BillboardG
 	gui.MaxDistance = if plate.id == "icon" then 110 else 80
 	gui.Adornee = head
 
-	local chip = Instance.new("Frame")
-	chip.Name = "Chip"
-	chip.BackgroundColor3 = Color3.fromRGB(18, 10, 28)
-	chip.BackgroundTransparency = plate.chipTransparency
-	chip.BorderSizePixel = 0
-	chip.Size = UDim2.fromScale(1, 1)
-	chip.Parent = gui
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(1, 0)
-	corner.Parent = chip
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Name = "Glow"
-	stroke.Color = plate.accent
-	stroke.Thickness = plate.strokeThickness
-	stroke.Transparency = plate.strokeTransparency
-	stroke.Parent = chip
-
-	if plate.accentB ~= nil then
-		local inner = Instance.new("UIStroke")
-		inner.Name = "InnerGlow"
-		inner.Color = plate.accentB
-		inner.Thickness = math.max(1, plate.strokeThickness - 1)
-		inner.Transparency = 0.35
-		inner.Parent = chip
-	end
-
 	local label = Instance.new("TextLabel")
 	label.Name = "Text"
 	label.BackgroundTransparency = 1
 	label.Size = UDim2.fromScale(1, 1)
 	label.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Heavy)
 	label.TextSize = plate.textSize
-	label.TextColor3 = Color3.new(1, 1, 1)
+	label.TextColor3 = if plate.accent ~= nil then plate.accent else Color3.new(1, 1, 1)
 	label.TextStrokeColor3 = Color3.fromRGB(10, 9, 14)
-	label.TextStrokeTransparency = 0.2
-	label.Parent = chip
+	label.TextStrokeTransparency = 0.15
+	label.Parent = gui
 
 	if plate.rainbow then
 		candyGradient(label)
-	end
-
-	if plate.shimmer then
-		local clip = Instance.new("Frame")
-		clip.Name = "ShimmerClip"
-		clip.BackgroundTransparency = 1
-		clip.Size = UDim2.fromScale(1, 1)
-		clip.ClipsDescendants = true
-		clip.ZIndex = 2
-		clip.Parent = chip
-		local band = Instance.new("Frame")
-		band.BackgroundColor3 = Color3.new(1, 1, 1)
-		band.BackgroundTransparency = 0.75
-		band.BorderSizePixel = 0
-		band.Size = UDim2.fromScale(0.28, 1.5)
-		band.Position = UDim2.fromScale(-0.4, -0.2)
-		band.Rotation = 18
-		band.ZIndex = 2
-		band.Parent = clip
-		local bandCorner = Instance.new("UICorner")
-		bandCorner.CornerRadius = UDim.new(0, 4)
-		bandCorner.Parent = band
-		task.spawn(function()
-			while band.Parent ~= nil do
-				band.Position = UDim2.fromScale(-0.5, -0.2)
-				local tween = TweenService:Create(
-					band,
-					TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
-					{ Position = UDim2.fromScale(1.2, -0.2) }
-				)
-				tween:Play()
-				tween.Completed:Wait()
-				task.wait(0.9)
-			end
-		end)
-	end
-
-	if plate.sparkles then
-		for i, spot in { 0.08, 0.92 } do
-			local spark = Instance.new("Frame")
-			spark.Name = `Spark{i}`
-			spark.AnchorPoint = Vector2.new(0.5, 0.5)
-			spark.Position = UDim2.fromScale(spot, 0.5)
-			spark.Size = UDim2.fromOffset(7, 7)
-			spark.BackgroundColor3 = plate.accent
-			spark.BorderSizePixel = 0
-			spark.Rotation = 45
-			spark.ZIndex = 3
-			spark.Parent = chip
-			local sparkCorner = Instance.new("UICorner")
-			sparkCorner.CornerRadius = UDim.new(0, 2)
-			sparkCorner.Parent = spark
-			TweenService:Create(
-				spark,
-				TweenInfo.new(0.85, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-				{ Size = UDim2.fromOffset(11, 11), BackgroundTransparency = 0.45 }
-			):Play()
-		end
-	end
-
-	if plate.pulse then
-		task.spawn(function()
-			local base = stroke.Thickness
-			local bright = plate.accent
-			local dim = if plate.accentB ~= nil then plate.accentB else bright:Lerp(Color3.new(1, 1, 1), 0.35)
-			while stroke.Parent ~= nil do
-				local a = TweenService:Create(stroke, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-					Color = dim,
-					Thickness = base + 1.2,
-					Transparency = math.max(0, plate.strokeTransparency - 0.15),
-				})
-				a:Play()
-				a.Completed:Wait()
-				if stroke.Parent == nil then
-					return
-				end
-				local b = TweenService:Create(stroke, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-					Color = bright,
-					Thickness = base,
-					Transparency = plate.strokeTransparency,
-				})
-				b:Play()
-				b.Completed:Wait()
-			end
-		end)
-	end
-
-	if plate.rainbow then
 		local grad = label:FindFirstChildOfClass("UIGradient")
 		if grad ~= nil then
 			task.spawn(function()
@@ -197,11 +81,31 @@ local function buildTag(head: BasePart, plate: Prestige.PlateStyle): (BillboardG
 				end
 			end)
 		end
+	elseif plate.pulse then
+		task.spawn(function()
+			local bright = plate.accent
+			local dim = if plate.accentB ~= nil then plate.accentB else bright:Lerp(Color3.new(1, 1, 1), 0.35)
+			while label.Parent ~= nil do
+				local a = TweenService:Create(label, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+					TextColor3 = dim,
+				})
+				a:Play()
+				a.Completed:Wait()
+				if label.Parent == nil then
+					return
+				end
+				local b = TweenService:Create(label, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+					TextColor3 = bright,
+				})
+				b:Play()
+				b.Completed:Wait()
+			end
+		end)
 	end
 
 	CollectionService:AddTag(gui, TAG)
 	gui.Parent = head
-	return gui, label, stroke
+	return gui, label
 end
 
 function NameTags.refresh(player: Player)
@@ -234,17 +138,16 @@ function NameTags.refresh(player: Player)
 	end
 
 	local label: TextLabel? = nil
-	local stroke: UIStroke? = nil
 	if existing ~= nil and existing:IsA("BillboardGui") then
+		-- Drop legacy pill chips from older builds.
 		local chip = existing:FindFirstChild("Chip")
-		local found = if chip ~= nil then chip:FindFirstChild("Text") else existing:FindFirstChild("Text")
-		if found ~= nil and found:IsA("TextLabel") then
-			label = found
-		end
 		if chip ~= nil then
-			local glow = chip:FindFirstChild("Glow")
-			if glow ~= nil and glow:IsA("UIStroke") then
-				stroke = glow
+			existing:Destroy()
+			existing = nil
+		else
+			local found = existing:FindFirstChild("Text")
+			if found ~= nil and found:IsA("TextLabel") then
+				label = found
 			end
 		end
 	end
@@ -252,16 +155,15 @@ function NameTags.refresh(player: Player)
 		if existing ~= nil then
 			existing:Destroy()
 		end
-		local gui, created, createdStroke = buildTag(head, plate)
+		local gui, created = buildTag(head, plate)
 		gui:SetAttribute("Flair", wantKey)
 		label = created
-		stroke = createdStroke
 	end
 	if label ~= nil then
 		label.Text = text
-	end
-	if stroke ~= nil and accent ~= nil and not plate.pulse then
-		stroke.Color = accent
+		if accent ~= nil and not plate.rainbow and not plate.pulse then
+			label.TextColor3 = accent
+		end
 	end
 end
 

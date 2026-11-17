@@ -5,9 +5,10 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 
-local BodyRegions = require(ReplicatedStorage.Shared.BodyRegions)
 local Catalogue = require(ReplicatedStorage.Shared.Catalogue)
 local DesignDocument = require(ReplicatedStorage.Shared.DesignDocument)
 local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
@@ -20,6 +21,7 @@ local FrameDress = require(script.Parent.FrameDress)
 local Juice = require(script.Parent.Juice)
 local MarkInspector = require(script.Parent.MarkInspector)
 local PlayerData = require(script.Parent.PlayerData)
+local PrepEditor = require(script.Parent.PrepEditor)
 local Sfx = require(script.Parent.Sfx)
 local StencilView = require(script.Parent.StencilView)
 local TattooCanvas = require(script.Parent.TattooCanvas)
@@ -75,6 +77,7 @@ function TattooEditor.start()
 	local lastRevision = 0
 	local clearArmed = false
 	local clearToken = 0
+	local personalEndsAt: number? = nil
 	local statusOverride: string? = nil
 	local markPanel: {
 		show: (MarkInspector.MarkState) -> (),
@@ -93,7 +96,6 @@ function TattooEditor.start()
 	local frameButtons: { [string]: TextButton } = {}
 	local frameLocks: { [string]: Frame } = {}
 	local frameOrders: { [string]: number } = {}
-	local limbButtons: { [string]: TextButton } = {}
 	local skinStrokes: { [string]: UIStroke } = {}
 
 	local function freezeFlex(gui: GuiObject)
@@ -187,30 +189,7 @@ function TattooEditor.start()
 	bookTitle.Parent = holder
 	freezeFlex(bookTitle)
 
-	sectionLabel("LimbHeading", "LIMB", 1)
-
-	local limbScroll = Instance.new("ScrollingFrame")
-	limbScroll.Name = "Limbs"
-	limbScroll.LayoutOrder = 2
-	limbScroll.BackgroundTransparency = 1
-	limbScroll.BorderSizePixel = 0
-	limbScroll.ClipsDescendants = true
-	limbScroll.ScrollBarThickness = 3
-	limbScroll.ScrollingDirection = Enum.ScrollingDirection.X
-	limbScroll.AutomaticCanvasSize = Enum.AutomaticSize.X
-	limbScroll.CanvasSize = UDim2.fromOffset(0, 0)
-	limbScroll.Size = UDim2.new(1, 0, 0, 36)
-	limbScroll.Parent = holder
-	freezeFlex(limbScroll)
-	local limbLayout = Instance.new("UIListLayout")
-	limbLayout.FillDirection = Enum.FillDirection.Horizontal
-	limbLayout.Padding = UDim.new(0, 10)
-	limbLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-	limbLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	limbLayout.HorizontalFlex = Enum.UIFlexAlignment.None
-	limbLayout.VerticalFlex = Enum.UIFlexAlignment.None
-	limbLayout.Parent = limbScroll
-
+	-- Limb pick moved to the prep station (LimbPrep). Skin stays here.
 	sectionLabel("SkinHeading", "SKIN", 3)
 
 	local skinScroll = Instance.new("ScrollingFrame")
@@ -346,24 +325,6 @@ function TattooEditor.start()
 	end
 
 	local function updateChrome()
-		for index, region in BodyRegions.all do
-			local button = limbButtons[region.id]
-			if button == nil then
-				continue
-			end
-			local selected = region.id == selectedRegion
-			button.LayoutOrder = index
-			button.BackgroundColor3 = ed.surface
-			button.FontFace = if selected then UiTheme.font.heavy else UiTheme.font.medium
-			button.TextColor3 = if selected then Color3.new(1, 1, 1) else ed.muted
-			button.TextStrokeTransparency = 1
-			local limbStroke = button:FindFirstChildOfClass("UIStroke")
-			if limbStroke ~= nil then
-				limbStroke.Color = ed.hairline
-				limbStroke.Transparency = 0
-				limbStroke.Thickness = 1
-			end
-		end
 		for id, uiStroke in stencilStrokes do
 			local selected = id == selectedStencilId
 			uiStroke.Color = if selected then Color3.new(1, 1, 1) else ed.hairline
@@ -1056,45 +1017,6 @@ function TattooEditor.start()
 		return frame
 	end
 
-	local function selectRegion(regionId: string)
-		selectedRegion = regionId
-		design.region = regionId
-		statusOverride = nil
-		updateChrome()
-		refresh()
-	end
-
-	for index, region in BodyRegions.all do
-		local limbButton = Instance.new("TextButton")
-		limbButton.Name = region.id
-		limbButton.LayoutOrder = index
-		limbButton.AutoButtonColor = false
-		limbButton.Text = region.label
-		limbButton.FontFace = UiTheme.font.medium
-		limbButton.TextSize = 12
-		limbButton.TextColor3 = ed.muted
-		limbButton.TextStrokeTransparency = 1
-		limbButton.BackgroundColor3 = ed.surface
-		limbButton.BorderSizePixel = 0
-		limbButton.AutomaticSize = Enum.AutomaticSize.X
-		limbButton.Size = UDim2.fromOffset(0, 28)
-		limbButton.Selectable = false
-		limbButton.Parent = limbScroll
-		corner(limbButton, 6)
-		stroke(limbButton, ed.hairline).Transparency = 0
-		limbButtons[region.id] = limbButton
-		local limbPad = Instance.new("UIPadding")
-		limbPad.PaddingLeft = UDim.new(0, 10)
-		limbPad.PaddingRight = UDim.new(0, 10)
-		limbPad.Parent = limbButton
-		local regionId = region.id
-		limbButton.MouseButton1Click:Connect(function()
-			Sfx.play("click")
-			Juice.punch(limbButton, 1.1)
-			selectRegion(regionId)
-		end)
-	end
-
 	local function pickFrame(itemId: string)
 		if itemId == "none" then
 			PlayerData.send("unequip", "frame", nil)
@@ -1225,7 +1147,8 @@ function TattooEditor.start()
 		skinStrokes[tone.id] = stroke(toneButton, ed.hairline)
 		skinStrokes[tone.id].Transparency = 0
 		local toneId = tone.id
-		bindTap(toneButton, function()
+		-- MouseButton1Click only — Activated + Click double-bind was eating taps in the skin row.
+		toneButton.MouseButton1Click:Connect(function()
 			Sfx.play("click")
 			Juice.punch(toneButton, 1.15)
 			pickSkin(toneId)
@@ -1322,6 +1245,7 @@ function TattooEditor.start()
 		editing = true
 		roundId = snapshot.roundId
 		designRound = snapshot.designRound
+		personalEndsAt = snapshot.myCreationEndsAt or snapshot.endsAt
 		design = DesignDocument.createEmpty()
 		design.region = selectedRegion
 		selectedIndex = nil
@@ -1330,6 +1254,14 @@ function TattooEditor.start()
 		table.clear(lockedLayers)
 		selectedSkinId = "peach"
 		TattooCanvas.setSkin("peach")
+		-- Region locked in prep; fall back to default forearm.
+		selectedRegion = PrepEditor.getLockedRegion() or GameConfig.getDesignRegion()
+		design.region = selectedRegion
+		local residue = PrepEditor.getResidue()
+		if residue ~= nil then
+			local hairImg, dirtImg = PrepEditor.getResidueImages()
+			TattooCanvas.setPrepResidue(residue, hairImg, dirtImg)
+		end
 		TattooCanvas.setLayersVisible(true)
 		clearArmed = false
 		statusOverride = nil
@@ -1341,6 +1273,9 @@ function TattooEditor.start()
 		applyEditorLayout()
 		Juice.punch(holder, 1.06)
 		refresh()
+		if snapshot.myBlueprintBonus then
+			Toasts.show(`Blueprint bonus: +{GameConfig.getBlueprintBonusSeconds()}s`, "ok")
+		end
 		print(
 			`{PREFIX} Editor open | match {snapshot.roundId} | design {snapshot.designRound}/{snapshot.designRounds}`
 		)
@@ -1351,6 +1286,7 @@ function TattooEditor.start()
 			return
 		end
 		editing = false
+		personalEndsAt = nil
 		submit()
 		screenGui.Enabled = false
 		TattooCanvas.setMargins(0)
@@ -1359,6 +1295,10 @@ function TattooEditor.start()
 		TattooCanvas.clear()
 		TattooCanvas.setCameraLocked(false)
 		Fanfare.setHold("design", false)
+	end
+
+	local function personalTimeUp(): boolean
+		return personalEndsAt ~= nil and Workspace:GetServerTimeNow() >= personalEndsAt
 	end
 
 	Remotes.DesignResult.OnClientEvent:Connect(function(payload: any)
@@ -1426,6 +1366,7 @@ function TattooEditor.start()
 		if
 			snapshot.state == "WaitingForPlayers"
 			or snapshot.state == "Intermission"
+			or snapshot.state == "BlueprintHunt"
 			or snapshot.state == "ThemeReveal"
 		then
 			TattooCanvas.clear()
@@ -1433,13 +1374,24 @@ function TattooEditor.start()
 		if enteredCreation then
 			beginEditing(snapshot)
 		elseif editing and snapshot.state == "TattooCreation" then
-			screenGui.Enabled = true
-			TattooCanvas.setVisible(true)
-			TattooCanvas.setInteractive(true)
-			TattooCanvas.setCameraLocked(true)
+			personalEndsAt = snapshot.myCreationEndsAt or snapshot.endsAt
+			if personalTimeUp() then
+				endEditing()
+			else
+				screenGui.Enabled = true
+				TattooCanvas.setVisible(true)
+				TattooCanvas.setInteractive(true)
+				TattooCanvas.setCameraLocked(true)
+			end
 		end
 		roundId = snapshot.roundId
 		designRound = snapshot.designRound
+	end)
+
+	RunService.Heartbeat:Connect(function()
+		if editing and personalTimeUp() then
+			endEditing()
+		end
 	end)
 
 	UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)

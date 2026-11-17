@@ -3,7 +3,9 @@
 export type RoundState =
 	"WaitingForPlayers"
 	| "Intermission"
+	| "BlueprintHunt"
 	| "ThemeReveal"
+	| "LimbPrep"
 	| "TattooCreation"
 	| "Submission"
 	| "Showcase"
@@ -37,11 +39,16 @@ export type RoundSnapshot = {
 	-- Design-phase extra time: one buy for the whole lobby per design round.
 	timeBoostOpen: boolean,
 	timeBoostUsed: boolean,
+	-- Personal tattoo deadline (shared phase may run longer for blueprint bonuses).
+	myCreationEndsAt: number?,
+	myBlueprintBonus: boolean,
 }
 
 local TIMED_ORDER: { RoundState } = {
 	"Intermission",
+	"BlueprintHunt",
 	"ThemeReveal",
+	"LimbPrep",
 	"TattooCreation",
 	"Submission",
 	"Showcase",
@@ -53,7 +60,9 @@ local TIMED_ORDER: { RoundState } = {
 local LABELS: { [string]: string } = {
 	WaitingForPlayers = "Waiting for players",
 	Intermission = "Intermission",
+	BlueprintHunt = "Stockroom",
 	ThemeReveal = "Theme reveal",
+	LimbPrep = "Prep station",
 	TattooCreation = "Design phase",
 	Submission = "Time's up",
 	Showcase = "Display case",
@@ -81,14 +90,14 @@ function RoundTypes.nextInRound(state: RoundState): RoundState?
 end
 
 function RoundTypes.showsTheme(state: RoundState): boolean
-	-- Intermission shows the upcoming theme once it has been picked.
-	return state ~= "WaitingForPlayers"
+	-- Theme lands after the match-start stockroom hunt (and on later design rounds).
+	-- Keep Intermission / hunt blind.
+	return state ~= "WaitingForPlayers" and state ~= "Intermission" and state ~= "BlueprintHunt"
 end
 
--- Theme picks are sold while the lobby is waiting on the next reveal.
--- Mid-match Results is the quiet parlour beat between design rounds.
+-- Buy-next-theme only after the stockroom hunt — mid-match Results downtime.
 function RoundTypes.themePickOpen(state: RoundState, _paused: boolean): boolean
-	return state == "WaitingForPlayers" or state == "Intermission" or state == "Results"
+	return state == "Results"
 end
 
 function RoundTypes.isRoundState(value: any): boolean
@@ -189,6 +198,9 @@ function RoundTypes.readSnapshot(payload: any): RoundSnapshot?
 	if typeof(payload.timeBoostOpen) ~= "boolean" or typeof(payload.timeBoostUsed) ~= "boolean" then
 		return nil
 	end
+	if typeof(payload.myBlueprintBonus) ~= "boolean" then
+		return nil
+	end
 	local myThemePickSpot: number? = nil
 	if payload.myThemePickSpot ~= nil then
 		local spot = readFinite(payload.myThemePickSpot)
@@ -197,6 +209,10 @@ function RoundTypes.readSnapshot(payload: any): RoundSnapshot?
 		end
 		myThemePickSpot = spot
 	end
+	local myCreationEndsAt = readFinite(payload.myCreationEndsAt)
+	if payload.myCreationEndsAt ~= nil and myCreationEndsAt == nil then
+		return nil
+	end
 
 	local devMode: boolean = payload.devMode
 	local paused: boolean = payload.paused
@@ -204,6 +220,7 @@ function RoundTypes.readSnapshot(payload: any): RoundSnapshot?
 	local themePickOpen: boolean = payload.themePickOpen
 	local timeBoostOpen: boolean = payload.timeBoostOpen
 	local timeBoostUsed: boolean = payload.timeBoostUsed
+	local myBlueprintBonus: boolean = payload.myBlueprintBonus
 	local snapshot: RoundSnapshot = {
 		revision = revision,
 		roundId = roundId,
@@ -227,6 +244,8 @@ function RoundTypes.readSnapshot(payload: any): RoundSnapshot?
 		myThemePickSpot = myThemePickSpot,
 		timeBoostOpen = timeBoostOpen,
 		timeBoostUsed = timeBoostUsed,
+		myCreationEndsAt = myCreationEndsAt,
+		myBlueprintBonus = myBlueprintBonus,
 	}
 	return snapshot
 end

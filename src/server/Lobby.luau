@@ -1477,4 +1477,19 @@ function Lobby.returnToShop()
 	placeExistingCharacters(shopPads)
 end
 
+function Lobby.returnPlayer(player: Player)
+	if #shopPads == 0 then
+		return
+	end
+	player.RespawnLocation = shopPads[1]
+	local character = player.Character
+	if character == nil then
+		return
+	end
+	local pad = nextShopPad(shopPads)
+	if pad ~= nil then
+		seatCharacter(character, pad)
+	end
+end
+
 return Lobby

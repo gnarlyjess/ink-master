@@ -13,6 +13,7 @@ local Catalogue = require(ReplicatedStorage.Shared.Catalogue)
 local CeremonyTypes = require(ReplicatedStorage.Shared.CeremonyTypes)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Fanfare = require(script.Parent.Fanfare)
+local FirstPerson = require(script.Parent.FirstPerson)
 local FrameDress = require(script.Parent.FrameDress)
 local Juice = require(script.Parent.Juice)
 local PlayerData = require(script.Parent.PlayerData)
@@ -384,6 +385,9 @@ local function releaseCamera()
 	end
 	camera.CameraType = Enum.CameraType.Custom
 	local player = Players.LocalPlayer
+	if player ~= nil then
+		FirstPerson.apply(player)
+	end
 	local character = if player ~= nil then player.Character else nil
 	local humanoid = if character ~= nil then character:FindFirstChildOfClass("Humanoid") else nil
 	if humanoid ~= nil then

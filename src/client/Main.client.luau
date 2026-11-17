@@ -13,7 +13,11 @@ pcall(function()
 	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false)
 end)
 
+local FirstPerson = require(script.Parent.FirstPerson)
+
 local localPlayer = Players.LocalPlayer
+-- Parlour + stockroom stay first-person; free PC cursor for shop / pause (hold RMB to look).
+FirstPerson.start()
 local function muteHealth(character: Model)
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if humanoid == nil then
@@ -28,10 +32,12 @@ if localPlayer.Character ~= nil then
 end
 localPlayer.CharacterAdded:Connect(muteHealth)
 
+local BlueprintHunt = require(script.Parent.BlueprintHunt)
 local Ceremony = require(script.Parent.Ceremony)
 local Fanfare = require(script.Parent.Fanfare)
 local LobbyDressing = require(script.Parent.LobbyDressing)
 local PlayerData = require(script.Parent.PlayerData)
+local PrepEditor = require(script.Parent.PrepEditor)
 local RoundHud = require(script.Parent.RoundHud)
 local RoundResults = require(script.Parent.RoundResults)
 local StudioMenu = require(script.Parent.StudioMenu)
@@ -39,20 +45,13 @@ local TattooEditor = require(script.Parent.TattooEditor)
 local TitleFlair = require(script.Parent.TitleFlair)
 local Toasts = require(script.Parent.Toasts)
 
--- Warm limb stills in the background so skin swaps don't stream blurry on mobile.
-task.spawn(function()
-	local ok, LimbPhotos = pcall(function()
-		return require(game:GetService("ReplicatedStorage").Shared.LimbPhotos)
+-- Warm every limb × skin still so prep/tattoo swaps stay instant.
+task.defer(function()
+	local ok, TattooCanvas = pcall(function()
+		return require(script.Parent.TattooCanvas)
 	end)
-	if not ok or LimbPhotos == nil then
-		return
-	end
-	local ContentProvider = game:GetService("ContentProvider")
-	local assets = LimbPhotos.allAssets()
-	if #assets > 0 then
-		pcall(function()
-			ContentProvider:PreloadAsync(assets)
-		end)
+	if ok and TattooCanvas ~= nil then
+		TattooCanvas.preloadAll()
 	end
 end)
 
@@ -66,6 +65,14 @@ RoundHud.start()
 StudioMenu.start()
 RoundResults.start()
 Ceremony.start()
+local huntOk, huntErr = pcall(BlueprintHunt.start)
+if not huntOk then
+	warn(`[InkRivalry] Blueprint hunt did not start: {huntErr}`)
+end
+local prepOk, prepErr = pcall(PrepEditor.start)
+if not prepOk then
+	warn(`[InkRivalry] Prep editor did not start: {prepErr}`)
+end
 local editorOk, editorErr = pcall(TattooEditor.start)
 if not editorOk then
 	warn(`[InkRivalry] Tattoo editor did not start: {editorErr}`)

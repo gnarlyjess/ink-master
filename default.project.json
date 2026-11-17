@@ -44,6 +44,15 @@
         },
         "RoundRewards": {
           "$className": "RemoteEvent"
+        },
+        "PrepAction": {
+          "$className": "RemoteEvent"
+        },
+        "PrepStateUpdated": {
+          "$className": "RemoteEvent"
+        },
+        "BlueprintStateUpdated": {
+          "$className": "RemoteEvent"
         }
       }
     },
@@ -59,6 +68,11 @@
       }
     },
     "StarterPlayer": {
+      "$properties": {
+        "CameraMode": "Classic",
+        "CameraMinZoomDistance": 0.5,
+        "CameraMaxZoomDistance": 0.5
+      },
       "StarterPlayerScripts": {
         "$path": "src/client"
       }

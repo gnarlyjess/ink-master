@@ -403,9 +403,8 @@ local function prepare(state: RoundState): number?
 			broadcast()
 			return nil
 		end
-		-- Mid-match: bank votes, roll the next theme, quiet 7s lobby beat (no podium).
+		-- Mid-match: bank votes, quiet lobby beat — next ThemeReveal starts the following design round.
 		leaveStage()
-		RoundManager.rollNextTheme()
 		phase = "Idle"
 		phaseEnds = nil
 		broadcast()

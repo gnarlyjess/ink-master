@@ -2,13 +2,13 @@
 
 -- DevMode is the testing switch.
 -- true: one player can start a round, and the short Dev timers are used.
--- false: the live lobby needs 5 players and uses the Live timers.
+-- false: live lobby min players + Live timers. (Temp: 1 so solo testing works.)
 -- Both timer tables stay in this file. Durations are seconds.
 
 local BodyRegions = require(script.Parent.BodyRegions)
 local RoundTypes = require(script.Parent.RoundTypes)
 
-local LIVE_MIN_PLAYERS = 5
+local LIVE_MIN_PLAYERS = 1
 local DEV_MIN_PLAYERS = 1
 local MAX_PLAYERS = 10
 
@@ -22,8 +22,10 @@ local DEV_SHOWCASE_SLICE = 4
 local CREATION_SECONDS = { 300, 240, 180 }
 
 local LIVE_TIMERS: { [string]: number } = {
-	Intermission = 7,
-	ThemeReveal = 6,
+	Intermission = 10,
+	BlueprintHunt = 90,
+	ThemeReveal = 15,
+	LimbPrep = 40,
 	TattooCreation = CREATION_SECONDS[1],
 	Submission = 5,
 	Showcase = LIVE_SHOWCASE_SLICE,
@@ -33,8 +35,10 @@ local LIVE_TIMERS: { [string]: number } = {
 }
 
 local DEV_TIMERS: { [string]: number } = {
-	Intermission = 7,
-	ThemeReveal = 5,
+	Intermission = 10,
+	BlueprintHunt = 90,
+	ThemeReveal = 15,
+	LimbPrep = 40,
 	TattooCreation = CREATION_SECONDS[1],
 	Submission = 10,
 	Showcase = DEV_SHOWCASE_SLICE,
@@ -42,6 +46,10 @@ local DEV_TIMERS: { [string]: number } = {
 	Results = 10,
 	Cleanup = 2,
 }
+
+-- Finding every stockroom blueprint adds this many seconds to that player's tattoo window.
+local BLUEPRINT_BONUS_SECONDS = 10
+local BLUEPRINT_PIECE_COUNT = 4
 
 -- One match = several design → vote rounds. Votes add up; the final party crowns the match winner.
 local DESIGN_ROUNDS_PER_MATCH = 3
@@ -56,7 +64,7 @@ local DESIGN_REGION = "LeftForearm"
 local DEV_HOLD_LOBBY = true
 
 local GameConfig = {
-	DevMode = true,
+	DevMode = false,
 }
 
 function GameConfig.devHoldsLobby(): boolean
@@ -108,6 +116,14 @@ end
 function GameConfig.getCreationSeconds(designRound: number): number
 	local index = math.clamp(math.floor(designRound + 0.5), 1, #CREATION_SECONDS)
 	return CREATION_SECONDS[index]
+end
+
+function GameConfig.getBlueprintBonusSeconds(): number
+	return BLUEPRINT_BONUS_SECONDS
+end
+
+function GameConfig.getBlueprintPieceCount(): number
+	return BLUEPRINT_PIECE_COUNT
 end
 
 function GameConfig.getDuration(state: string, designRound: number?): number?

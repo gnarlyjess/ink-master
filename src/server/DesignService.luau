@@ -162,7 +162,7 @@ local function onSubmit(player: Player, payload: any)
 	end
 	lastSubmitAt[player] = now
 
-	if not RoundManager.isDesignWindowOpen() then
+	if not RoundManager.isDesignWindowOpen(player) then
 		sendResult(player, false, "The design window is closed.", 0)
 		return
 	end
@@ -178,6 +178,13 @@ local function onSubmit(player: Player, payload: any)
 		warn(`{PREFIX} Rejected design from {player.Name}: locked content`)
 		sendResult(player, false, "That design uses a shape or ink you haven't unlocked.", 0)
 		return
+	end
+
+	-- Limb is chosen in prep; keep tattoo submissions on that region.
+	local PrepService = require(script.Parent.PrepService)
+	local lockedRegion = PrepService.getLockedRegion(player)
+	if lockedRegion ~= nil then
+		design.region = lockedRegion
 	end
 
 	stored[player] = {
